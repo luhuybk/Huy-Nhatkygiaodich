@@ -4,7 +4,7 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, X, Trash2, Pencil,
   ImagePlus, Link2, ChevronDown, ChevronRight, ChevronLeft, Check, ArrowUpRight,
   ArrowDownRight, Search, Save, CornerDownRight, CalendarDays, LineChart as LineChartIcon,
-  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle
+  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -97,6 +97,7 @@ const DEFAULT_RESOURCES = {
   fxRates: { USD: 1, VND: 26000, EUR: 0.92, GBP: 0.79, JPY: 150 },
 };
 
+const STRUCTURE_SCORES = Array.from({ length: 15 }, (_, i) => (i * 0.5).toString());
 const GRADE_OPTIONS = [
   { id: "tot-thang", label: "Giao dịch Tốt - Thắng", matches: "win", tone: "win" },
   { id: "toi-thang", label: "Giao dịch Tồi - Thắng", matches: "win", tone: "loss" },
@@ -143,7 +144,7 @@ function emptyTrade() {
     symbol: "", entryDate: "", entryLink: "", entryImage: "",
     direction: "buy", account: "", timeframe: "", session: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
-    setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0,
+    setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
     exitDate: "", exitLink: "", exitImage: "", profit: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0,
     psychology: "", ratingPsychology: 0,
@@ -624,7 +625,7 @@ function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
         </Field>
       </Section>
 
-      <Section num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, lý do vào lệnh">
+      <Section num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
         <div className="grid-3">
           <Field label="Setup">
             <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} placeholder="Chọn setup" />
@@ -634,6 +635,9 @@ function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
           </Field>
           <Field label="Nhận xét Setup">
             <ResourceSelect value={t.setupNote} onChange={set("setupNote")} options={resources.setupNotes} placeholder="Chọn nhận xét" />
+          </Field>
+          <Field label="Điểm cấu trúc (ĐCT)" hint="Cho cặp forex — thang 0 đến 7, bước 0.5">
+            <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={STRUCTURE_SCORES} placeholder="Chọn điểm (0-7)" />
           </Field>
         </div>
         <Field label="Lý do vào lệnh">
@@ -1394,6 +1398,7 @@ function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
               <DetailRow label="Nhận xét Setup" value={t.setupNote} />
+              <DetailRow label="Điểm cấu trúc (ĐCT)" value={t.structureScore !== "" ? t.structureScore : "—"} />
             </DetailGroup>
             <DetailGroup title="Quản trị vốn & Kết quả">
               <DetailRow label="Rủi ro (%)" value={t.riskPercent ? `${t.riskPercent}%` : "—"} />
@@ -2085,6 +2090,7 @@ function keyForDim(t, dim) {
   if (dim === "symbol") return t.symbol || "—";
   if (dim === "setup") return t.setup || "Chưa gắn setup";
   if (dim === "weekday") { const wd = weekdayIndex(dateKey(t)); return wd === null ? "—" : WEEKDAY_LABEL[wd]; }
+  if (dim === "structure") return t.structureScore !== "" && t.structureScore !== undefined && t.structureScore !== null ? `ĐCT ${t.structureScore}` : "Chưa chấm";
   return "—";
 }
 
@@ -2326,6 +2332,7 @@ const DIM_CONFIG = {
   symbol: { label: "symbol", backLabel: "Tất cả symbol", allItems: (trades, resources) => Array.from(new Set([...(resources.symbols || []), ...trades.map((t) => t.symbol).filter(Boolean)])).sort() },
   setup: { label: "setup", backLabel: "Tất cả setup", allItems: (trades, resources) => Array.from(new Set([...(resources.setups || []), ...trades.map((t) => t.setup).filter(Boolean)])).sort() },
   weekday: { label: "thứ", backLabel: "Tất cả các thứ", allItems: () => WEEKDAY_ORDER.map((wd) => WEEKDAY_LABEL[wd]) },
+  structure: { label: "ĐCT", backLabel: "Tất cả điểm cấu trúc", allItems: () => STRUCTURE_SCORES.map((s) => `ĐCT ${s}`) },
 };
 
 function DimensionPerformance({ trades, resources, dimension, onViewTrade }) {
@@ -3097,6 +3104,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "tradeanalysis", label: "Phân tích lệnh", icon: Target },
         { key: "symbolperf", label: "Hiệu suất Symbol", icon: Hash },
         { key: "setupperf", label: "Hiệu suất Setup", icon: Star },
+        { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
         { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
         { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
       ]
@@ -3515,6 +3523,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :
               view === "symbolperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="symbol" onViewTrade={startEdit} /> :
               view === "setupperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="setup" onViewTrade={startEdit} /> :
+              view === "structureperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="structure" onViewTrade={startEdit} /> :
               view === "weekdayperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="weekday" onViewTrade={startEdit} /> :
               view === "heatmap" ? <HeatmapPage trades={trades} resources={resources} /> :
               view === "accounts" ? (
