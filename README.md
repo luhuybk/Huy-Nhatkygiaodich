@@ -1,79 +1,89 @@
 # Nhật Ký Giao Dịch
 
-Ứng dụng nhật ký & phân tích hiệu suất trading, chạy hoàn toàn phía trình duyệt (không cần server/database).
+Ứng dụng nhật ký & phân tích hiệu suất trading, giao diện React, dữ liệu đồng bộ qua **Supabase** (đăng nhập 1 tài khoản, dùng được trên nhiều thiết bị).
 
-## 1. Chạy trên máy cục bộ (local)
+## 0. Tạo dự án Supabase (làm 1 lần, ~5 phút)
 
-**Yêu cầu:** đã cài [Node.js](https://nodejs.org) bản 18 trở lên (kiểm tra bằng `node -v`).
+1. Vào [supabase.com](https://supabase.com) → **Start your project** → đăng nhập bằng GitHub/Google.
+2. **New project**: đặt tên bất kỳ, chọn mật khẩu database (lưu lại phòng khi cần), chọn region gần bạn (Singapore hợp lý với VN).
+3. Đợi ~2 phút cho project khởi tạo xong.
+4. Vào **SQL Editor** (menu bên trái) → **New query** → dán toàn bộ nội dung file `supabase-setup.sql` (đi kèm trong dự án này) → **Run**. Bước này tạo bảng lưu dữ liệu + bật bảo mật (mỗi người chỉ thấy dữ liệu của mình).
+5. Vào **Project Settings → API** → copy 2 giá trị:
+   - **Project URL**
+   - **anon public key**
+6. Vào **Authentication → Providers**, đảm bảo **Email** đang bật (mặc định đã bật sẵn).
+   - Nếu muốn đăng ký xong đăng nhập được ngay (không cần xác nhận email, tiện cho dùng cá nhân): vào **Authentication → Settings**, tắt **"Confirm email"**.
+
+## 1. Cấu hình dự án
 
 ```bash
-# Vào thư mục dự án
 cd trading-journal-app
+cp .env.example .env
+```
 
-# Cài thư viện (chỉ cần làm 1 lần)
+Mở file `.env` vừa tạo, dán `Project URL` và `anon public key` lấy ở bước 0.5 vào:
+```
+VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**Lưu ý:** file `.env` đã được thêm vào `.gitignore` — không bao giờ commit file này lên GitHub công khai.
+
+## 2. Chạy trên máy cục bộ
+
+**Yêu cầu:** đã cài [Node.js](https://nodejs.org) bản 18 trở lên.
+
+```bash
 npm install
-
-# Chạy dev server
 npm run dev
 ```
 
-Terminal sẽ hiện link dạng `http://localhost:5173` — mở link đó lên trình duyệt là dùng được. Mỗi lần sửa code, trang tự tải lại (hot reload).
+Mở `http://localhost:5173` → màn hình đăng nhập hiện ra → bấm **"Chưa có tài khoản? Đăng ký"** để tạo tài khoản đầu tiên (dùng email thật hoặc email bất kỳ nếu đã tắt xác nhận email ở bước 0.6).
 
-Dừng server: bấm `Ctrl + C` trong terminal.
-
-## 2. Đóng gói để deploy lên web
+## 3. Deploy lên Hostinger (gói hosting bạn đang có, qua FTP)
 
 ```bash
 npm run build
 ```
 
-Lệnh này tạo ra thư mục `dist/` chứa toàn bộ file tĩnh (HTML/CSS/JS) sẵn sàng deploy lên bất kỳ dịch vụ hosting tĩnh nào.
+Lệnh này tạo thư mục `dist/` chứa toàn bộ file tĩnh sẵn sàng deploy — **không cần dùng tính năng Node.js của Hostinger**, vì phần "backend" đã nằm ở Supabase (cloud), Hostinger chỉ cần phục vụ file tĩnh.
 
-Xem thử bản build trước khi deploy:
+**Upload qua FTP** (dùng FileZilla hoặc bất kỳ FTP client nào, thông tin lấy từ trang "Chi tiết gói" của Hostinger):
+- Host: `ftp://<địa chỉ IP hoặc ftp.tenmien.com>`
+- Username / Password: theo tài khoản FTP Hostinger cấp
+- Thư mục đích: `public_html`
+
+Upload **toàn bộ nội dung bên trong** thư mục `dist/` (không phải cả thư mục `dist`) vào `public_html`. Xong, truy cập `https://tenmiencuaban.com` là thấy app.
+
+Mỗi lần cập nhật code, lặp lại: sửa code → `npm run build` → upload lại nội dung `dist/` đè lên `public_html`.
+
+## 4. Cập nhật code & đồng bộ GitHub (nếu có dùng)
+
 ```bash
-npm run preview
+git add .
+git commit -m "Mô tả thay đổi"
+git push
 ```
 
-### Cách A — Vercel (khuyên dùng, miễn phí, nhanh nhất)
-1. Tạo tài khoản tại [vercel.com](https://vercel.com) (đăng nhập bằng GitHub cho tiện).
-2. Đẩy thư mục `trading-journal-app` này lên một repo GitHub.
-3. Vào Vercel → **Add New Project** → chọn repo vừa tạo.
-4. Vercel tự nhận diện đây là dự án Vite, không cần chỉnh gì thêm → bấm **Deploy**.
-5. Xong, có link dạng `ten-du-an.vercel.app` dùng được ngay, mỗi lần bạn push code mới lên GitHub thì Vercel tự deploy lại.
+## 5. Cách hoạt động / lưu ý
 
-### Cách B — Netlify (tương tự Vercel)
-1. Tạo tài khoản tại [netlify.com](https://netlify.com).
-2. **Add new site → Import an existing project**, kết nối GitHub repo.
-3. Build command: `npm run build`, Publish directory: `dist`.
-4. Deploy.
+- Dữ liệu được lưu trên Supabase (Postgres), gắn với tài khoản đăng nhập của bạn — đăng nhập cùng email trên điện thoại, máy tính, trình duyệt khác nhau đều thấy **chung một dữ liệu**, tự đồng bộ mỗi khi mở app.
+- Vẫn nên sao lưu định kỳ: **Cài đặt → Xuất JSON**.
+- Ai cũng có thể tự đăng ký tài khoản trên trang đăng nhập — nếu chỉ muốn riêng mình bạn dùng, có thể tắt đăng ký công khai sau trong Supabase (**Authentication → Settings**), hoặc chỉ chia sẻ link app cho người bạn tin tưởng.
+- **anon key** trong file `.env` là key công khai an toàn để lộ ra frontend (đây là cách Supabase thiết kế) — bảo mật thật sự nằm ở Row Level Security (đã bật sẵn qua file `supabase-setup.sql`), không phải ở việc giấu key này.
 
-### Cách C — Kéo-thả thủ công, không cần Git (nhanh nhất để thử)
-1. Chạy `npm run build` ở máy để có thư mục `dist/`.
-2. Vào [app.netlify.com/drop](https://app.netlify.com/drop), kéo thả thư mục `dist` vào — có link dùng ngay trong vài giây.
-
-### Cách D — GitHub Pages
-1. Trong `vite.config.js`, đổi `base: "/"` thành `base: "/ten-repo-cua-ban/"`.
-2. `npm run build`, rồi deploy thư mục `dist` lên nhánh `gh-pages` (có thể dùng gói `gh-pages`: `npm i -D gh-pages`, thêm script `"deploy": "gh-pages -d dist"` vào `package.json`, rồi `npm run deploy`).
-
-## 3. Lưu ý quan trọng về dữ liệu
-
-- App lưu toàn bộ dữ liệu (giao dịch, tài khoản, ghi chú...) vào **localStorage của trình duyệt** — nghĩa là:
-  - Dữ liệu **chỉ nằm trên máy/trình duyệt bạn đang dùng**, không đồng bộ qua thiết bị khác.
-  - Xóa cache/dữ liệu trình duyệt (hoặc dùng chế độ ẩn danh) sẽ **mất hết dữ liệu**.
-  - Mỗi domain/URL khác nhau (VD: `localhost:5173` lúc dev vs `ten-du-an.vercel.app` lúc deploy) có vùng lưu trữ **riêng biệt** — dữ liệu bạn nhập lúc chạy local sẽ **không tự xuất hiện** trên bản deploy, và ngược lại.
-- **Sao lưu định kỳ**: vào tab **Cài đặt → Xuất JSON** để tải file backup toàn bộ dữ liệu. Muốn chuyển dữ liệu qua máy khác / domain khác, dùng file JSON này ở tab **Cài đặt → Nhập JSON** bên máy đích.
-- Nếu sau này muốn nhiều người dùng chung / đồng bộ nhiều thiết bị, sẽ cần thêm một backend thật (database) — kiến trúc hiện tại chưa hỗ trợ việc đó.
-
-## 4. Cấu trúc dự án
+## 6. Cấu trúc dự án
 
 ```
 trading-journal-app/
-├── index.html          # entry HTML
+├── index.html
 ├── package.json
 ├── vite.config.js
+├── supabase-setup.sql      # chạy 1 lần trong Supabase SQL Editor
+├── .env.example             # copy thành .env rồi điền key thật
 └── src/
-    ├── main.jsx         # khởi tạo React
-    └── App.jsx          # toàn bộ ứng dụng (component chính)
+    ├── main.jsx              # khởi tạo React
+    ├── supabaseClient.js     # kết nối tới Supabase
+    └── App.jsx                # toàn bộ ứng dụng + màn hình đăng nhập
 ```
 
-Muốn sửa giao diện/tính năng, chỉnh trực tiếp trong `src/App.jsx`.

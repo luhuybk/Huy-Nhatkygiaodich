@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, X, Trash2, Pencil,
   ImagePlus, Link2, ChevronDown, ChevronRight, ChevronLeft, Check, ArrowUpRight,
@@ -162,19 +163,31 @@ function emptyMissed() {
   return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
 }
 
-const STORAGE_PREFIX = "trading-journal:";
+let currentUserId = null;
+function setCurrentUserId(id) { currentUserId = id; }
+
 async function safeGet(key, fallback) {
+  if (!currentUserId) return fallback;
   try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + key);
-    if (raw === null) return fallback;
-    return JSON.parse(raw);
+    const { data, error } = await supabase
+      .from("app_data")
+      .select("value")
+      .eq("user_id", currentUserId)
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data) return fallback;
+    return data.value;
   } catch (e) {
     return fallback;
   }
 }
 async function safeSet(key, value) {
+  if (!currentUserId) return false;
   try {
-    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    const { error } = await supabase
+      .from("app_data")
+      .upsert({ user_id: currentUserId, key, value, updated_at: new Date().toISOString() }, { onConflict: "user_id,key" });
+    if (error) { console.error("storage set failed", key, error); return false; }
     return true;
   } catch (e) {
     console.error("storage set failed", key, e);
@@ -2986,7 +2999,7 @@ function SettingsSection({ trades, resources, ledger, notes, setupLibrary, misse
   );
 }
 
-export default function App() {
+function AppShell({ onSignOut, userEmail }) {
   const [loading, setLoading] = useState(true);
   const [trades, setTrades] = useState([]);
   const [resources, setResources] = useState(DEFAULT_RESOURCES);
@@ -3485,6 +3498,8 @@ export default function App() {
               ))}
             </div>
             <span className="save-indicator mono">{saveState}</span>
+            <span className="field-hint" style={{ whiteSpace: "nowrap" }}>{userEmail}</span>
+            <button type="button" className="btn btn-ghost" onClick={onSignOut}>Đăng xuất</button>
             <button type="button" className="btn btn-primary" onClick={startNew}><PlusCircle size={15} /> Thêm giao dịch</button>
           </div>
           <div className="body">
@@ -3528,4 +3543,96 @@ export default function App() {
       ) : null}
     </div>
   );
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!email.trim() || !password) { setError("Nhập đủ email và mật khẩu."); return; }
+    setLoading(true); setError(""); setNotice("");
+    try {
+      if (mode === "signin") {
+        const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (err) setError(err.message);
+      } else {
+        const { data, error: err } = await supabase.auth.signUp({ email: email.trim(), password });
+        if (err) setError(err.message);
+        else if (!data.session) setNotice("Đã gửi email xác nhận — kiểm tra hộp thư rồi quay lại đăng nhập.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      background: "#0a0b0d", fontFamily: "'IBM Plex Sans',sans-serif", color: "#eae7e0", padding: 20,
+    }}>
+      <div style={{ width: "100%", maxWidth: 380, background: "#131519", border: "1px solid #252930", borderRadius: 14, padding: 28 }}>
+        <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", margin: "0 0 4px", fontSize: 20 }}>Nhật Ký Giao Dịch</h2>
+        <p style={{ fontSize: 12.5, color: "#8d9198", margin: "0 0 22px" }}>
+          {mode === "signin" ? "Đăng nhập để đồng bộ dữ liệu qua mọi thiết bị." : "Tạo tài khoản mới."}
+        </p>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, fontSize: 12.5 }}>
+          Email
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            style={{ background: "#191c21", border: "1px solid #252930", borderRadius: 8, padding: "9px 11px", color: "#eae7e0", fontSize: 13.5 }} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16, fontSize: 12.5 }}>
+          Mật khẩu
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            style={{ background: "#191c21", border: "1px solid #252930", borderRadius: 8, padding: "9px 11px", color: "#eae7e0", fontSize: 13.5 }} />
+        </label>
+        {error ? <p style={{ color: "#e0615a", fontSize: 12, margin: "0 0 12px" }}>{error}</p> : null}
+        {notice ? <p style={{ color: "#4caf7d", fontSize: 12, margin: "0 0 12px" }}>{notice}</p> : null}
+        <button type="button" onClick={submit} disabled={loading} style={{
+          width: "100%", background: "#d4a24e", border: "none", borderRadius: 8, padding: "10px 0",
+          color: "#1a1206", fontWeight: 700, fontSize: 13.5, cursor: "pointer", marginBottom: 12,
+        }}>
+          {loading ? "Đang xử lý..." : mode === "signin" ? "Đăng nhập" : "Đăng ký"}
+        </button>
+        <button type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setNotice(""); }}
+          style={{ width: "100%", background: "none", border: "none", color: "#8d9198", fontSize: 12.5, cursor: "pointer" }}>
+          {mode === "signin" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCurrentUserId(data.session?.user?.id || null);
+      setAuthLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setCurrentUserId(nextSession?.user?.id || null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0b0d", color: "#8d9198", fontFamily: "'IBM Plex Sans',sans-serif" }}>
+        Đang tải...
+      </div>
+    );
+  }
+  if (!session) return <AuthScreen />;
+
+  return <AppShell userEmail={session.user.email} onSignOut={() => supabase.auth.signOut()} />;
 }
