@@ -1757,7 +1757,7 @@ function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Đóng</button>
           <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onDelete(t.id); onClose(); }} />
-          <button type="button" className="btn btn-primary" onClick={() => onEdit(t)}><Pencil size={14} /> Sửa</button>
+          <button type="button" className="btn btn-primary" onClick={() => { onEdit(t); onClose(); }}><Pencil size={14} /> Sửa</button>
         </div>
       </div>
     </div>
@@ -3449,6 +3449,8 @@ function AppShell({ onSignOut, userEmail }) {
           overflow:hidden; height:100%; min-height:600px; display:flex; flex-direction:column;
           -webkit-font-smoothing:antialiased; letter-spacing:0.1px; }
         .app * { box-sizing:border-box; }
+        .app button, .app input, .app select, .app textarea { color: inherit; font-family: inherit; }
+        .trade-form { max-width: 820px; margin: 0 auto; }
         .app h1,.app h2,.app h3,.app h4 { font-family:'Space Grotesk',sans-serif; margin:0; letter-spacing:-0.2px; }
         .mono { font-family:'IBM Plex Mono',monospace; }
         .app-shell { display:flex; flex:1; min-height:0; }
