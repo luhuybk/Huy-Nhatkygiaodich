@@ -4,7 +4,7 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, X, Trash2, Pencil,
   ImagePlus, Link2, ChevronDown, ChevronRight, ChevronLeft, Check, ArrowUpRight,
   ArrowDownRight, Search, Save, CornerDownRight, CalendarDays, LineChart as LineChartIcon,
-  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler
+  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -162,6 +162,12 @@ function emptySetupDef() {
 }
 function emptyMissed() {
   return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
+}
+function emptyCapitalAccount() {
+  return { id: null, name: "" };
+}
+function emptyCapitalEntry(date, reserveCapital) {
+  return { id: null, accountId: "", date: date || "", reserveCapital: reserveCapital ?? "", tradeCapital: "", note: "" };
 }
 
 let currentUserId = null;
@@ -1201,6 +1207,163 @@ function EquityIndexPage({ resources, ledger, trades }) {
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
+    </div>
+  );
+}
+
+function CapitalTrackerPage({ accounts, entries, onAccountsChange, onEntriesChange }) {
+  const [selectedId, setSelectedId] = useState(accounts[0]?.id || "");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [accountError, setAccountError] = useState("");
+
+  useEffect(() => {
+    if (!selectedId && accounts.length) setSelectedId(accounts[0].id);
+  }, [accounts]);
+
+  const accountEntries = entries.filter((e) => e.accountId === selectedId).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const lastEntry = accountEntries[accountEntries.length - 1] || null;
+  const [form, setForm] = useState(emptyCapitalEntry("", ""));
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const [entryError, setEntryError] = useState("");
+
+  const startNewEntry = () => setForm(emptyCapitalEntry("", lastEntry ? lastEntry.reserveCapital : ""));
+
+  const addAccount = () => {
+    if (!newAccountName.trim()) { setAccountError("Nhập tên tài khoản."); return; }
+    setAccountError("");
+    const acc = { id: uid(), name: newAccountName.trim() };
+    onAccountsChange([...accounts, acc]);
+    setNewAccountName("");
+    setSelectedId(acc.id);
+  };
+  const removeAccount = (id) => {
+    onAccountsChange(accounts.filter((a) => a.id !== id));
+    onEntriesChange(entries.filter((e) => e.accountId !== id));
+    if (selectedId === id) setSelectedId("");
+  };
+
+  const saveEntry = () => {
+    if (!form.date) { setEntryError("Chọn ngày ghi nhận."); return; }
+    if (form.reserveCapital === "" || form.tradeCapital === "") { setEntryError("Nhập đủ Vốn dự phòng và Vốn trade."); return; }
+    setEntryError("");
+    const payload = { ...form, id: form.id || uid(), accountId: selectedId };
+    const exists = entries.some((e) => e.id === payload.id);
+    onEntriesChange(exists ? entries.map((e) => (e.id === payload.id ? payload : e)) : [...entries, payload]);
+    startNewEntry();
+  };
+  const removeEntry = (id) => {
+    onEntriesChange(entries.filter((e) => e.id !== id));
+    if (form.id === id) startNewEntry();
+  };
+
+  const selectedAccount = accounts.find((a) => a.id === selectedId);
+  const chartData = accountEntries.map((e) => ({
+    date: e.date,
+    reserve: Number(e.reserveCapital) || 0,
+    trade: Number(e.tradeCapital) || 0,
+    total: (Number(e.reserveCapital) || 0) + (Number(e.tradeCapital) || 0),
+  }));
+  const currentTotal = lastEntry ? (Number(lastEntry.reserveCapital) || 0) + (Number(lastEntry.tradeCapital) || 0) : null;
+  const firstTotal = chartData.length ? chartData[0].total : null;
+  const growthPct = firstTotal ? (((currentTotal - firstTotal) / Math.abs(firstTotal)) * 100) : null;
+
+  return (
+    <div>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Theo dõi tổng vốn thực (vốn dự phòng ngoài sàn + vốn đang để trade) — hoàn toàn thủ công, tách biệt khỏi tab Tài khoản (không ảnh hưởng số liệu P&L giao dịch). Bạn có thể đặt tên trùng với tài khoản trade để dễ đối chiếu.
+      </p>
+
+      <div className="account-form">
+        <div className="grid-3" style={{ alignItems: "end" }}>
+          <Field label="Tài khoản vốn thực">
+            <IdSelect value={selectedId} onChange={setSelectedId} items={accounts} placeholder="Chọn tài khoản" />
+          </Field>
+          <Field label="Thêm tài khoản mới">
+            <input className="input" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAccount()} placeholder="VD: Forex H3 (giống tên TK trade)" />
+          </Field>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-primary" onClick={addAccount}>Thêm tài khoản</button>
+            {selectedAccount ? <ConfirmButton onConfirm={() => removeAccount(selectedAccount.id)} className="btn btn-ghost" icon={Trash2} label="Xóa tài khoản này" /> : null}
+          </div>
+        </div>
+        {accountError ? <p className="error-text">{accountError}</p> : null}
+      </div>
+
+      {!selectedAccount ? (
+        <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có tài khoản vốn thực nào — thêm ở trên để bắt đầu.</p>
+      ) : (
+        <>
+          <div className="stat-grid">
+            <StatCard label="Vốn dự phòng (mới nhất)" value={lastEntry ? fmt(Number(lastEntry.reserveCapital)) : "—"} />
+            <StatCard label="Vốn trade (mới nhất)" value={lastEntry ? fmt(Number(lastEntry.tradeCapital)) : "—"} />
+            <StatCard label="Tổng vốn thực" value={currentTotal === null ? "—" : fmt(currentTotal)} tone={currentTotal !== null && firstTotal !== null ? (currentTotal >= firstTotal ? "win" : "loss") : ""} />
+            <StatCard label="Tăng trưởng từ mốc đầu" value={growthPct === null ? "—" : `${growthPct > 0 ? "+" : ""}${growthPct.toFixed(2)}%`} tone={growthPct === null ? "" : growthPct >= 0 ? "win" : "loss"} />
+          </div>
+
+          <ChartCard title={`Đường cong vốn thực — ${selectedAccount.name}`} subtitle="Vốn dự phòng + Vốn trade, ghi nhận thủ công" height={300}>
+            {chartData.length === 0 ? <p className="empty-note">Chưa có mốc ghi nhận nào.</p> : (
+              <ResponsiveContainer>
+                <LineChart data={chartData}>
+                  <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} />
+                  <YAxis tick={{ fontSize: 10, fill: MUTED }} width={54} domain={["auto", "auto"]} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
+                  <Line type="monotone" dataKey="total" name="Tổng vốn thực" stroke={ACCENT} strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="reserve" name="Vốn dự phòng" stroke={MUTED} strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
+                  <Line type="monotone" dataKey="trade" name="Vốn trade" stroke={WIN} strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <h3 className="block-title">{form.id ? "Sửa mốc ghi nhận" : "Thêm mốc ghi nhận mới (VD: cuối tuần)"}</h3>
+          <div className="account-form">
+            <div className="grid-3">
+              <Field label="Ngày ghi nhận">
+                <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
+              </Field>
+              <Field label="Vốn dự phòng (ngoài sàn)">
+                <MoneyInput value={form.reserveCapital} onChange={setF("reserveCapital")} placeholder="8000" />
+              </Field>
+              <Field label="Vốn trade (trên sàn)">
+                <MoneyInput value={form.tradeCapital} onChange={setF("tradeCapital")} placeholder="2100" />
+              </Field>
+            </div>
+            <Field label="Ghi chú"><input className="input" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Tùy chọn..." /></Field>
+            {entryError ? <p className="error-text">{entryError}</p> : null}
+            <div className="form-actions" style={{ marginTop: 4 }}>
+              {form.id ? <button type="button" className="btn btn-ghost" onClick={startNewEntry}>Hủy sửa</button> : null}
+              <button type="button" className="btn btn-primary" onClick={saveEntry}>{form.id ? "Cập nhật mốc" : "Lưu mốc ghi nhận"}</button>
+            </div>
+          </div>
+
+          <div className="table-wrap" style={{ marginTop: 16 }}>
+            {accountEntries.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có mốc ghi nhận nào.</p> : (
+              <table className="table">
+                <thead><tr><th>Ngày</th><th>Vốn dự phòng</th><th>Vốn trade</th><th>Tổng</th><th>Ghi chú</th><th></th></tr></thead>
+                <tbody>
+                  {[...accountEntries].reverse().map((e) => (
+                    <tr key={e.id} onClick={() => setForm(e)}>
+                      <td className="mono">{e.date}</td>
+                      <td className="mono">{fmt(Number(e.reserveCapital))}</td>
+                      <td className="mono">{fmt(Number(e.tradeCapital))}</td>
+                      <td className="mono" style={{ fontWeight: 700 }}>{fmt((Number(e.reserveCapital) || 0) + (Number(e.tradeCapital) || 0))}</td>
+                      <td style={{ color: "var(--text-dim)", fontSize: 12.5 }}>{e.note || "—"}</td>
+                      <td onClick={(ev) => ev.stopPropagation()}>
+                        <div style={{ display: "flex", gap: 2 }}>
+                          <button type="button" className="row-btn" onClick={() => setForm(e)}><Pencil size={13} /></button>
+                          <ConfirmButton onConfirm={() => removeEntry(e.id)} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2924,11 +3087,11 @@ function SetupLibrarySection({ items, onChange }) {
   );
 }
 
-function SettingsSection({ trades, resources, ledger, notes, setupLibrary, missedSetups, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
+function SettingsSection({ trades, resources, ledger, notes, setupLibrary, missedSetups, capitalAccounts, capitalEntries, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
-    const payload = { trades, resources, ledger, notes, setupLibrary, uiSettings, missedSetups, exportedAt: new Date().toISOString() };
+    const payload = { trades, resources, ledger, notes, setupLibrary, uiSettings, missedSetups, capitalAccounts, capitalEntries, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3014,6 +3177,8 @@ function AppShell({ onSignOut, userEmail }) {
   const [notes, setNotes] = useState([]);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
+  const [capitalAccounts, setCapitalAccounts] = useState([]);
+  const [capitalEntries, setCapitalEntries] = useState([]);
   const [uiSettings, setUiSettings] = useState(DEFAULT_UI_SETTINGS);
   const [view, setView] = useState("dashboard");
   const [activeAccount, setActiveAccount] = useState("");
@@ -3023,7 +3188,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, sl, us, ms] = await Promise.all([
+      const [ts, rs, lg, nt, sl, us, ms, ca, ce] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -3031,6 +3196,8 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("setupLibrary", []),
         safeGet("uiSettings", DEFAULT_UI_SETTINGS),
         safeGet("missedSetups", []),
+        safeGet("capitalAccounts", []),
+        safeGet("capitalEntries", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -3039,6 +3206,8 @@ function AppShell({ onSignOut, userEmail }) {
       setSetupLibrary(sl);
       setUiSettings({ ...DEFAULT_UI_SETTINGS, ...us });
       setMissedSetups(ms);
+      setCapitalAccounts(ca);
+      setCapitalEntries(ce);
       setLoading(false);
     })();
   }, []);
@@ -3052,6 +3221,8 @@ function AppShell({ onSignOut, userEmail }) {
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); await safeSet("setupLibrary", next); flashSaved(); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); await safeSet("missedSetups", next); flashSaved(); }, []);
+  const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); await safeSet("capitalAccounts", next); flashSaved(); }, []);
+  const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); await safeSet("capitalEntries", next); flashSaved(); }, []);
 
   const handleSaveTrade = (t) => {
     const exists = trades.some((x) => x.id === t.id);
@@ -3078,6 +3249,8 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
     if (data.missedSetups) persistMissedSetups(data.missedSetups);
+    if (data.capitalAccounts) persistCapitalAccounts(data.capitalAccounts);
+    if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
   };
   const handleResetAll = () => {
     persistTrades([]);
@@ -3086,6 +3259,8 @@ function AppShell({ onSignOut, userEmail }) {
     persistNotes([]);
     persistSetupLibrary([]);
     persistMissedSetups([]);
+    persistCapitalAccounts([]);
+    persistCapitalEntries([]);
     setView("dashboard");
   };
 
@@ -3095,6 +3270,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
         { key: "journal", label: "Nhật ký", icon: BookOpen },
         { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
+        { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
         { key: "missed", label: "Setup bị miss", icon: EyeOff },
       ]
     },
@@ -3515,6 +3691,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "dashboard" ? <Dashboard trades={trades} resources={resources} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} onEdit={startEdit} onDelete={handleDelete} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
+              view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} /> :
               view === "missed" ? <MissedSetupsSection items={missedSetups} resources={resources} onChange={persistMissedSetups} /> :
               view === "form" ? (
                 <TradeForm initial={editing} resources={resources} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
@@ -3537,6 +3714,7 @@ function AppShell({ onSignOut, userEmail }) {
                 <ResourceManager resources={resources} onChange={persistResources} />
               ) :
               <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} setupLibrary={setupLibrary} missedSetups={missedSetups}
+                capitalAccounts={capitalAccounts} capitalEntries={capitalEntries}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} onImportAll={handleImportAll} onReset={handleResetAll} />
             }
           </div>
