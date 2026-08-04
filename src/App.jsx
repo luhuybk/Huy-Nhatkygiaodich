@@ -1136,7 +1136,7 @@ function AccountDetail({ account, ledger, trades, onBack, onEdit, onDelete }) {
         <ResponsiveContainer>
           <LineChart data={curve}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} padding={{ left: 20, right: 20 }} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={54} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
             <Line type="monotone" dataKey="balance" stroke={ACCENT} strokeWidth={2} dot={false} />
@@ -1230,7 +1230,7 @@ function EquityIndexPage({ resources, ledger, trades }) {
         <ResponsiveContainer>
           <LineChart data={curve}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} padding={{ left: 20, right: 20 }} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={50} domain={["auto", "auto"]} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
             <Line type="monotone" dataKey="index" stroke={ACCENT} strokeWidth={2} dot={false} />
@@ -1373,7 +1373,7 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
               <ResponsiveContainer>
                 <LineChart data={curve}>
                   <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} padding={{ left: 20, right: 20 }} />
                   <YAxis tick={{ fontSize: 10, fill: MUTED }} width={54} domain={["auto", "auto"]} tickCount={8} />
                   <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
                   <Line type="monotone" dataKey="index" stroke={ACCENT} strokeWidth={2.5} dot={{ r: 3 }} />
@@ -2096,7 +2096,7 @@ function Dashboard({ trades, resources, account, onAccountChange, onViewTrade })
           <ResponsiveContainer>
             <LineChart data={equityData}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
               <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
@@ -2413,7 +2413,7 @@ function PerformanceDrilldown({ closed }) {
           <ResponsiveContainer>
             <LineChart data={equityData}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
               <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
@@ -2682,7 +2682,7 @@ function DimensionPerformance({ trades, resources, dimension, onViewTrade }) {
             <ResponsiveContainer>
               <LineChart data={equityData}>
                 <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
                 <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
                 <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
