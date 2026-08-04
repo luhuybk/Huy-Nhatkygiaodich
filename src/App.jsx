@@ -164,7 +164,7 @@ function emptyMissed() {
   return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
 }
 function emptyCapitalAccount() {
-  return { id: null, name: "" };
+  return { id: null, name: "", currency: "USD" };
 }
 function emptyCapitalEntry(date, reserveCapital) {
   return { id: null, accountId: "", date: date || "", reserveCapital: reserveCapital ?? "", tradeCapital: "", note: "" };
@@ -1249,7 +1249,7 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
     if (!selectedId && accounts.length) setSelectedId(accounts[0].id);
   }, [accounts]);
 
-  const [newAccount, setNewAccount] = useState({ name: "", reserveCapital: "", tradeCapital: "" });
+  const [newAccount, setNewAccount] = useState({ name: "", currency: "USD", reserveCapital: "", tradeCapital: "" });
   const [accountError, setAccountError] = useState("");
   const setNA = (k) => (v) => setNewAccount((p) => ({ ...p, [k]: v }));
 
@@ -1257,12 +1257,12 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
     if (!newAccount.name.trim()) { setAccountError("Nhập tên tài khoản."); return; }
     if (newAccount.reserveCapital === "" || newAccount.tradeCapital === "") { setAccountError("Nhập đủ Vốn dự phòng và Vốn trade ban đầu."); return; }
     setAccountError("");
-    const acc = { id: uid(), name: newAccount.name.trim() };
+    const acc = { id: uid(), name: newAccount.name.trim(), currency: newAccount.currency || "USD" };
     const today = new Date().toISOString().slice(0, 10);
     const firstEntry = { id: uid(), accountId: acc.id, date: today, reserveCapital: newAccount.reserveCapital, tradeCapital: newAccount.tradeCapital, note: "Mốc khởi tạo tài khoản" };
     onAccountsChange([...accounts, acc]);
     onEntriesChange([...entries, firstEntry]);
-    setNewAccount({ name: "", reserveCapital: "", tradeCapital: "" });
+    setNewAccount({ name: "", currency: "USD", reserveCapital: "", tradeCapital: "" });
     setSelectedId(acc.id);
   };
   const removeAccount = (id) => {
@@ -1326,7 +1326,11 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
         <h4 className="detail-col-title" style={{ marginTop: 0 }}>Thêm tài khoản vốn thực mới</h4>
         <div className="grid-3">
           <Field label="Tên tài khoản">
-            <input className="input" value={newAccount.name} onChange={(e) => setNA("name")(e.target.value)} placeholder="VD: Forex H3 (giống tên TK trade)" />
+            <input className="input" value={newAccount.name} onChange={(e) => setNA("name")(e.target.value)} placeholder="VD: Forex H3, VN Stock..." />
+          </Field>
+          <Field label="Đơn vị tiền tệ">
+            <input className="input" list="capital-currency-options" value={newAccount.currency} onChange={(e) => setNA("currency")(e.target.value)} placeholder="USD" />
+            <datalist id="capital-currency-options">{CURRENCIES.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
           <Field label="Vốn dự phòng ban đầu">
             <MoneyInput value={newAccount.reserveCapital} onChange={setNA("reserveCapital")} placeholder="8000" />
@@ -1345,7 +1349,7 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
         <div className="scope-bar">
           <span className="field-label" style={{ marginRight: 4 }}>Tài khoản vốn thực:</span>
           <select className="input" style={{ maxWidth: 240 }} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency || "USD"})</option>)}
           </select>
           {selectedAccount ? <ConfirmButton onConfirm={() => removeAccount(selectedAccount.id)} className="btn btn-ghost" icon={Trash2} label="Xóa tài khoản này" /> : null}
         </div>
@@ -1358,9 +1362,9 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
           <div className="stat-grid">
             <StatCard label="Chỉ số hiện tại" value={currentIndex === null ? "—" : currentIndex.toFixed(2)} tone={currentIndex !== null && currentIndex >= 100 ? "win" : "loss"} />
             <StatCard label="Tổng lợi nhuận (chỉ số)" value={totalReturnPct === null ? "—" : `${totalReturnPct > 0 ? "+" : ""}${totalReturnPct.toFixed(2)}%`} tone={totalReturnPct === null ? "" : totalReturnPct >= 0 ? "win" : "loss"} />
-            <StatCard label="Vốn dự phòng hiện tại" value={lastEntry ? fmt(Number(lastEntry.reserveCapital)) : "—"} />
-            <StatCard label="Vốn trade hiện tại" value={lastEntry ? fmt(Number(lastEntry.tradeCapital)) : "—"} />
-            <StatCard label="Tổng vốn thực hiện tại" value={lastEntry ? fmt(Number(lastEntry.reserveCapital) + Number(lastEntry.tradeCapital)) : "—"} />
+            <StatCard label="Vốn dự phòng hiện tại" value={lastEntry ? fmtMoney(Number(lastEntry.reserveCapital), selectedAccount.currency) : "—"} />
+            <StatCard label="Vốn trade hiện tại" value={lastEntry ? fmtMoney(Number(lastEntry.tradeCapital), selectedAccount.currency) : "—"} />
+            <StatCard label="Tổng vốn thực hiện tại" value={lastEntry ? fmtMoney(Number(lastEntry.reserveCapital) + Number(lastEntry.tradeCapital), selectedAccount.currency) : "—"} />
             <StatCard label="Max Drawdown (chỉ số)" value={`${maxDD.toFixed(2)} điểm`} tone="loss" />
           </div>
 
@@ -1416,9 +1420,9 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
                         return (
                           <tr key={e.id} onClick={() => setForm(e)}>
                             <td className="mono">{e.date}</td>
-                            <td className="mono">{fmt(Number(e.reserveCapital))}</td>
-                            <td className="mono">{fmt(Number(e.tradeCapital))}</td>
-                            <td className="mono" style={{ fontWeight: 700 }}>{fmt((Number(e.reserveCapital) || 0) + (Number(e.tradeCapital) || 0))}</td>
+                            <td className="mono">{fmtMoney(Number(e.reserveCapital), selectedAccount.currency)}</td>
+                            <td className="mono">{fmtMoney(Number(e.tradeCapital), selectedAccount.currency)}</td>
+                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney((Number(e.reserveCapital) || 0) + (Number(e.tradeCapital) || 0), selectedAccount.currency)}</td>
                             <td className="mono">{pt ? pt.index.toFixed(2) : "—"}</td>
                             <td style={{ color: "var(--text-dim)", fontSize: 12.5 }}>{e.note || "—"}</td>
                             <td onClick={(ev) => ev.stopPropagation()}>
@@ -1474,9 +1478,9 @@ function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntr
                   <div key={f.id} className="resource-item">
                     <span>
                       <span className="mono" style={{ color: "var(--text-dim)", marginRight: 8 }}>{f.date}</span>
-                      {f.type === "deposit" && <>Nạp <strong className="text-win">{fmt(Number(f.amount))}</strong></>}
-                      {f.type === "withdraw" && <>Rút <strong className="text-loss">{fmt(Number(f.amount))}</strong></>}
-                      {f.type === "rebalance" && <>Cân tiền <strong>{fmt(Number(f.amount))}</strong> ({f.direction === "reserveToTrade" ? "Dự phòng → Trade" : "Trade → Dự phòng"})</>}
+                      {f.type === "deposit" && <>Nạp <strong className="text-win">{fmtMoney(Number(f.amount), selectedAccount.currency)}</strong></>}
+                      {f.type === "withdraw" && <>Rút <strong className="text-loss">{fmtMoney(Number(f.amount), selectedAccount.currency)}</strong></>}
+                      {f.type === "rebalance" && <>Cân tiền <strong>{fmtMoney(Number(f.amount), selectedAccount.currency)}</strong> ({f.direction === "reserveToTrade" ? "Dự phòng → Trade" : "Trade → Dự phòng"})</>}
                       {f.note ? <span style={{ color: "var(--text-dim)" }}> · {f.note}</span> : null}
                     </span>
                     <ConfirmButton onConfirm={() => removeFlow(f.id)} />
