@@ -1931,9 +1931,15 @@ const RANGE_OPTIONS = [
   { id: "month", label: "Tháng này" },
   { id: "quarter", label: "Quý này" },
   { id: "year", label: "Năm nay" },
+  { id: "custom", label: "Tùy chọn khoảng ngày" },
 ];
-function inRange(dateStr, range) {
+function inRange(dateStr, range, customFrom, customTo) {
   if (!range || !dateStr) return true;
+  if (range === "custom") {
+    if (customFrom && dateStr < customFrom) return false;
+    if (customTo && dateStr > customTo) return false;
+    return true;
+  }
   const d = new Date(dateStr + "T00:00:00");
   const now = new Date();
   if (range === "7d") { const from = new Date(now); from.setDate(from.getDate() - 7); return d >= from; }
@@ -1945,7 +1951,7 @@ function inRange(dateStr, range) {
   return true;
 }
 
-function DashboardFilters({ resources, account, onAccount, range, onRange }) {
+function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo }) {
   return (
     <div className="scope-bar">
       {resources.accounts.length > 0 ? (
@@ -1961,17 +1967,27 @@ function DashboardFilters({ resources, account, onAccount, range, onRange }) {
       <select className="input" style={{ maxWidth: 180 }} value={range} onChange={(e) => onRange(e.target.value)}>
         {RANGE_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
       </select>
+      {range === "custom" ? (
+        <>
+          <span className="field-label" style={{ marginLeft: 4 }}>Từ ngày:</span>
+          <input type="date" className="input" style={{ maxWidth: 160 }} value={rangeFrom} onChange={(e) => onRangeFrom(e.target.value)} />
+          <span className="field-label">Đến ngày:</span>
+          <input type="date" className="input" style={{ maxWidth: 160 }} value={rangeTo} onChange={(e) => onRangeTo(e.target.value)} />
+        </>
+      ) : null}
     </div>
   );
 }
 
 function Dashboard({ trades, resources, account, onAccountChange, onViewTrade }) {
   const [range, setRange] = useState("");
-  const scoped = trades.filter((t) => (!account || t.account === account) && inRange(dateKey(t) || t.entryDate, range));
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const scoped = trades.filter((t) => (!account || t.account === account) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = account ? resources.accounts.find((a) => a.name === account) : null;
   const currencyUnit = singleAccount ? singleAccount.currency : "USD";
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={account} onAccount={onAccountChange} range={range} onRange={setRange} />;
+  const scopeBar = <DashboardFilters resources={resources} account={account} onAccount={onAccountChange} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>
@@ -2757,10 +2773,12 @@ function DimensionPerformance({ trades, resources, dimension, onViewTrade }) {
 function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range));
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} />;
+  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -2902,10 +2920,12 @@ function PillarBreakdown({ title, ratings, trades, fields }) {
 function TradeAnalysisPage({ trades, resources }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range));
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const closed = closedOf(scoped);
   const closedTrades = closed.map((x) => x.t);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} />;
+  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -2991,10 +3011,12 @@ function Analysis({ trades, resources, onViewTrade }) {
   const [tab, setTab] = useState("topbottom");
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range));
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} />;
+  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>
