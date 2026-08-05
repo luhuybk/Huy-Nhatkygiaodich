@@ -168,7 +168,7 @@ function emptyNote(date) {
   return { id: uid(), date: date || "", type: NOTE_TYPES[0], content: "" };
 }
 function emptyLesson(date) {
-  return { id: null, date: date || todayStr(), category: "", symbol: "", tradeId: "", content: "", link: "", image: "" };
+  return { id: null, date: date || todayStr(), categories: [], symbol: "", tradeId: "", content: "", link: "", image: "" };
 }
 function emptySetupDef() {
   return { id: null, name: "", note: "", image: "" };
@@ -641,6 +641,25 @@ function ChipSelect({ value, onChange, options, allowClear = true }) {
           </button>
         );
       })}
+    </div>
+  );
+}
+function MultiChipSelect({ value, onChange, options }) {
+  const selected = value || [];
+  const toggle = (o) => onChange(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o]);
+  if (!options || options.length === 0) return <p className="empty-note">Chưa có tùy chọn nào — thêm ở tab Tài nguyên.</p>;
+  return (
+    <div className="chip-group">
+      {options.map((o) => (
+        <button
+          key={o}
+          type="button"
+          className={`chip-btn ${selected.includes(o) ? "chip-active" : ""}`}
+          onClick={() => toggle(o)}
+        >
+          {o}
+        </button>
+      ))}
     </div>
   );
 }
@@ -3629,7 +3648,7 @@ function applyLessonFilters(items, filters) {
       const q = filters.q.toLowerCase();
       if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q)) return false;
     }
-    if (filters.category && n.category !== filters.category) return false;
+    if (filters.category && !(n.categories || []).includes(filters.category)) return false;
     if (filters.from && (n.date || "") < filters.from) return false;
     if (filters.to && (n.date || "") > filters.to) return false;
     return true;
@@ -3671,18 +3690,18 @@ function LessonsSection({ items, resources, trades, onChange }) {
       </div>
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa bài học" : "Thêm bài học"} onClose={closeModal}>
-          <div className="grid-3">
+          <div className="grid-2">
             <Field label="Ngày">
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
-            </Field>
-            <Field label="Danh mục bài học">
-              <ResourceSelect value={form.category} onChange={setF("category")} options={resources.lessonCategories} placeholder="Chọn danh mục" />
             </Field>
             <Field label="Symbol (tùy chọn)">
               <input className="input" list="symbol-suggestions-lesson" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
               <datalist id="symbol-suggestions-lesson">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
             </Field>
           </div>
+          <Field label="Danh mục bài học" hint="Có thể chọn nhiều danh mục cùng lúc">
+            <MultiChipSelect value={form.categories} onChange={setF("categories")} options={resources.lessonCategories} />
+          </Field>
           <Field label="Liên kết tới lệnh (tùy chọn)">
             <IdSelect value={form.tradeId} onChange={setF("tradeId")} items={tradeItems} placeholder="Không gắn với lệnh cụ thể" />
           </Field>
@@ -3708,7 +3727,7 @@ function LessonsSection({ items, resources, trades, onChange }) {
           return (
             <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
               <div className="note-head">
-                {n.category ? <span className="note-type">{n.category}</span> : null}
+                {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
                 {n.symbol ? <span className="mono" style={{ fontWeight: 600 }}>{n.symbol}</span> : null}
                 <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
                 {(n.image || n.link) ? <span onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></span> : null}
