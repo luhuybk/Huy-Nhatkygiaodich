@@ -4,7 +4,8 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, X, Trash2, Pencil,
   ImagePlus, Link2, ChevronDown, ChevronRight, ChevronLeft, Check, ArrowUpRight,
   ArrowDownRight, Search, Save, CornerDownRight, CalendarDays, LineChart as LineChartIcon,
-  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank, GripVertical
+  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank, GripVertical,
+  Bell, BellRing, SkipForward, Clock, GraduationCap, Plus
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -67,8 +68,14 @@ const RESOURCE_GROUPS = [
     ]
   },
   {
-    key: "missReasons", label: "Lý do miss lệnh", children: [
+    key: "missReasons", label: "Lý do miss / skip lệnh", children: [
       { key: "missReasons", label: "Lý do miss lệnh", hint: "Vì sao bỏ lỡ một setup — dùng khi ghi Setup bị miss" },
+      { key: "skipReasons", label: "Lý do Skip lệnh", hint: "Vì sao chủ động bỏ qua một setup — dùng khi ghi Setup bị skip" },
+    ]
+  },
+  {
+    key: "lessons", label: "Bài học", children: [
+      { key: "lessonCategories", label: "Danh mục bài học", hint: "Phân loại bài học rút ra (Quản trị vốn, Tâm lý, Kỷ luật...) — dùng ở mục Hành trình giao dịch" },
     ]
   },
 ];
@@ -94,6 +101,8 @@ const DEFAULT_RESOURCES = {
   sessions: ["Á (Tokyo)", "Âu (London)", "Mỹ (New York)", "Âu-Mỹ chồng lấn"],
   checklistItems: ["Có Screenshot", "Có Ghi lại nhật ký", "Có Review"],
   missReasons: ["Bất khả kháng", "Lỗi cá nhân", "Không nhận ra setup"],
+  skipReasons: ["Không đủ tự tin", "Risk quá cao", "Ngoài giờ theo dõi", "Chưa đủ tín hiệu xác nhận", "Đang có lệnh khác"],
+  lessonCategories: ["Quản trị vốn", "Tâm lý", "Kỷ luật vào lệnh", "Kỹ năng trong lệnh", "Kỹ năng thoát lệnh", "Kiến thức / Setup", "Khác"],
   fxRates: { USD: 1, VND: 26000, EUR: 0.92, GBP: 0.79, JPY: 150 },
 };
 
@@ -149,6 +158,7 @@ function emptyTrade() {
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0,
     psychology: "", ratingPsychology: 0,
     tradeGrade: "", reviewNote: "", checklist: {},
+    hasLesson: false, lessonNote: "",
   };
 }
 function emptyFlow(date) {
@@ -157,11 +167,52 @@ function emptyFlow(date) {
 function emptyNote(date) {
   return { id: uid(), date: date || "", type: NOTE_TYPES[0], content: "" };
 }
+function emptyLesson(date) {
+  return { id: null, date: date || todayStr(), category: "", symbol: "", tradeId: "", content: "", link: "", image: "" };
+}
 function emptySetupDef() {
   return { id: null, name: "", note: "", image: "" };
 }
 function emptyMissed() {
   return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
+}
+function emptySkipped() {
+  return {
+    id: null, symbol: "", skipDate: "", timeframe: "", link: "", image: "", reason: "", note: "",
+    reviewDate: "", reviewDirection: "", reviewNote: "",
+  };
+}
+const REVIEW_DIRECTIONS = [
+  { id: "dung-huong", label: "Đi đúng hướng dự kiến", tone: "loss" },
+  { id: "nguoc-huong", label: "Đi ngược hướng dự kiến", tone: "win" },
+  { id: "di-ngang", label: "Đi ngang / không rõ ràng", tone: "" },
+];
+const REMINDER_FREQS = [
+  { id: "weekly", label: "Hằng tuần" },
+  { id: "monthly", label: "Hằng tháng" },
+  { id: "once", label: "Một lần (ngày cụ thể)" },
+];
+function emptyReminder() {
+  return { id: null, title: "", frequency: "weekly", weekday: 0, dayOfMonth: 1, date: "", active: true, doneDates: [] };
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function reminderDueToday(r, ts) {
+  if (!r.active) return false;
+  if ((r.doneDates || []).includes(ts)) return false;
+  const d = new Date(ts + "T00:00:00");
+  if (r.frequency === "weekly") return Number(r.weekday) === d.getDay();
+  if (r.frequency === "monthly") return Number(r.dayOfMonth) === d.getDate();
+  if (r.frequency === "once") return r.date === ts;
+  return false;
+}
+function reminderScheduleLabel(r) {
+  if (r.frequency === "weekly") return `Hằng tuần · ${WEEKDAY_LABEL[Number(r.weekday)]}`;
+  if (r.frequency === "monthly") return `Hằng tháng · ngày ${r.dayOfMonth}`;
+  if (r.frequency === "once") return `Một lần · ${r.date || "—"}`;
+  return "—";
 }
 function emptyCapitalAccount() {
   return { id: null, name: "", currency: "USD" };
@@ -407,6 +458,136 @@ function DangerConfirmButton({ label, confirmLabel, onConfirm }) {
   );
 }
 
+function ReminderForm({ initial, onSave, onCancel }) {
+  const [r, setR] = useState(initial || emptyReminder());
+  const [error, setError] = useState("");
+  const set = (k) => (v) => setR((p) => ({ ...p, [k]: v }));
+  const submit = () => {
+    if (!r.title.trim()) { setError("Nhập nội dung nhắc nhở."); return; }
+    if (r.frequency === "once" && !r.date) { setError("Chọn ngày cụ thể."); return; }
+    setError("");
+    onSave({ ...r, id: r.id || uid() });
+  };
+  return (
+    <div className="reminder-form">
+      <Field label="Nội dung nhắc nhở">
+        <input className="input" value={r.title} onChange={(e) => set("title")(e.target.value)} placeholder="VD: Cập nhật đường cong vốn" />
+      </Field>
+      <div className="grid-2">
+        <Field label="Tần suất">
+          <select className="input" value={r.frequency} onChange={(e) => set("frequency")(e.target.value)}>
+            {REMINDER_FREQS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </Field>
+        {r.frequency === "weekly" ? (
+          <Field label="Vào thứ">
+            <select className="input" value={r.weekday} onChange={(e) => set("weekday")(Number(e.target.value))}>
+              {WEEKDAY_ORDER.map((w) => <option key={w} value={w}>{WEEKDAY_LABEL[w]}</option>)}
+            </select>
+          </Field>
+        ) : r.frequency === "monthly" ? (
+          <Field label="Vào ngày (trong tháng)">
+            <select className="input" value={r.dayOfMonth} onChange={(e) => set("dayOfMonth")(Number(e.target.value))}>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Ngày cụ thể">
+            <input type="date" className="input" value={r.date} onChange={(e) => set("date")(e.target.value)} />
+          </Field>
+        )}
+      </div>
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="form-actions" style={{ marginTop: 4 }}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
+        <button type="button" className="btn btn-primary" onClick={submit}>{r.id ? "Cập nhật" : "Thêm nhắc nhở"}</button>
+      </div>
+    </div>
+  );
+}
+
+function ReminderBell({ reminders, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const boxRef = useRef(null);
+  const ts = todayStr();
+  const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const markDone = (r) => {
+    onChange(reminders.map((x) => (x.id === r.id ? { ...x, doneDates: [...(x.doneDates || []), ts] } : x)));
+  };
+  const saveReminder = (r) => {
+    const exists = reminders.some((x) => x.id === r.id);
+    onChange(exists ? reminders.map((x) => (x.id === r.id ? r : x)) : [...reminders, r]);
+    setEditing(null);
+  };
+  const removeReminder = (id) => onChange(reminders.filter((x) => x.id !== id));
+
+  return (
+    <div className="reminder-bell" ref={boxRef}>
+      <button type="button" className={`bell-btn ${dueList.length ? "bell-btn-active" : ""}`} onClick={() => { setOpen((o) => !o); setEditing(null); setShowAll(false); }} title="Nhắc nhở">
+        {dueList.length ? <BellRing size={17} /> : <Bell size={17} />}
+        {dueList.length ? <span className="bell-badge">{dueList.length}</span> : null}
+      </button>
+      {open ? (
+        <div className="reminder-panel">
+          {editing ? (
+            <>
+              <div className="reminder-panel-head"><strong>{editing.id ? "Sửa nhắc nhở" : "Nhắc nhở mới"}</strong></div>
+              <ReminderForm initial={editing.id ? editing : null} onSave={saveReminder} onCancel={() => setEditing(null)} />
+            </>
+          ) : (
+            <>
+              <div className="reminder-panel-head">
+                <strong>Nhắc nhở {showAll ? "— tất cả" : "hôm nay"}</strong>
+                <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => setShowAll((s) => !s)}>
+                  {showAll ? "Chỉ hôm nay" : "Xem tất cả"}
+                </button>
+              </div>
+              <div className="reminder-list">
+                {(showAll ? reminders : dueList).length === 0 ? (
+                  <p className="empty-note" style={{ padding: "10px 0" }}>
+                    {showAll ? "Chưa có nhắc nhở nào." : "Không có việc gì cần làm hôm nay."}
+                  </p>
+                ) : (showAll ? reminders : dueList).map((r) => {
+                  const isDue = reminderDueToday(r, ts);
+                  return (
+                    <div key={r.id} className={`reminder-item ${isDue ? "reminder-item-due" : ""}`}>
+                      <div className="reminder-item-main">
+                        <Clock size={13} color="var(--text-dim)" />
+                        <div>
+                          <div className="reminder-item-title">{r.title}</div>
+                          <div className="reminder-item-sub">{reminderScheduleLabel(r)}{r.active ? "" : " · Tạm tắt"}</div>
+                        </div>
+                      </div>
+                      <div className="reminder-item-actions">
+                        {isDue ? <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => markDone(r)}><Check size={13} /> Đã làm</button> : null}
+                        <button type="button" className="row-btn" onClick={() => setEditing(r)}><Pencil size={13} /></button>
+                        <ConfirmButton onConfirm={() => removeReminder(r.id)} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button type="button" className="btn btn-primary" style={{ width: "100%", marginTop: 10 }} onClick={() => setEditing(emptyReminder())}>
+                <PlusCircle size={14} /> Thêm nhắc nhở
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StarRating({ value, onChange, size = 18 }) {
   const [hover, setHover] = useState(0);
   return (
@@ -441,6 +622,26 @@ function ResourceSelect({ value, onChange, options, placeholder }) {
       <option value="">{placeholder || "— Chọn —"}</option>
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
+  );
+}
+function ChipSelect({ value, onChange, options, allowClear = true }) {
+  if (!options || options.length === 0) return <p className="empty-note">Chưa có tùy chọn nào — thêm ở tab Tài nguyên.</p>;
+  return (
+    <div className="chip-group">
+      {options.map((o) => {
+        const active = value === o;
+        return (
+          <button
+            key={o}
+            type="button"
+            className={`chip-btn ${active ? "chip-active" : ""}`}
+            onClick={() => onChange(active && allowClear ? "" : o)}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 function IdSelect({ value, onChange, items, placeholder }) {
@@ -758,6 +959,19 @@ function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
         <Field label="Nhận xét / Review">
           <textarea className="input textarea" value={t.reviewNote} onChange={(e) => set("reviewNote")(e.target.value)} placeholder="Ghi chú, bài học rút ra..." />
         </Field>
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${t.hasLesson ? "lesson-toggle-active" : ""}`}
+          style={{ marginTop: 10 }}
+          onClick={() => set("hasLesson")(!t.hasLesson)}
+        >
+          <StickyNote size={15} /> {t.hasLesson ? "Có bài học cần ghi nhớ" : "Đánh dấu là có bài học"}
+        </button>
+        {t.hasLesson ? (
+          <Field label="Ghi chú bài học">
+            <textarea className="input textarea" value={t.lessonNote} onChange={(e) => set("lessonNote")(e.target.value)} placeholder="Bài học rút ra từ lệnh này, điều cần chú ý lần sau..." />
+          </Field>
+        ) : null}
       </Section>
 
       <Section num="8" title="Checklist" subtitle="Kiểm tra nhanh trước khi chốt lệnh — quản lý danh sách ở tab Tài nguyên">
@@ -1651,6 +1865,11 @@ function JournalFilters({ trades, resources, filters, setFilters }) {
           <option value="partial">Đang làm dở</option>
           <option value="none">Chưa làm gì</option>
         </select>
+        <select className="input" value={filters.hasLesson || ""} onChange={(e) => set("hasLesson")(e.target.value)}>
+          <option value="">Bài học</option>
+          <option value="yes">Có bài học</option>
+          <option value="no">Không có bài học</option>
+        </select>
       </div>
       <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
     </div>
@@ -1686,6 +1905,8 @@ function applyFilters(trades, filters, resources) {
       if (filters.checklist === "none" && cp.checked !== 0) return false;
       if (filters.checklist === "partial" && (cp.checked === 0 || cp.checked === cp.total)) return false;
     }
+    if (filters.hasLesson === "yes" && !t.hasLesson) return false;
+    if (filters.hasLesson === "no" && t.hasLesson) return false;
     return true;
   });
 }
@@ -1815,20 +2036,19 @@ function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
 
 function JournalTable({ trades, resources, onEdit, onDelete }) {
   const res = resources || { checklistItems: [] };
-  const [viewing, setViewing] = useState(null);
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   return (
     <div className="table-wrap">
       <table className="table">
         <thead>
-          <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th></th></tr>
+          <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Bài học</th><th></th></tr>
         </thead>
         <tbody>
           {trades.map((t) => {
             const { rr, outcome, status } = computeResult(t);
             const cp = checklistProgress(t, res);
             return (
-              <tr key={t.id} onClick={() => setViewing(t)}>
+              <tr key={t.id} onClick={() => onEdit(t)}>
                 <td className="mono">{t.entryDate || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -1856,6 +2076,7 @@ function JournalTable({ trades, resources, onEdit, onDelete }) {
                   )}
                 </td>
                 <td>{t.tradeGrade ? <span className="grade-tag">{GRADE_OPTIONS.find((g) => g.id === t.tradeGrade)?.tone === "win" ? "\ud83d\udc4d" : "\u2620\ufe0f"}</span> : "—"}</td>
+                <td title={t.lessonNote || ""}>{t.hasLesson ? <span className="status-pill open">📌</span> : "—"}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: 2 }}>
                     <button type="button" className="row-btn" onClick={() => onEdit(t)}><Pencil size={13} /></button>
@@ -1867,7 +2088,6 @@ function JournalTable({ trades, resources, onEdit, onDelete }) {
           })}
         </tbody>
       </table>
-      <TradeDetailModal trade={viewing} onClose={() => setViewing(null)} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }
@@ -3139,61 +3359,118 @@ function NotesSection({ notes, onChange }) {
   );
 }
 
+function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel }) {
+  const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
+  const clear = () => setFilters({});
+  return (
+    <div className="filter-panel">
+      <div className="filter-grid">
+        <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
+        <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
+        <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" />
+        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
+        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
+      </div>
+      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+    </div>
+  );
+}
+function applyMissSkipFilters(items, filters, dateField) {
+  return items.filter((n) => {
+    if (filters.q && !(n.symbol || "").toLowerCase().includes(filters.q.toLowerCase())) return false;
+    if (filters.timeframe && n.timeframe !== filters.timeframe) return false;
+    if (filters.reason && n.reason !== filters.reason) return false;
+    if (filters.from && (n[dateField] || "") < filters.from) return false;
+    if (filters.to && (n[dateField] || "") > filters.to) return false;
+    return true;
+  });
+}
+
+function FormModal({ title, onClose, children }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          <button type="button" className="row-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function MissedSetupsSection({ items, resources, onChange }) {
   const [form, setForm] = useState(emptyMissed());
   const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
+  const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptyMissed()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyMissed()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
     setError("");
     const payload = { ...form, id: form.id || uid() };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
     setForm(emptyMissed());
   };
-  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) setForm(emptyMissed()); };
-  const sorted = [...items].sort((a, b) => (b.missDate || "").localeCompare(a.missDate || ""));
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(
+    () => applyMissSkipFilters(items, filters, "missDate").sort((a, b) => (b.missDate || "").localeCompare(a.missDate || "")),
+    [items, filters]
+  );
 
   return (
     <div>
-      <p className="field-hint" style={{ marginBottom: 12 }}>Ghi lại những setup bạn nhận ra nhưng không vào lệnh — để sau này xem lại có nên tối ưu quy trình không.</p>
-      <div className="account-form">
-        <div className="grid-3">
-          <Field label="Symbol">
-            <input className="input" list="symbol-suggestions-miss" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
-            <datalist id="symbol-suggestions-miss">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
-          </Field>
-          <Field label="Ngày miss">
-            <input type="date" className="input" value={form.missDate} onChange={(e) => setF("missDate")(e.target.value)} />
-          </Field>
-          <Field label="Khung thời gian">
-            <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
-          </Field>
-        </div>
-        <Field label="Link / hình ảnh TradingView">
-          <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="miss" />
-        </Field>
-        <Field label="Lý do miss">
-          <ResourceSelect value={form.reason} onChange={setF("reason")} options={resources.missReasons} placeholder="Chọn lý do" />
-        </Field>
-        <Field label="Bonus — ghi chú thêm">
-          <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
-        </Field>
-        {error ? <p className="error-text">{error}</p> : null}
-        <div className="form-actions" style={{ marginTop: 4 }}>
-          {form.id ? <button type="button" className="btn btn-ghost" onClick={() => setForm(emptyMissed())}>Hủy sửa</button> : null}
-          <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu setup bị miss"}</button>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Ghi lại những setup bạn nhận ra nhưng không vào lệnh — để sau này xem lại có nên tối ưu quy trình không.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị miss</button>
       </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal}>
+          <div className="grid-3">
+            <Field label="Symbol">
+              <input className="input" list="symbol-suggestions-miss" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <datalist id="symbol-suggestions-miss">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+            </Field>
+            <Field label="Ngày miss">
+              <input type="date" className="input" value={form.missDate} onChange={(e) => setF("missDate")(e.target.value)} />
+            </Field>
+            <Field label="Khung thời gian">
+              <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
+            </Field>
+          </div>
+          <Field label="Link / hình ảnh TradingView">
+            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="miss" />
+          </Field>
+          <Field label="Lý do miss">
+            <ChipSelect value={form.reason} onChange={setF("reason")} options={resources.missReasons} />
+          </Field>
+          <Field label="Bonus — ghi chú thêm">
+            <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu setup bị miss"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.missReasons} dateKeyLabel="Ngày miss" />
       <div className="table-wrap" style={{ marginTop: 16 }}>
-        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào được ghi lại.</p> : (
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
               <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Lý do</th><th>Bonus</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((n) => (
-                <tr key={n.id} onClick={() => setForm(n)}>
+                <tr key={n.id} onClick={() => openEdit(n)}>
                   <td className="mono">{n.missDate || "—"}</td>
                   <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                   <td onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></td>
@@ -3202,7 +3479,7 @@ function MissedSetupsSection({ items, resources, onChange }) {
                   <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: "flex", gap: 2 }}>
-                      <button type="button" className="row-btn" onClick={() => setForm(n)}><Pencil size={13} /></button>
+                      <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
                       <ConfirmButton onConfirm={() => remove(n.id)} />
                     </div>
                   </td>
@@ -3211,6 +3488,237 @@ function MissedSetupsSection({ items, resources, onChange }) {
             </tbody>
           </table>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SkippedSetupsSection({ items, resources, onChange }) {
+  const [form, setForm] = useState(emptySkipped());
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptySkipped()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptySkipped()); setError(""); };
+  const save = () => {
+    if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
+    setError("");
+    const payload = { ...form, id: form.id || uid() };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptySkipped());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(
+    () => applyMissSkipFilters(items, filters, "skipDate").sort((a, b) => (b.skipDate || "").localeCompare(a.skipDate || "")),
+    [items, filters]
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Ghi lại những lệnh bạn chủ động bỏ qua (skip) dù đã cân nhắc — kèm review sau vài ngày để xem hướng lệnh diễn biến ra sao, giúp đánh giá quyết định skip có đúng không.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị skip</button>
+      </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal}>
+          <div className="grid-3">
+            <Field label="Symbol">
+              <input className="input" list="symbol-suggestions-skip" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <datalist id="symbol-suggestions-skip">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+            </Field>
+            <Field label="Ngày skip">
+              <input type="date" className="input" value={form.skipDate} onChange={(e) => setF("skipDate")(e.target.value)} />
+            </Field>
+            <Field label="Khung thời gian">
+              <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
+            </Field>
+          </div>
+          <Field label="Link / hình ảnh TradingView">
+            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="skip" />
+          </Field>
+          <Field label="Lý do skip">
+            <ChipSelect value={form.reason} onChange={setF("reason")} options={resources.skipReasons} />
+          </Field>
+          <Field label="Ghi chú thêm">
+            <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
+          </Field>
+          <div className="section" style={{ marginTop: 4 }}>
+            <div className="section-body" style={{ paddingTop: 14, borderTop: "1px dashed var(--border)" }}>
+              <p className="field-hint" style={{ marginBottom: 10 }}>Review sau vài ngày — quay lại đây khi đã có đủ thời gian để xem hướng đi thực tế của lệnh đã skip.</p>
+              <div className="grid-2">
+                <Field label="Ngày review">
+                  <input type="date" className="input" value={form.reviewDate} onChange={(e) => setF("reviewDate")(e.target.value)} />
+                </Field>
+                <Field label="Hướng lệnh diễn biến">
+                  <select className="input" value={form.reviewDirection} onChange={(e) => setF("reviewDirection")(e.target.value)}>
+                    <option value="">— Chọn —</option>
+                    {REVIEW_DIRECTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Nhận xét review">
+                <textarea className="input textarea" value={form.reviewNote} onChange={(e) => setF("reviewNote")(e.target.value)} placeholder="Nếu vào lệnh thì sẽ thế nào, bài học rút ra..." />
+              </Field>
+            </div>
+          </div>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu setup bị skip"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.skipReasons} dateKeyLabel="Ngày skip" />
+      <div className="table-wrap" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p> : (
+          <table className="table">
+            <thead>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Lý do</th><th>Review</th><th></th></tr>
+            </thead>
+            <tbody>
+              {sorted.map((n) => {
+                const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
+                return (
+                  <tr key={n.id} onClick={() => openEdit(n)}>
+                    <td className="mono">{n.skipDate || "—"}</td>
+                    <td style={{ fontWeight: 600 }}>{n.symbol}</td>
+                    <td onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></td>
+                    <td className="mono">{n.timeframe || "—"}</td>
+                    <td>{n.reason || "—"}</td>
+                    <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 2 }}>
+                        <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
+                        <ConfirmButton onConfirm={() => remove(n.id)} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LessonsFilterPanel({ filters, setFilters, resources }) {
+  const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
+  const clear = () => setFilters({});
+  return (
+    <div className="filter-panel">
+      <div className="filter-grid">
+        <input className="input" placeholder="Tìm theo symbol / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
+        <ResourceSelect value={filters.category || ""} onChange={set("category")} options={resources.lessonCategories} placeholder="Danh mục" />
+        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+      </div>
+      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+    </div>
+  );
+}
+function applyLessonFilters(items, filters) {
+  return items.filter((n) => {
+    if (filters.q) {
+      const q = filters.q.toLowerCase();
+      if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q)) return false;
+    }
+    if (filters.category && n.category !== filters.category) return false;
+    if (filters.from && (n.date || "") < filters.from) return false;
+    if (filters.to && (n.date || "") > filters.to) return false;
+    return true;
+  });
+}
+function LessonsSection({ items, resources, trades, onChange }) {
+  const [form, setForm] = useState(emptyLesson());
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const tradeItems = useMemo(
+    () => trades.map((t) => ({ id: t.id, name: `${t.symbol || "—"} · ${t.entryDate || "—"}` })),
+    [trades]
+  );
+  const openNew = () => { setForm(emptyLesson()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyLesson()); setError(""); };
+  const save = () => {
+    if (!form.content.trim()) { setError("Nhập nội dung bài học trước đã."); return; }
+    setError("");
+    const payload = { ...form, id: form.id || uid() };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptyLesson());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(
+    () => applyLessonFilters(items, filters).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    [items, filters]
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Ghi lại từng bài học rút ra từ giao dịch, phân loại theo danh mục (quản lý ở Tài nguyên → Danh mục bài học), kèm ảnh/link TradingView minh họa — để xem lại những điều cần chú ý.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm bài học</button>
+      </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa bài học" : "Thêm bài học"} onClose={closeModal}>
+          <div className="grid-3">
+            <Field label="Ngày">
+              <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
+            </Field>
+            <Field label="Danh mục bài học">
+              <ResourceSelect value={form.category} onChange={setF("category")} options={resources.lessonCategories} placeholder="Chọn danh mục" />
+            </Field>
+            <Field label="Symbol (tùy chọn)">
+              <input className="input" list="symbol-suggestions-lesson" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <datalist id="symbol-suggestions-lesson">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+            </Field>
+          </div>
+          <Field label="Liên kết tới lệnh (tùy chọn)">
+            <IdSelect value={form.tradeId} onChange={setF("tradeId")} items={tradeItems} placeholder="Không gắn với lệnh cụ thể" />
+          </Field>
+          <Field label="Nội dung bài học" required>
+            <textarea className="input textarea" style={{ minHeight: 100 }} value={form.content} onChange={(e) => setF("content")(e.target.value)} placeholder="Điều rút ra được, cần chú ý lần sau..." />
+          </Field>
+          <Field label="Link / hình ảnh TradingView">
+            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="lesson" />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật bài học" : "Lưu bài học"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <LessonsFilterPanel filters={filters} setFilters={setFilters} resources={resources} />
+      <div className="resource-list" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có bài học nào khớp bộ lọc.</p> : null}
+        {sorted.map((n) => {
+          const linkedTrade = trades.find((t) => t.id === n.tradeId);
+          return (
+            <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
+              <div className="note-head">
+                {n.category ? <span className="note-type">{n.category}</span> : null}
+                {n.symbol ? <span className="mono" style={{ fontWeight: 600 }}>{n.symbol}</span> : null}
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
+                {(n.image || n.link) ? <span onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></span> : null}
+                <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+              </div>
+              <p className="note-content">{n.content}</p>
+              {linkedTrade ? <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span> : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -3281,11 +3789,11 @@ function SetupLibrarySection({ items, onChange }) {
   );
 }
 
-function SettingsSection({ trades, resources, ledger, notes, setupLibrary, missedSetups, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
+function SettingsSection({ trades, resources, ledger, notes, lessons, setupLibrary, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
-    const payload = { trades, resources, ledger, notes, setupLibrary, uiSettings, missedSetups, capitalAccounts, capitalEntries, capitalFlows, exportedAt: new Date().toISOString() };
+    const payload = { trades, resources, ledger, notes, lessons, setupLibrary, uiSettings, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3357,7 +3865,11 @@ function SettingsSection({ trades, resources, ledger, notes, setupLibrary, misse
         <StatCard label="Giao dịch" value={trades.length} />
         <StatCard label="Tài khoản" value={resources.accounts.length} />
         <StatCard label="Ghi chú" value={notes.length} />
+        <StatCard label="Bài học" value={lessons.length} />
         <StatCard label="Setup mẫu" value={setupLibrary.length} />
+        <StatCard label="Setup bị miss" value={missedSetups.length} />
+        <StatCard label="Setup bị skip" value={skippedSetups.length} />
+        <StatCard label="Nhắc nhở" value={reminders.length} />
       </div>
     </div>
   );
@@ -3369,8 +3881,11 @@ function AppShell({ onSignOut, userEmail }) {
   const [resources, setResources] = useState(DEFAULT_RESOURCES);
   const [ledger, setLedger] = useState([]);
   const [notes, setNotes] = useState([]);
+  const [lessons, setLessons] = useState([]);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
+  const [skippedSetups, setSkippedSetups] = useState([]);
+  const [reminders, setReminders] = useState([]);
   const [capitalAccounts, setCapitalAccounts] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [capitalFlows, setCapitalFlows] = useState([]);
@@ -3383,14 +3898,17 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, sl, us, ms, ca, ce, cf] = await Promise.all([
+      const [ts, rs, lg, nt, ls, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
         safeGet("notes", []),
+        safeGet("lessons", []),
         safeGet("setupLibrary", []),
         safeGet("uiSettings", DEFAULT_UI_SETTINGS),
         safeGet("missedSetups", []),
+        safeGet("skippedSetups", []),
+        safeGet("reminders", []),
         safeGet("capitalAccounts", []),
         safeGet("capitalEntries", []),
         safeGet("capitalFlows", []),
@@ -3399,9 +3917,12 @@ function AppShell({ onSignOut, userEmail }) {
       setResources(normalizeResources(rs));
       setLedger(lg);
       setNotes(nt);
+      setLessons(ls);
       setSetupLibrary(sl);
       setUiSettings({ ...DEFAULT_UI_SETTINGS, ...us });
       setMissedSetups(ms);
+      setSkippedSetups(ss);
+      setReminders(rm);
       setCapitalAccounts(ca);
       setCapitalEntries(ce);
       setCapitalFlows(cf);
@@ -3415,9 +3936,12 @@ function AppShell({ onSignOut, userEmail }) {
   const persistResources = useCallback(async (next) => { setResources(next); await safeSet("resources", next); flashSaved(); }, []);
   const persistLedger = useCallback(async (next) => { setLedger(next); await safeSet("ledger", next); flashSaved(); }, []);
   const persistNotes = useCallback(async (next) => { setNotes(next); await safeSet("notes", next); flashSaved(); }, []);
+  const persistLessons = useCallback(async (next) => { setLessons(next); await safeSet("lessons", next); flashSaved(); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); await safeSet("setupLibrary", next); flashSaved(); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); await safeSet("missedSetups", next); flashSaved(); }, []);
+  const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); await safeSet("skippedSetups", next); flashSaved(); }, []);
+  const persistReminders = useCallback(async (next) => { setReminders(next); await safeSet("reminders", next); flashSaved(); }, []);
   const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); await safeSet("capitalAccounts", next); flashSaved(); }, []);
   const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); await safeSet("capitalEntries", next); flashSaved(); }, []);
   const persistCapitalFlows = useCallback(async (next) => { setCapitalFlows(next); await safeSet("capitalFlows", next); flashSaved(); }, []);
@@ -3444,9 +3968,12 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.resources) persistResources(normalizeResources(data.resources));
     if (data.ledger) persistLedger(data.ledger);
     if (data.notes) persistNotes(data.notes);
+    if (data.lessons) persistLessons(data.lessons);
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
     if (data.missedSetups) persistMissedSetups(data.missedSetups);
+    if (data.skippedSetups) persistSkippedSetups(data.skippedSetups);
+    if (data.reminders) persistReminders(data.reminders);
     if (data.capitalAccounts) persistCapitalAccounts(data.capitalAccounts);
     if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
@@ -3458,6 +3985,8 @@ function AppShell({ onSignOut, userEmail }) {
     persistNotes([]);
     persistSetupLibrary([]);
     persistMissedSetups([]);
+    persistSkippedSetups([]);
+    persistReminders([]);
     persistCapitalAccounts([]);
     persistCapitalEntries([]);
     persistCapitalFlows([]);
@@ -3472,6 +4001,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
         { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
         { key: "missed", label: "Setup bị miss", icon: EyeOff },
+        { key: "skipped", label: "Setup bị skip", icon: SkipForward },
       ]
     },
     {
@@ -3490,6 +4020,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "accounts", label: "Tài khoản", icon: Wallet },
         { key: "setuplib", label: "Setup mẫu", icon: Layers },
         { key: "notes", label: "Ghi chú", icon: StickyNote },
+        { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
         { key: "resources", label: "Tài nguyên", icon: Database },
       ]
     },
@@ -3537,6 +4068,27 @@ function AppShell({ onSignOut, userEmail }) {
         .candle-tall { height:18px; }
         .candle-short { height:8px; }
         .save-indicator { font-size:12px; color:var(--accent); font-family:'IBM Plex Mono',monospace; opacity:${saveState ? 1 : 0}; transition:opacity .3s; }
+        .reminder-bell { position:relative; flex-shrink:0; }
+        .bell-btn { position:relative; display:flex; align-items:center; justify-content:center; width:34px; height:34px;
+          border-radius:8px; background:none; border:1px solid var(--border); color:var(--text-dim); cursor:pointer; }
+        .bell-btn:hover { background:var(--surface-2); color:var(--text); }
+        .bell-btn-active { color:var(--accent); border-color:var(--accent); animation:bell-pulse 2.2s ease-in-out infinite; }
+        @keyframes bell-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(212,162,78,0.35); } 50% { box-shadow:0 0 0 5px rgba(212,162,78,0); } }
+        .bell-badge { position:absolute; top:-5px; right:-5px; min-width:16px; height:16px; padding:0 4px; border-radius:8px;
+          background:var(--loss); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; }
+        .reminder-panel { position:absolute; top:calc(100% + 8px); right:0; width:340px; max-height:440px; overflow-y:auto;
+          background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; z-index:50;
+          box-shadow:0 12px 30px rgba(0,0,0,0.35); }
+        .reminder-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+        .reminder-list { display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto; }
+        .reminder-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
+          border-radius:8px; border:1px solid var(--border); background:var(--surface-2); }
+        .reminder-item-due { border-color:var(--accent); background:rgba(212,162,78,0.08); }
+        .reminder-item-main { display:flex; align-items:flex-start; gap:8px; min-width:0; }
+        .reminder-item-title { font-size:12.5px; font-weight:600; }
+        .reminder-item-sub { font-size:11px; color:var(--text-dim); margin-top:2px; }
+        .reminder-item-actions { display:flex; align-items:center; gap:2px; flex-shrink:0; }
+        .reminder-form { display:flex; flex-direction:column; gap:10px; }
         .nav { display:flex; flex-direction:column; gap:14px; flex:1; overflow-y:auto; }
         .nav-group { display:flex; flex-direction:column; gap:2px; }
         .nav-group-label { font-size:9.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.8px;
@@ -3616,6 +4168,14 @@ function AppShell({ onSignOut, userEmail }) {
         .grade-stat strong { font-family:'IBM Plex Mono',monospace; font-size:16px; }
         .grade-stat.win strong { color:var(--win); } .grade-stat.loss strong { color:var(--loss); }
         .grade-tag { font-size:14px; }
+        .chip-group { display:flex; flex-wrap:wrap; gap:6px; }
+        .chip-btn { padding:7px 13px; border-radius:20px; border:1px solid var(--border); background:var(--surface-2);
+          color:var(--text-dim); font-size:12.5px; font-weight:500; cursor:pointer; white-space:nowrap; }
+        .chip-btn.chip-active { border-color:var(--accent); color:var(--accent); background:rgba(99,102,241,0.12); }
+        .lesson-toggle-btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:11px 14px;
+          border-radius:9px; border:1px dashed var(--border); background:var(--surface-2); color:var(--text-dim);
+          font-size:13px; font-weight:600; cursor:pointer; }
+        .lesson-toggle-btn.lesson-toggle-active { border:1px solid var(--accent); border-style:solid; color:var(--accent); background:rgba(99,102,241,0.12); }
         .checklist-progress { font-size:12px; color:var(--text-dim); padding:2px 7px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); }
         .checklist-progress-full { color:var(--win); border-color:rgba(76,175,125,0.4); background:rgba(76,175,125,0.1); }
         .checklist-progress-empty { color:var(--loss); border-color:rgba(224,97,90,0.35); background:rgba(224,97,90,0.08); }
@@ -3888,6 +4448,7 @@ function AppShell({ onSignOut, userEmail }) {
               ))}
             </div>
             <span className="save-indicator mono">{saveState}</span>
+            <ReminderBell reminders={reminders} onChange={persistReminders} />
             <span className="field-hint" style={{ whiteSpace: "nowrap" }}>{userEmail}</span>
             <button type="button" className="btn btn-ghost" onClick={onSignOut}>Đăng xuất</button>
             <button type="button" className="btn btn-primary" onClick={startNew}><PlusCircle size={15} /> Thêm giao dịch</button>
@@ -3899,6 +4460,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "missed" ? <MissedSetupsSection items={missedSetups} resources={resources} onChange={persistMissedSetups} /> :
+              view === "skipped" ? <SkippedSetupsSection items={skippedSetups} resources={resources} onChange={persistSkippedSetups} /> :
               view === "form" ? (
                 <TradeForm initial={editing} resources={resources} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
               ) :
@@ -3916,10 +4478,12 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "setuplib" ? <SetupLibrarySection items={setupLibrary} onChange={persistSetupLibrary} /> :
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
+              view === "lessons" ? <LessonsSection items={lessons} resources={resources} trades={trades} onChange={persistLessons} /> :
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={persistResources} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} setupLibrary={setupLibrary} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} setupLibrary={setupLibrary} missedSetups={missedSetups}
+                skippedSetups={skippedSetups} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} onImportAll={handleImportAll} onReset={handleResetAll} />
             }
