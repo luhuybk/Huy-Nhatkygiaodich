@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, X, Trash2, Pencil,
   ImagePlus, Link2, ChevronDown, ChevronRight, ChevronLeft, Check, ArrowUpRight,
   ArrowDownRight, Search, Save, CornerDownRight, CalendarDays, LineChart as LineChartIcon,
-  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank
+  StickyNote, Settings, Download, Upload, Layers, Filter, X as XIcon, Wallet, Hash, Grid3x3, Target, Image as ImageIcon, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank, GripVertical
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -784,13 +784,39 @@ function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   );
 }
 
-function ResourceListEditor({ list, hint, onAdd, onRemove, placeholder }) {
+function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, placeholder }) {
   const [draft, setDraft] = useState("");
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [editValue, setEditValue] = useState("");
+  const [dragOverIndex, setDragOverIndex] = useState(-1);
+  const dragIndexRef = useRef(null);
+
   const add = () => {
     const v = draft.trim();
     if (!v || list.includes(v)) { setDraft(""); return; }
     onAdd(v); setDraft("");
   };
+  const startEdit = (i) => { setEditingIndex(i); setEditValue(list[i]); };
+  const saveEdit = () => {
+    const v = editValue.trim();
+    if (v && v !== list[editingIndex] && !list.includes(v)) {
+      const next = [...list];
+      next[editingIndex] = v;
+      onSetList(next);
+    }
+    setEditingIndex(-1);
+  };
+  const handleDrop = (targetIndex) => {
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
+    setDragOverIndex(-1);
+    if (from === null || from === targetIndex) return;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(targetIndex, 0, moved);
+    onSetList(next);
+  };
+
   return (
     <div>
       {hint ? <p className="field-hint" style={{ marginBottom: 12 }}>{hint}</p> : null}
@@ -801,10 +827,28 @@ function ResourceListEditor({ list, hint, onAdd, onRemove, placeholder }) {
       </div>
       <div className="resource-list">
         {list.length === 0 ? <p className="empty-note">Chưa có mục nào.</p> : null}
-        {list.map((item) => (
-          <div key={item} className="resource-item">
-            <span>{item}</span>
-            <ConfirmButton onConfirm={() => onRemove(item)} />
+        {list.map((item, i) => (
+          <div key={i} className={`resource-item resource-item-draggable ${dragOverIndex === i ? "resource-item-dragover" : ""}`}
+            draggable
+            onDragStart={() => { dragIndexRef.current = i; }}
+            onDragOver={(e) => { e.preventDefault(); if (dragOverIndex !== i) setDragOverIndex(i); }}
+            onDragLeave={() => setDragOverIndex((cur) => (cur === i ? -1 : cur))}
+            onDrop={(e) => { e.preventDefault(); handleDrop(i); }}
+            onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(-1); }}
+          >
+            <span className="drag-handle" title="Kéo để đổi thứ tự"><GripVertical size={14} /></span>
+            {editingIndex === i ? (
+              <input className="input input-inline" style={{ flex: 1 }} value={editValue} autoFocus
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                onBlur={saveEdit} />
+            ) : (
+              <span style={{ flex: 1, cursor: "text" }} onClick={() => startEdit(i)}>{item}</span>
+            )}
+            <span style={{ display: "flex", gap: 4 }}>
+              <button type="button" className="row-btn" onClick={() => startEdit(i)} aria-label="Sửa"><Pencil size={13} /></button>
+              <ConfirmButton onConfirm={() => onRemove(item)} />
+            </span>
           </div>
         ))}
       </div>
@@ -1555,7 +1599,8 @@ function ResourceManager({ resources, onChange }) {
           ) : null}
           <ResourceListEditor list={resources[childDef.key] || []} hint={childDef.hint} placeholder={`Thêm mục cho "${childDef.label}"...`}
             onAdd={(v) => onChange({ ...resources, [childDef.key]: [...(resources[childDef.key] || []), v] })}
-            onRemove={(item) => onChange({ ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item) })} />
+            onRemove={(item) => onChange({ ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item) })}
+            onSetList={(next) => onChange({ ...resources, [childDef.key]: next })} />
         </div>
       </div>
     </div>
@@ -3622,6 +3667,10 @@ function AppShell({ onSignOut, userEmail }) {
         .resource-list { display:flex; flex-direction:column; gap:6px; }
         .resource-item { display:flex; align-items:center; justify-content:space-between; padding:8px 12px;
           background:var(--surface); border:1px solid var(--border); border-radius:7px; font-size:13px; margin-bottom:6px; }
+        .resource-item-draggable { gap:8px; transition:border-color .12s ease, transform .12s ease; }
+        .drag-handle { display:flex; align-items:center; color:var(--text-dim); cursor:grab; flex-shrink:0; }
+        .drag-handle:active { cursor:grabbing; }
+        .resource-item-dragover { border-color:var(--accent); box-shadow:0 0 0 1px rgba(212,162,78,0.3) inset; transform:translateY(1px); }
         .account-item { cursor:pointer; }
         .account-item-main { display:flex; flex-direction:column; gap:2px; }
         .account-item-sub { font-size:11.5px; color:var(--text-dim); }
@@ -3684,11 +3733,11 @@ function AppShell({ onSignOut, userEmail }) {
         .filter-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
         .cal-nav { display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:12px; }
         .cal-title { font-size:14px; font-weight:600; font-family:'Space Grotesk',sans-serif; min-width:120px; text-align:center; }
-        .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+        .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; max-width:760px; margin:0 auto; }
         .cal-head { margin-bottom:4px; }
         .cal-dow { text-align:center; font-size:11px; color:var(--text-dim); padding:4px 0; }
-        .cal-cell { aspect-ratio:1; border:1px solid var(--border); border-radius:8px; background:var(--surface); display:flex; flex-direction:column;
-          align-items:flex-start; justify-content:flex-start; padding:6px; cursor:pointer; gap:2px; overflow:hidden; }
+        .cal-cell { height:68px; max-height:68px; align-self:start; border:1px solid var(--border); border-radius:8px; background:var(--surface); display:flex; flex-direction:column;
+          align-items:flex-start; justify-content:flex-start; padding:5px 6px; cursor:pointer; gap:1px; overflow:hidden; }
         .cal-cell:hover { border-color:var(--accent); }
         .cal-sel { border-color:var(--accent); border-width:2px; }
         .cal-empty { border:none; background:none; cursor:default; }
