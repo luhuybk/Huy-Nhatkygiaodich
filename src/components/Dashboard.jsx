@@ -1,10 +1,24 @@
 import { useState, useEffect, useMemo } from "react";
 import { LayoutDashboard, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
-import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
+import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
 import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, dateKey, fmt, fmtDays, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+
+function renderPieSliceLabel(total) {
+  return ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) / 2;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (
+      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
+        {`${((value / total) * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+}
 
 export function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo }) {
   return (
@@ -65,6 +79,8 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
   const totalR = closed.reduce((s, x) => s + (x.r.rr || 0), 0);
   const totalPnl = closed.reduce((s, x) => s + x.r.profit, 0);
   const pieData = [{ name: "Thắng", value: wins, color: WIN }, { name: "Thua", value: losses, color: LOSS }, { name: "Hòa", value: be, color: MUTED }].filter((d) => d.value > 0);
+  const pieTotal = pieData.reduce((s, d) => s + d.value, 0) || 1;
+  const pieLegend = pieData.map((d) => ({ color: d.color, label: `${d.name} ${d.value} (${((d.value / pieTotal) * 100).toFixed(0)}%)` }));
 
   const scored = closed.filter((x) => avgPillarScore(x.t) !== null);
   const avgScoreAll = scored.length ? scored.reduce((s, x) => s + avgPillarScore(x.t), 0) / scored.length : null;
@@ -174,10 +190,11 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Thắng / Thua" subtitle={`${wins} thắng · ${losses} thua · ${be} hòa`}>
+        <ChartCard title="Thắng / Thua" subtitle={`${wins} thắng · ${losses} thua · ${be} hòa`} legend={pieLegend}>
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
+              <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}
+                label={renderPieSliceLabel(pieTotal)} labelLine={false}>
                 {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
@@ -187,50 +204,50 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
       </div>
 
       <div className="chart-row">
-        <ChartCard title="Lãi/Lỗ theo tháng">
+        <ChartCard title="Lãi/Lỗ theo tháng" legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }]}>
           <ResponsiveContainer>
             <BarChart data={pnlByMonth}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Bar dataKey="pnl">{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+              <Bar dataKey="pnl" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Tần suất giao dịch theo tháng">
+        <ChartCard title="Tần suất giao dịch theo tháng" legend={[{ color: ACCENT, label: "Số lệnh" }]}>
           <ResponsiveContainer>
             <BarChart data={countByMonth}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Bar dataKey="count" fill={ACCENT} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+              <Bar dataKey="count" fill={ACCENT} maxBarSize={64} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>
 
       <div className="chart-row">
-        <ChartCard title="Theo phiên giao dịch">
+        <ChartCard title="Theo phiên giao dịch" legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }]}>
           <ResponsiveContainer>
             <BarChart data={sessionData} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis type="number" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: MUTED }} width={110} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Bar dataKey="pnl">{sessionData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+              <Bar dataKey="pnl" maxBarSize={28}>{sessionData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Top cặp tiền theo lãi/lỗ">
+        <ChartCard title="Top cặp tiền theo lãi/lỗ" legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }]}>
           <ResponsiveContainer>
             <BarChart data={topSymbols} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis type="number" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: MUTED }} width={80} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Bar dataKey="pnl">{topSymbols.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+              <Bar dataKey="pnl" maxBarSize={28}>{topSymbols.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -358,14 +375,14 @@ export function RDistribution({ closed, resources, onViewTrade }) {
         <StatCard label="Độ lệch chuẩn" value={`${stdev.toFixed(2)}R`} />
         <StatCard label="Số lệnh outlier (>2σ)" value={outliers.length} />
       </div>
-      <ChartCard title="Phân bố theo R-multiple" height={260}>
+      <ChartCard title="Phân bố theo R-multiple" height={260} legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }, { color: MUTED, label: "Hòa" }]}>
         <ResponsiveContainer>
           <BarChart data={buckets}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: MUTED }} interval={0} angle={-30} textAnchor="end" height={60} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={36} allowDecimals={false} />
-            <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-            <Bar dataKey="count">{buckets.map((b, i) => <Cell key={i} fill={b.tone === "win" ? WIN : b.tone === "loss" ? LOSS : MUTED} />)}</Bar>
+            <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+            <Bar dataKey="count" maxBarSize={48}>{buckets.map((b, i) => <Cell key={i} fill={b.tone === "win" ? WIN : b.tone === "loss" ? LOSS : MUTED} />)}</Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -590,6 +607,8 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
     const losses = items.filter((x) => x.r.outcome === "loss").length;
     const be = items.filter((x) => x.r.outcome === "be").length;
     const pieData = [{ name: "Thắng", value: wins, color: WIN }, { name: "Thua", value: losses, color: LOSS }, { name: "Hòa", value: be, color: MUTED }].filter((d) => d.value > 0);
+    const pieTotal = pieData.reduce((s, d) => s + d.value, 0) || 1;
+    const pieLegend = pieData.map((d) => ({ color: d.color, label: `${d.name} ${d.value} (${((d.value / pieTotal) * 100).toFixed(0)}%)` }));
     const byMonth = groupStats(items, (t) => monthKey(dateKey(t)));
     const monthKeys = Object.keys(byMonth).sort();
     const pnlByMonth = monthKeys.map((k) => ({ month: k, pnl: Number(byMonth[k].pnl.toFixed(2)) }));
@@ -617,10 +636,11 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
               </LineChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Thắng / Thua">
+          <ChartCard title="Thắng / Thua" legend={pieLegend}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}
+                  label={renderPieSliceLabel(pieTotal)} labelLine={false}>
                   {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
@@ -628,14 +648,14 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
             </ResponsiveContainer>
           </ChartCard>
         </div>
-        <ChartCard title="Hiệu suất theo tháng" height={200}>
+        <ChartCard title="Hiệu suất theo tháng" height={200} legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }]}>
           <ResponsiveContainer>
             <BarChart data={pnlByMonth}>
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Bar dataKey="pnl">{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
+              <Bar dataKey="pnl" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

@@ -252,7 +252,7 @@ export function StatCard({ label, value, tone }) {
   );
 }
 
-export function ChartCard({ title, subtitle, children, height = 220 }) {
+export function ChartCard({ title, subtitle, children, height = 220, legend }) {
   return (
     <div className="chart-card">
       <div className="chart-head">
@@ -260,6 +260,20 @@ export function ChartCard({ title, subtitle, children, height = 220 }) {
         {subtitle ? <span className="chart-sub">{subtitle}</span> : null}
       </div>
       <div style={{ width: "100%", height }}>{children}</div>
+      {legend ? <ChartLegend items={legend} /> : null}
+    </div>
+  );
+}
+
+export function ChartLegend({ items }) {
+  return (
+    <div className="chart-legend">
+      {items.map((it, i) => (
+        <span className="chart-legend-item" key={i}>
+          <span className="chart-legend-dot" style={{ background: it.color }} />
+          {it.label}
+        </span>
+      ))}
     </div>
   );
 }

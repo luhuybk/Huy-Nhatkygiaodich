@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
-import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
+import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
 import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid } from "../lib/helpers.js";
 
@@ -270,7 +270,7 @@ export function AccountDetail({ account, ledger, trades, onBack, onEdit, onDelet
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis dataKey="period" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={50} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
               <Bar dataKey="growth">{growthSeries.map((d, i) => <Cell key={i} fill={d.growth >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>

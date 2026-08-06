@@ -64,7 +64,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
 
       <Section num="2" title="Quản trị vốn" subtitle="Risk % · Risk $ · RR thực tế">
         {selectedAccount ? (
-          <div className={`open-risk-hint ${existingOpenRisk.pct >= 5 ? "open-risk-hint-high" : ""}`}>
+          <div className={`open-risk-hint ${existingOpenRisk.count > 0 ? (existingOpenRisk.pct >= 5 ? "open-risk-hint-high" : "open-risk-hint-warn") : ""}`}>
             <AlertTriangle size={13} />
             {existingOpenRisk.count === 0
               ? `Tài khoản "${selectedAccount.name}" hiện chưa có lệnh nào đang mở.`

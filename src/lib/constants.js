@@ -165,6 +165,8 @@ export const tooltipItemStyle = { color: TEXT };
 
 export const tooltipLabelStyle = { color: MUTED, marginBottom: 4, fontWeight: 600 };
 
+export const tooltipCursor = { fill: "rgba(212,162,78,0.08)" };
+
 export const RESULT_FILTERS = [
   { id: "", label: "Tất cả" },
   { id: "open", label: "Đang mở" },
