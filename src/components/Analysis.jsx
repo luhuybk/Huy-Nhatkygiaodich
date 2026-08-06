@@ -30,7 +30,8 @@ export function HeatmapPage({ trades, resources }) {
 
   const byWeekday = {};
   closed.forEach((x) => {
-    const wd = weekdayIndex(dateKey(x.t));
+    // Theo ngày mở lệnh (entryDate), khác với các bản đồ nhiệt theo tháng/năm vốn tính theo ngày đóng.
+    const wd = weekdayIndex(x.t.entryDate);
     if (wd === null) return;
     if (!byWeekday[wd]) byWeekday[wd] = { pnl: 0, count: 0, wins: 0 };
     byWeekday[wd].pnl += x.r.profit; byWeekday[wd].count += 1;
@@ -50,6 +51,7 @@ export function HeatmapPage({ trades, resources }) {
     <div>
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Theo thứ trong tuần</h3>
+      <p className="field-hint" style={{ marginBottom: 10, marginTop: -6 }}>Tính theo ngày mở lệnh (entry) — giúp thấy thứ nào trong tuần bạn có winrate cao để cân nhắc khi vào lệnh.</p>
       <div className="heat-strip">
         {WEEKDAY_ORDER.filter((wd) => byWeekday[wd]).map((wd) => (
           <div key={wd} className="heat-cell" style={{ background: heatColor(byWeekday[wd].pnl, maxWeekdayAbs) }}>

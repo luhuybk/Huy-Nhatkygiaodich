@@ -4,7 +4,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, dateKey, fmt, fmtDays, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -103,7 +103,8 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
 
   const byWeekday = {};
   closed.forEach((x) => {
-    const wd = weekdayIndex(dateKey(x.t));
+    // Theo ngày mở lệnh (entryDate), khác với PnL theo tháng vốn tính theo ngày đóng — winrate theo thứ phục vụ quyết định vào lệnh.
+    const wd = weekdayIndex(x.t.entryDate);
     if (wd === null) return;
     if (!byWeekday[wd]) byWeekday[wd] = { pnl: 0, count: 0, wins: 0 };
     byWeekday[wd].pnl += x.r.profit; byWeekday[wd].count += 1;
@@ -159,8 +160,8 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
         <StatCard label="Lệnh thua lớn nhất" value={fmtMoney(m.largestLoss, currencyUnit)} tone="loss" />
         <StatCard label="Chuỗi thắng dài nhất" value={m.maxWinStreak} tone="win" />
         <StatCard label="Chuỗi thua dài nhất" value={m.maxLossStreak} tone="loss" />
-        <StatCard label="TG giữ lệnh TB (thắng)" value={fmtDays(m.avgHoldWin)} />
-        <StatCard label="TG giữ lệnh TB (thua)" value={fmtDays(m.avgHoldLoss)} />
+        <StatCard label="TG giữ lệnh TB (thắng)" value={fmtHold(m.avgHoldWin)} />
+        <StatCard label="TG giữ lệnh TB (thua)" value={fmtHold(m.avgHoldLoss)} />
       </div>
 
       <h3 className="block-title">Chi tiết 4 — Long / Short</h3>
@@ -279,6 +280,7 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
       ) : null}
 
       <h3 className="block-title">Bản đồ nhiệt theo thứ trong tuần</h3>
+      <p className="field-hint" style={{ marginBottom: 10, marginTop: -6 }}>Tính theo ngày mở lệnh (entry) — giúp thấy thứ nào trong tuần bạn có winrate cao để cân nhắc khi vào lệnh.</p>
       <div className="heat-strip">
         {WEEKDAY_ORDER.filter((wd) => byWeekday[wd]).map((wd) => (
           <div key={wd} className="heat-cell" style={{ background: heatColor(byWeekday[wd].pnl, maxWeekdayAbs) }}>
@@ -551,8 +553,8 @@ export function AdvancedMetrics({ closed, currency = "USD" }) {
         <h4 className="metric-group-title">Thời gian giữ lệnh trung bình</h4>
         <p className="field-hint" style={{ marginBottom: 10 }}>Tính theo ngày entry → ngày exit (chỉ có ngày, không có giờ, nên đây là ước lượng).</p>
         <div className="stat-grid" style={{ gridTemplateColumns: "repeat(2,1fr)" }}>
-          <StatCard label="Lệnh thắng" value={fmtDays(m.avgHoldWin)} />
-          <StatCard label="Lệnh thua" value={fmtDays(m.avgHoldLoss)} />
+          <StatCard label="Lệnh thắng" value={fmtHold(m.avgHoldWin)} />
+          <StatCard label="Lệnh thua" value={fmtHold(m.avgHoldLoss)} />
         </div>
       </div>
       <div className="metric-group">

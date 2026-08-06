@@ -9,11 +9,11 @@ export function emptyTrade() {
   return {
     id: uid(),
     createdAt: Date.now(),
-    symbol: "", entryDate: "", entryLink: "", entryImage: "",
+    symbol: "", entryDate: "", entryTime: "", entryLink: "", entryImage: "",
     direction: "buy", account: "", timeframe: "", session: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
-    exitDate: "", exitLink: "", exitImage: "", profit: "",
+    exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0,
     psychology: "", ratingPsychology: 0,
     tradeGrade: "", reviewNote: "", checklist: {},
@@ -264,6 +264,35 @@ export function fmt(n) {
 
 export function dateKey(t) { return t.exitDate || t.entryDate || ""; }
 
+const FX_CURRENCIES = ["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD", "XAU", "XAG"];
+
+export function isForexSymbol(symbol) {
+  if (!symbol || symbol.length !== 6) return false;
+  const s = symbol.toUpperCase();
+  return FX_CURRENCIES.includes(s.slice(0, 3)) && FX_CURRENCIES.includes(s.slice(3, 6));
+}
+
+// Quy đổi phiên theo giờ Việt Nam (UTC+7) từ khung giờ phiên chuẩn quốc tế (UTC):
+// Tokyo 00:00–09:00, London 07:00–16:00, New York 12:00–21:00, London/NY chồng lấn 12:00–16:00.
+export function sessionFromTime(timeStr) {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  if (Number.isNaN(h)) return "";
+  const mins = h * 60 + (Number.isNaN(m) ? 0 : m);
+  if (mins >= 7 * 60 && mins < 14 * 60) return "Á (Tokyo)";
+  if (mins >= 14 * 60 && mins < 19 * 60) return "Âu (London)";
+  if (mins >= 19 * 60 && mins < 23 * 60) return "Âu-Mỹ chồng lấn";
+  return "Mỹ (New York)";
+}
+
+export function holdHours(t) {
+  if (!t.entryDate || !t.exitDate) return null;
+  const entry = new Date(`${t.entryDate}T${t.entryTime || "00:00"}:00`);
+  const exit = new Date(`${t.exitDate}T${t.exitTime || "00:00"}:00`);
+  const diff = (exit - entry) / 3600000;
+  return diff >= 0 ? diff : null;
+}
+
 export function monthKey(d) { return d ? d.slice(0, 7) : ""; }
 
 export function yearKey(d) { return d ? d.slice(0, 4) : ""; }
@@ -464,7 +493,7 @@ export function buildInsights(closed) {
   }
   const byWeekday = {};
   closed.forEach((x) => {
-    const wd = weekdayIndex(dateKey(x.t));
+    const wd = weekdayIndex(x.t.entryDate);
     if (wd === null) return;
     if (!byWeekday[wd]) byWeekday[wd] = { count: 0, wins: 0, pnl: 0 };
     byWeekday[wd].count += 1; byWeekday[wd].pnl += x.r.profit;
@@ -500,7 +529,8 @@ export function buildInsights(closed) {
 export function keyForDim(t, dim) {
   if (dim === "symbol") return t.symbol || "—";
   if (dim === "setup") return t.setup || "Chưa gắn setup";
-  if (dim === "weekday") { const wd = weekdayIndex(dateKey(t)); return wd === null ? "—" : WEEKDAY_LABEL[wd]; }
+  // Theo ngày mở lệnh (entryDate), không phải ngày đóng — winrate theo thứ phục vụ quyết định vào lệnh.
+  if (dim === "weekday") { const wd = weekdayIndex(t.entryDate); return wd === null ? "—" : WEEKDAY_LABEL[wd]; }
   if (dim === "structure") return t.structureScore !== "" && t.structureScore !== undefined && t.structureScore !== null ? `ĐCT ${t.structureScore}` : "Chưa chấm";
   return "—";
 }
@@ -539,14 +569,8 @@ export function computeAdvancedMetrics(closed) {
     else { curWin = 0; curLoss = 0; }
   });
 
-  const holdDays = (x) => {
-    if (!x.t.entryDate || !x.t.exitDate) return null;
-    const d1 = new Date(x.t.entryDate + "T00:00:00"), d2 = new Date(x.t.exitDate + "T00:00:00");
-    const diff = (d2 - d1) / 86400000;
-    return diff >= 0 ? diff : null;
-  };
-  const winHolds = wins.map(holdDays).filter((v) => v !== null);
-  const lossHolds = losses.map(holdDays).filter((v) => v !== null);
+  const winHolds = wins.map((x) => holdHours(x.t)).filter((v) => v !== null);
+  const lossHolds = losses.map((x) => holdHours(x.t)).filter((v) => v !== null);
   const avgHoldWin = winHolds.length ? winHolds.reduce((a, b) => a + b, 0) / winHolds.length : null;
   const avgHoldLoss = lossHolds.length ? lossHolds.reduce((a, b) => a + b, 0) / lossHolds.length : null;
 
@@ -572,7 +596,14 @@ export function computeAdvancedMetrics(closed) {
 
 export function fmtR(v) { return v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}R`; }
 
-export function fmtDays(v) { return v === null ? "—" : `${v.toFixed(1)} ngày`; }
+export function fmtHold(hours) {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return "—";
+  if (hours < 1) return `${Math.round(hours * 60)} phút`;
+  if (hours < 24) return `${hours.toFixed(1)} giờ`;
+  const days = Math.floor(hours / 24);
+  const remHours = Math.round(hours - days * 24);
+  return remHours > 0 ? `${days} ngày ${remHours} giờ` : `${days} ngày`;
+}
 
 export function fmtMoney(value, currency) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";

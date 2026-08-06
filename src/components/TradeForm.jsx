@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle } from "lucide-react";
 import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
@@ -49,13 +49,34 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
           <Field label="Ngày entry">
             <input type="date" className="input" value={t.entryDate} onChange={(e) => set("entryDate")(e.target.value)} />
           </Field>
+          <Field label="Giờ entry" hint="Tùy chọn — với forex sẽ tự gợi ý phiên giao dịch bên dưới">
+            <input
+              type="time"
+              className="input"
+              value={t.entryTime}
+              onChange={(e) => {
+                const time = e.target.value;
+                setT((prev) => {
+                  const next = { ...prev, entryTime: time };
+                  if (!prev.session && time && isForexSymbol(prev.symbol)) {
+                    const guess = sessionFromTime(time);
+                    if (guess && resources.sessions.includes(guess)) next.session = guess;
+                  }
+                  return next;
+                });
+              }}
+            />
+          </Field>
           <Field label="Tài khoản">
             <ResourceSelect value={t.account} onChange={set("account")} options={accountNames} placeholder="Chọn tài khoản" />
           </Field>
           <Field label="Khung thời gian">
             <ResourceSelect value={t.timeframe} onChange={set("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
           </Field>
-          <Field label="Phiên giao dịch">
+          <Field
+            label="Phiên giao dịch"
+            hint={isForexSymbol(t.symbol) && t.entryTime ? `Gợi ý từ giờ entry: ${sessionFromTime(t.entryTime)}` : undefined}
+          >
             <ResourceSelect value={t.session} onChange={set("session")} options={resources.sessions} placeholder="Chọn phiên" />
           </Field>
         </div>
@@ -121,9 +142,12 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
       </Section>
 
       <Section num="1A" title="Đóng lệnh" subtitle="Điền khi lệnh đã hoàn thành">
-        <div className="grid-2">
+        <div className="grid-3">
           <Field label="Ngày exit">
             <input type="date" className="input" value={t.exitDate} onChange={(e) => set("exitDate")(e.target.value)} />
+          </Field>
+          <Field label="Giờ exit" hint="Tùy chọn — giúp tính chính xác thời gian giữ lệnh đến từng giờ">
+            <input type="time" className="input" value={t.exitTime} onChange={(e) => set("exitTime")(e.target.value)} />
           </Field>
           <Field label="Lợi nhuận (+/-, theo tiền tệ tài khoản)">
             <MoneyInput value={t.profit} onChange={set("profit")} placeholder="+150 hoặc -100" />

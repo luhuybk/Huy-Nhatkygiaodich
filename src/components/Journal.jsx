@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, heatColor, tradeCompletion, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, fmtHold, heatColor, holdHours, tradeCompletion, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -72,6 +72,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
           <div className="chart-row">
             <DetailGroup title="Thông tin">
               <DetailRow label="Ngày entry" value={t.entryDate} />
+              <DetailRow label="Giờ entry" value={t.entryTime} />
               <DetailRow label="Tài khoản" value={t.account} />
               <DetailRow label="Symbol" value={t.symbol} />
               <DetailRow label="Hướng lệnh" value={t.direction === "buy" ? "Buy" : "Sell"} />
@@ -87,6 +88,8 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Rủi ro (số tiền)" value={t.riskAmount ? fmt(Number(t.riskAmount)) : "—"} />
               <DetailRow label="Quản trị vốn" value={t.riskAction} />
               <DetailRow label="Ngày exit" value={t.exitDate} />
+              <DetailRow label="Giờ exit" value={t.exitTime} />
+              <DetailRow label="TG giữ lệnh" value={fmtHold(holdHours(t))} />
               <DetailRow label="Lợi nhuận" value={t.profit === "" ? "—" : fmt(Number(t.profit))} tone={Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""} />
               <DetailRow label="RR thực" value={rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`} tone={rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""} />
               <DetailRow label="Kết quả" value={status === "open" ? "Đang mở" : outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"} />
