@@ -220,6 +220,43 @@ export function checklistProgress(t, resources) {
   return { checked, total: items.length };
 }
 
+// Không tính vào % hoàn thành: Phiên, Bonus, Điểm cấu trúc (tùy chọn theo cặp/loại lệnh),
+// Lý do (quản trị vốn), Lý do vào lệnh (kiến thức), Nhận xét/Review (đánh giá giao dịch) và Checklist
+// — đây đều là các mục điền hoặc không tùy ý, không phản ánh mức độ điền đầy đủ của một lệnh.
+export function tradeCompletionFields(t) {
+  const filled = (v) => v !== "" && v !== null && v !== undefined && v !== 0;
+  return [
+    ["entryDate", !!t.entryDate],
+    ["account", !!t.account],
+    ["timeframe", !!t.timeframe],
+    ["entryVisual", !!(t.entryImage || t.entryLink)],
+    ["riskPercent", filled(t.riskPercent)],
+    ["riskAmount", filled(t.riskAmount)],
+    ["riskAction", !!t.riskAction],
+    ["ratingRisk", !!t.ratingRisk],
+    ["setup", !!t.setup],
+    ["setupNote", !!t.setupNote],
+    ["ratingKnowledge", !!t.ratingKnowledge],
+    ["exitDate", !!t.exitDate],
+    ["profit", filled(t.profit)],
+    ["exitVisual", !!(t.exitImage || t.exitLink)],
+    ["entrySkill", !!t.entrySkill],
+    ["inTradeSkill", !!t.inTradeSkill],
+    ["exitSkill", !!t.exitSkill],
+    ["ratingSkill", !!t.ratingSkill],
+    ["psychology", !!t.psychology],
+    ["ratingPsychology", !!t.ratingPsychology],
+    ["tradeGrade", !!t.tradeGrade],
+  ];
+}
+
+export function tradeCompletion(t) {
+  const items = tradeCompletionFields(t);
+  const total = items.length;
+  const done = items.filter(([, ok]) => ok).length;
+  return { done, total, percent: total ? Math.round((done / total) * 100) : 0 };
+}
+
 export function fmt(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { maximumFractionDigits: 2 });

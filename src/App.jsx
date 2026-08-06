@@ -3,12 +3,12 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank,
-  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon,
+  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
 import { safeGet, safeSet, normalizeResources, emptyTrade, accountOpenRisk, setCurrentUserId } from "./lib/helpers.js";
-import { ReminderBell } from "./components/Reminders.jsx";
+import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { JournalSection, TradeDetailModal } from "./components/Journal.jsx";
 import { TradeForm } from "./components/TradeForm.jsx";
 import { MissedSetupsSection, SkippedSetupsSection, LessonsSection, SetupLibrarySection } from "./components/LessonsAndSetups.jsx";
@@ -49,6 +49,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [viewingTrade, setViewingTrade] = useState(null);
   const [editing, setEditing] = useState(null);
   const [saveState, setSaveState] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -171,6 +172,7 @@ function AppShell({ onSignOut, userEmail }) {
     },
     {
       label: "Quản lý", items: [
+        { key: "reminders", label: "Thông báo", icon: Bell },
         { key: "accounts", label: "Tài khoản", icon: Wallet },
         { key: "setuplib", label: "Setup mẫu", icon: Layers },
         { key: "notes", label: "Ghi chú", icon: StickyNote },
@@ -181,6 +183,7 @@ function AppShell({ onSignOut, userEmail }) {
     { label: "Hệ thống", items: [{ key: "settings", label: "Cài đặt", icon: Settings }] },
   ];
   const nav = navGroups.flatMap((g) => g.items);
+  const goTo = (key) => { setView(key); setMobileNavOpen(false); };
 
   const openRiskBadges = resources.accounts
     .map((a) => ({ account: a, risk: accountOpenRisk(a, ledger, trades) }))
@@ -197,7 +200,8 @@ function AppShell({ onSignOut, userEmail }) {
   return (
     <div className="app" style={cssVars}>
       <div className="app-shell">
-        <div className="sidebar">
+        {mobileNavOpen ? <div className="sidebar-backdrop" onClick={() => setMobileNavOpen(false)} /> : null}
+        <div className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
               <span className="candle candle-down" />
@@ -208,13 +212,14 @@ function AppShell({ onSignOut, userEmail }) {
               <span className="brand-name">Nhật Ký Giao Dịch</span>
               <span className="brand-tag">Kỷ Luật · Dữ Liệu · Cải Thiện</span>
             </span>
+            <button type="button" className="sidebar-close" onClick={() => setMobileNavOpen(false)} aria-label="Đóng menu"><X size={18} /></button>
           </div>
           <div className="account-quickswitch">
             <select className="input" value={activeAccount} onChange={(e) => setActiveAccount(e.target.value)}>
               <option value="">Tất cả tài khoản</option>
               {resources.accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
             </select>
-            <button type="button" className="quickadd-btn" title="Thêm tài khoản" onClick={() => setView("accounts")}><PlusCircle size={16} /></button>
+            <button type="button" className="quickadd-btn" title="Thêm tài khoản" onClick={() => goTo("accounts")}><PlusCircle size={16} /></button>
           </div>
           <div className="nav">
             {navGroups.map((g) => (
@@ -223,7 +228,7 @@ function AppShell({ onSignOut, userEmail }) {
                 {g.items.map((n) => {
                   const Icon = n.icon;
                   return (
-                    <button key={n.key} className={`nav-btn ${view === n.key ? "nav-active" : ""}`} onClick={() => setView(n.key)}>
+                    <button key={n.key} className={`nav-btn ${view === n.key ? "nav-active" : ""}`} onClick={() => goTo(n.key)}>
                       <Icon size={15} /> {n.label}
                     </button>
                   );
@@ -235,6 +240,10 @@ function AppShell({ onSignOut, userEmail }) {
 
         <div className="main">
           <div className="topbar">
+            <button type="button" className="mobile-nav-toggle" onClick={() => setMobileNavOpen(true)} aria-label="Mở menu">
+              <Menu size={18} />
+            </button>
+            <span className="mobile-brand-name">Nhật Ký Giao Dịch</span>
             <div className="open-risk-row">
               {openRiskBadges.length === 0 ? (
                 <span className="field-hint">Không có lệnh đang mở</span>
@@ -245,8 +254,8 @@ function AppShell({ onSignOut, userEmail }) {
               ))}
             </div>
             <span className="save-indicator mono" style={{ opacity: saveState ? 1 : 0 }}>{saveState}</span>
-            <ReminderBell reminders={reminders} onChange={persistReminders} />
-            <span className="field-hint" style={{ whiteSpace: "nowrap" }}>{userEmail}</span>
+            <ReminderBell reminders={reminders} onOpen={() => goTo("reminders")} />
+            <span className="field-hint user-email">{userEmail}</span>
             <button type="button" className="btn btn-ghost" onClick={onSignOut}>Đăng xuất</button>
             <button type="button" className="btn btn-primary" onClick={startNew}><PlusCircle size={15} /> Thêm giao dịch</button>
           </div>
@@ -255,6 +264,7 @@ function AppShell({ onSignOut, userEmail }) {
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} onEdit={startEdit} onDelete={handleDelete} /> :
+              view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "missed" ? <MissedSetupsSection items={missedSetups} resources={resources} onChange={persistMissedSetups} /> :

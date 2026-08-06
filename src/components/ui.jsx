@@ -287,11 +287,26 @@ export function DetailRow({ label, value, tone }) {
   );
 }
 
-export function DetailGroup({ title, children }) {
+export function DetailGroup({ title, children, className }) {
   return (
-    <div className="detail-group">
+    <div className={`detail-group ${className || ""}`}>
       <h4 className="detail-group-title">{title}</h4>
       <div className="detail-rows">{children}</div>
+    </div>
+  );
+}
+
+export function CompletionBar({ done, total, percent, label = "Tiến độ hoàn thành" }) {
+  const tone = percent >= 80 ? "high" : percent >= 40 ? "mid" : "low";
+  return (
+    <div className={`completion-bar completion-${tone}`}>
+      <div className="completion-bar-head">
+        <span className="completion-bar-label">{label}</span>
+        <span className="completion-bar-value mono">{percent}%{typeof total === "number" ? ` · ${done}/${total} mục` : ""}</span>
+      </div>
+      <div className="completion-bar-track">
+        <div className="completion-bar-fill" style={{ width: `${percent}%` }} />
+      </div>
     </div>
   );
 }

@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle } from "lucide-react";
-import { Field, ImageOrLink, MoneyInput, ResourceSelect, Section, StarRating } from "./ui.jsx";
+import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, tradeCompletion } from "../lib/helpers.js";
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
   const { rr, outcome } = computeResult(t);
+  const completion = tradeCompletion(t);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
   const existingOpenRisk = selectedAccount
@@ -26,6 +27,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
 
   return (
     <div className="trade-form">
+      <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} />
       <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required>
@@ -194,11 +196,11 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         </Field>
         <button
           type="button"
-          className={`lesson-toggle-btn ${t.hasLesson ? "lesson-toggle-active" : ""}`}
+          className={`lesson-toggle-btn ${t.hasLesson ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
           style={{ marginTop: 10 }}
           onClick={() => set("hasLesson")(!t.hasLesson)}
         >
-          <StickyNote size={15} /> {t.hasLesson ? "Có bài học cần ghi nhớ" : "Đánh dấu là có bài học"}
+          <StickyNote size={15} /> {t.hasLesson ? "📌 Có bài học cần ghi nhớ" : "Đánh dấu là có bài học"}
         </button>
         {t.hasLesson ? (
           <Field label="Ghi chú bài học">

@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter } from "lucide-react";
-import { CellImagePreview, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, StarRating } from "./ui.jsx";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote } from "lucide-react";
+import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, heatColor, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, heatColor, tradeCompletion, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -58,6 +58,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   const score = avgPillarScore(t);
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
   const checklistEntries = Object.entries(t.checklist || {});
+  const completion = tradeCompletion(t);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -67,6 +68,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
           <button type="button" className="row-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-body">
+          <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} />
           <div className="chart-row">
             <DetailGroup title="Thông tin">
               <DetailRow label="Ngày entry" value={t.entryDate} />
@@ -147,6 +149,14 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               </div>
             </DetailGroup>
           ) : null}
+
+          {t.hasLesson ? (
+            <DetailGroup title="📌 Bài học cần ghi nhớ" className="detail-group-lesson">
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                {t.lessonNote ? t.lessonNote : <span className="field-hint">Chưa ghi nội dung bài học.</span>}
+              </p>
+            </DetailGroup>
+          ) : null}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Đóng</button>
@@ -165,14 +175,15 @@ export function JournalTable({ trades, resources, onEdit, onDelete }) {
     <div className="table-wrap">
       <table className="table">
         <thead>
-          <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Bài học</th><th></th></tr>
+          <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Tiến độ</th><th>Bài học</th><th></th></tr>
         </thead>
         <tbody>
           {trades.map((t) => {
             const { rr, outcome, status } = computeResult(t);
             const cp = checklistProgress(t, res);
+            const completion = tradeCompletion(t);
             return (
-              <tr key={t.id} onClick={() => onEdit(t)}>
+              <tr key={t.id} onClick={() => onEdit(t)} className={t.hasLesson ? "row-has-lesson" : ""}>
                 <td className="mono">{t.entryDate || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -200,7 +211,10 @@ export function JournalTable({ trades, resources, onEdit, onDelete }) {
                   )}
                 </td>
                 <td>{t.tradeGrade ? <span className="grade-tag">{GRADE_OPTIONS.find((g) => g.id === t.tradeGrade)?.tone === "win" ? "\ud83d\udc4d" : "\u2620\ufe0f"}</span> : "—"}</td>
-                <td title={t.lessonNote || ""}>{t.hasLesson ? <span className="status-pill open">📌</span> : "—"}</td>
+                <td className={`mono ${completion.percent >= 80 ? "text-win" : completion.percent < 40 ? "text-loss" : ""}`} title={`${completion.done}/${completion.total} mục`}>
+                  {completion.percent}%
+                </td>
+                <td title={t.lessonNote || ""}>{t.hasLesson ? <StickyNote size={16} className="lesson-icon" /> : "—"}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: 2 }}>
                     <button type="button" className="row-btn" onClick={() => onEdit(t)}><Pencil size={13} /></button>

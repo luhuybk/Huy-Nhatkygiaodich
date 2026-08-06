@@ -7,13 +7,13 @@ import { JournalTable } from "./Journal.jsx";
 import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, dateKey, fmt, fmtDays, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
-  return ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+  return ({ cx, cy, midAngle, outerRadius, value }) => {
     const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) / 2;
+    const radius = outerRadius + 16;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
     return (
-      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
+      <text x={x} y={y} fill="var(--text)" textAnchor={x > cx ? "start" : "end"} dominantBaseline="central" fontSize={11} fontWeight={700}>
         {`${((value / total) * 100).toFixed(0)}%`}
       </text>
     );
@@ -194,7 +194,7 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
           <ResponsiveContainer>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}
-                label={renderPieSliceLabel(pieTotal)} labelLine={false}>
+                label={renderPieSliceLabel(pieTotal)} labelLine={{ stroke: "var(--border)" }}>
                 {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
@@ -640,7 +640,7 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
             <ResponsiveContainer>
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}
-                  label={renderPieSliceLabel(pieTotal)} labelLine={false}>
+                  label={renderPieSliceLabel(pieTotal)} labelLine={{ stroke: "var(--border)" }}>
                   {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
