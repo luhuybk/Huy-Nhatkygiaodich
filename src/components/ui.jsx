@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert } from "lucide-react";
 import { formatVN } from "../lib/helpers.js";
 
 export function CellImagePreview({ image, link }) {
@@ -317,6 +317,23 @@ export function CompletionBar({ done, total, percent, label = "Tiến độ hoà
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function RiskAlertBanner({ alerts }) {
+  if (!alerts || alerts.length === 0) return null;
+  return (
+    <div className="risk-alert-banner">
+      <ShieldAlert size={18} />
+      <div className="risk-alert-body">
+        <span className="risk-alert-title">Cảnh báo giảm risk — {alerts.length} tài khoản cần chú ý</span>
+        {alerts.map((a) => (
+          <p key={a.accountName} className="risk-alert-line">
+            <strong>{a.accountName}:</strong> {a.reasons.join(" · ")}. Cân nhắc giảm khối lượng/risk cho các lệnh tiếp theo.
+          </p>
+        ))}
+      </div>
     </div>
   );
 }

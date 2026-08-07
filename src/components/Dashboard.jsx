@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { LayoutDashboard, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
-import { ChartCard, StatCard } from "./ui.jsx";
+import { ChartCard, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -48,7 +48,7 @@ export function DashboardFilters({ resources, account, onAccount, range, onRange
   );
 }
 
-export function Dashboard({ trades, resources, account, onAccountChange, onViewTrade }) {
+export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
@@ -56,10 +56,12 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
   const singleAccount = account ? resources.accounts.find((a) => a.name === account) : null;
   const currencyUnit = singleAccount ? singleAccount.currency : "USD";
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
+  const riskAlerts = computeRiskAlerts(resources, trades, ledger);
   const scopeBar = <DashboardFilters resources={resources} account={account} onAccount={onAccountChange} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>
+        <RiskAlertBanner alerts={riskAlerts} />
         {scopeBar}
         <div className="empty-state">
           <LayoutDashboard size={28} color="var(--text-dim)" />
@@ -120,6 +122,7 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
 
   return (
     <div>
+      <RiskAlertBanner alerts={riskAlerts} />
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Chỉ số quan trọng</h3>
       <p className="field-hint" style={{ marginBottom: 10, marginTop: 4 }}>

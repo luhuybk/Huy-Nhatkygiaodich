@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle } from "lucide-react";
-import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, StarRating } from "./ui.jsx";
+import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, tradeCompletion, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, tradeCompletion, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -319,11 +319,12 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, onEdit, onDelete, onBulkDelete, onDuplicate }) {
+export function JournalSection({ trades, resources, ledger, onEdit, onDelete, onBulkDelete, onDuplicate }) {
   const [tab, setTab] = useState("list");
   const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(() => new Set());
   const filtered = useMemo(() => applyFilters(trades, filters, resources).sort((a, b) => b.createdAt - a.createdAt), [trades, filters, resources]);
+  const riskAlerts = useMemo(() => computeRiskAlerts(resources, trades, ledger), [resources, trades, ledger]);
 
   useEffect(() => { setSelected(new Set()); }, [filters]);
 
@@ -348,6 +349,7 @@ export function JournalSection({ trades, resources, onEdit, onDelete, onBulkDele
   }
   return (
     <div>
+      <RiskAlertBanner alerts={riskAlerts} />
       <div className="subtabs">
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Danh sách</button>
         <button className={`subtab ${tab === "calendar" ? "subtab-active" : ""}`} onClick={() => setTab("calendar")}><CalendarDays size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Lịch</button>

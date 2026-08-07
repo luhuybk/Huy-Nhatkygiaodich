@@ -72,6 +72,13 @@
         .open-risk-hint-warn svg { color:var(--accent); }
         .open-risk-hint-high { color:var(--loss); font-weight:600; border-color:rgba(224,97,90,0.45); background:rgba(224,97,90,0.12); }
         .open-risk-hint-high svg { color:var(--loss); }
+        .risk-alert-banner { display:flex; align-items:flex-start; gap:10px; background:rgba(224,97,90,0.12); border:1px solid rgba(224,97,90,0.45);
+          border-radius:10px; padding:12px 14px; margin-bottom:14px; color:var(--loss); }
+        .risk-alert-banner svg { flex-shrink:0; margin-top:1px; color:var(--loss); }
+        .risk-alert-body { display:flex; flex-direction:column; gap:4px; }
+        .risk-alert-title { font-size:12.5px; font-weight:700; }
+        .risk-alert-line { margin:0; font-size:12px; color:var(--text); opacity:0.9; }
+        .risk-alert-line strong { color:var(--loss); }
         .body { padding:22px 24px 32px; flex:1; overflow-y:auto; min-height:0; }
         .account-quickswitch { display:flex; align-items:center; gap:6px; padding:0 4px; }
         .account-quickswitch .input { padding:8px 10px; font-size:13px; }

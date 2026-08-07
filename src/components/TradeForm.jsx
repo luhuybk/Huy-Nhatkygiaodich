@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle } from "lucide-react";
-import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, Section, StarRating } from "./ui.jsx";
+import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyTrade, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
@@ -16,6 +16,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
   const existingOpenRisk = selectedAccount
     ? accountOpenRisk(selectedAccount, ledger || [], (trades || []).filter((x) => x.id !== t.id))
     : { pct: 0, count: 0 };
+  const riskAlerts = computeRiskAlerts(resources, (trades || []).filter((x) => x.id !== t.id), ledger || []);
 
   const submit = () => {
     if (!t.symbol.trim()) {
@@ -28,6 +29,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
 
   return (
     <div className="trade-form">
+      <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} />
       <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">

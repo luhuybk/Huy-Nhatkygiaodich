@@ -207,6 +207,50 @@ export function accountOpenRisk(account, ledger, trades) {
   return { pct, count: openTrades.length };
 }
 
+const RISK_ALERT_LOSS_STREAK = 10;
+const RISK_ALERT_DRAWDOWN_PCT = 7;
+
+export function accountRiskAlert(account, ledger, trades) {
+  const closed = closedOf(trades)
+    .filter((x) => x.t.account === account.name)
+    .sort((a, b) => (dateKey(a.t) || "").localeCompare(dateKey(b.t) || "") || (a.t.createdAt || 0) - (b.t.createdAt || 0));
+
+  let consecutiveLosses = 0;
+  for (let i = closed.length - 1; i >= 0; i--) {
+    if (closed[i].r.outcome === "loss") consecutiveLosses++;
+    else break;
+  }
+
+  const curve = buildBalanceCurve(account, ledger, trades);
+  let peak = -Infinity;
+  curve.forEach((p) => { if (p.balance > peak) peak = p.balance; });
+  const current = curve.length ? curve[curve.length - 1].balance : 0;
+  const drawdownPercent = peak > 0 ? Math.max(0, ((peak - current) / peak) * 100) : 0;
+
+  const streakTriggered = consecutiveLosses >= RISK_ALERT_LOSS_STREAK;
+  const drawdownTriggered = drawdownPercent >= RISK_ALERT_DRAWDOWN_PCT;
+  const reasons = [];
+  if (streakTriggered) reasons.push(`${consecutiveLosses} lệnh thua liên tiếp`);
+  if (drawdownTriggered) reasons.push(`Sụt giảm ${drawdownPercent.toFixed(1)}% từ đỉnh vốn`);
+
+  return {
+    accountName: account.name,
+    consecutiveLosses,
+    drawdownPercent,
+    streakTriggered,
+    drawdownTriggered,
+    triggered: streakTriggered || drawdownTriggered,
+    reasons,
+  };
+}
+
+export function computeRiskAlerts(resources, trades, ledger) {
+  const accounts = (resources && resources.accounts) || [];
+  return accounts
+    .map((a) => accountRiskAlert(a, ledger || [], trades || []))
+    .filter((a) => a.triggered);
+}
+
 export function avgPillarScore(t) {
   const vals = [t.ratingRisk, t.ratingKnowledge, t.ratingSkill, t.ratingPsychology].filter((v) => v > 0);
   if (!vals.length) return null;
