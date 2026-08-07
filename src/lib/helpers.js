@@ -257,6 +257,39 @@ export function tradeCompletion(t) {
   return { done, total, percent: total ? Math.round((done / total) * 100) : 0 };
 }
 
+export const COMPLETION_FIELD_LABELS = {
+  entryDate: "Ngày entry",
+  account: "Tài khoản",
+  timeframe: "Khung thời gian",
+  entryVisual: "Ảnh/link vào lệnh",
+  riskPercent: "Rủi ro (%)",
+  riskAmount: "Rủi ro (tiền)",
+  riskAction: "Quản trị vốn",
+  ratingRisk: "Chấm điểm quản trị vốn",
+  setup: "Setup",
+  setupNote: "Nhận xét Setup",
+  ratingKnowledge: "Chấm điểm kiến thức",
+  exitDate: "Ngày exit",
+  profit: "Lợi nhuận",
+  exitVisual: "Ảnh/link thoát lệnh",
+  entrySkill: "Kỹ năng vào lệnh",
+  inTradeSkill: "Kỹ năng trong lệnh",
+  exitSkill: "Kỹ năng thoát lệnh",
+  ratingSkill: "Chấm điểm kỹ năng",
+  psychology: "Tâm lý",
+  ratingPsychology: "Chấm điểm tâm lý",
+  tradeGrade: "Đánh giá giao dịch",
+};
+
+export function missingCompletionFields(t) {
+  return tradeCompletionFields(t).filter(([, ok]) => !ok).map(([key]) => COMPLETION_FIELD_LABELS[key] || key);
+}
+
+export function isFieldMissing(t, key) {
+  const entry = tradeCompletionFields(t).find(([k]) => k === key);
+  return entry ? !entry[1] : false;
+}
+
 export function fmt(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -267,8 +300,10 @@ export function dateKey(t) { return t.exitDate || t.entryDate || ""; }
 const FX_CURRENCIES = ["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD", "XAU", "XAG"];
 
 export function isForexSymbol(symbol) {
-  if (!symbol || symbol.length !== 6) return false;
-  const s = symbol.toUpperCase();
+  if (!symbol) return false;
+  // Chấp nhận cả 2 cách viết: "USDJPY" và "USD/JPY".
+  const s = symbol.toUpperCase().replace(/\//g, "");
+  if (s.length !== 6) return false;
   return FX_CURRENCIES.includes(s.slice(0, 3)) && FX_CURRENCIES.includes(s.slice(3, 6));
 }
 
@@ -458,6 +493,13 @@ export function applyFilters(trades, filters, resources) {
     }
     if (filters.hasLesson === "yes" && !t.hasLesson) return false;
     if (filters.hasLesson === "no" && t.hasLesson) return false;
+    if (filters.completion) {
+      const percent = tradeCompletion(t).percent;
+      if (filters.completion === "low" && percent >= 40) return false;
+      if (filters.completion === "mid" && (percent < 40 || percent >= 80)) return false;
+      if (filters.completion === "high" && (percent < 80 || percent >= 100)) return false;
+      if (filters.completion === "full" && percent !== 100) return false;
+    }
     return true;
   });
 }
@@ -595,6 +637,58 @@ export function computeAdvancedMetrics(closed) {
 }
 
 export function fmtR(v) { return v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}R`; }
+
+// SQN (System Quality Number - Van Tharp): sqrt(n) * kỳ vọng(R) / độ lệch chuẩn(R).
+// Cần R-multiple mỗi lệnh (profit / riskAmount), nên chỉ tính được trên các lệnh có điền riskAmount.
+export function computeSystemQuality(closed) {
+  const withR = closed.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
+  const n = withR.length;
+  if (n < 5) return null;
+  const rs = withR.map((x) => x.r.rr);
+  const mean = rs.reduce((a, b) => a + b, 0) / n;
+  const variance = rs.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1);
+  const stdev = Math.sqrt(variance);
+  const sqn = stdev ? (Math.sqrt(n) * mean) / stdev : null;
+  // SQN100: chuẩn hóa về cỡ mẫu 100 lệnh (khuyến nghị của Van Tharp) để so sánh công bằng giữa các giai đoạn/hệ thống có số lệnh khác nhau.
+  const sqn100 = stdev ? (10 * mean) / stdev : null;
+
+  const wins = withR.filter((x) => x.r.outcome === "win");
+  const losses = withR.filter((x) => x.r.outcome === "loss");
+  const winRate = wins.length / n;
+  const avgWinR = wins.length ? wins.reduce((s, x) => s + x.r.rr, 0) / wins.length : 0;
+  const avgLossR = losses.length ? losses.reduce((s, x) => s + x.r.rr, 0) / losses.length : 0;
+  const payoffRatio = avgLossR ? avgWinR / Math.abs(avgLossR) : null;
+
+  // Kelly Criterion: f* = p - (1-p)/b, với p = winrate, b = tỷ lệ lãi TB / lỗ TB (theo R).
+  let kellyFull = null;
+  if (payoffRatio) kellyFull = winRate - (1 - winRate) / payoffRatio;
+
+  // Hệ số "burn" cho xấp xỉ nguy cơ cháy tài khoản (Brownian motion có drift, xem hàm riskOfRuin bên dưới).
+  const burnX = variance ? Math.exp((-2 * mean) / variance) : null;
+
+  return { n, mean, stdev, variance, sqn, sqn100, winRate, avgWinR, avgLossR, payoffRatio, kellyFull, burnX };
+}
+
+export function sqnRating(sqn) {
+  if (sqn === null || sqn === undefined || !Number.isFinite(sqn)) return "—";
+  if (sqn < 1.0) return "Kém";
+  if (sqn < 2.0) return "Dưới trung bình";
+  if (sqn < 3.0) return "Trung bình";
+  if (sqn < 5.0) return "Tốt";
+  if (sqn < 7.0) return "Xuất sắc";
+  if (sqn < 10.0) return "Tuyệt vời (hiếm)";
+  return "Chén Thánh (nên kiểm tra lại dữ liệu)";
+}
+
+// Xấp xỉ nguy cơ cháy tài khoản (Risk of Ruin) theo mô hình random walk có drift:
+// RoR ≈ burnX ^ U, với U = số "đơn vị vốn" chịu được trước khi cháy = 100 / % risk mỗi lệnh.
+// Đây là công thức xấp xỉ liên tục (giả định lệnh độc lập, phân phối R ổn định) — chỉ mang tính tham khảo.
+export function riskOfRuin(burnX, riskPercent) {
+  if (burnX === null || burnX === undefined || !riskPercent || riskPercent <= 0) return null;
+  if (burnX >= 1) return 1;
+  const units = 100 / riskPercent;
+  return Math.pow(burnX, units);
+}
 
 export function fmtHold(hours) {
   if (hours === null || hours === undefined || !Number.isFinite(hours)) return "—";

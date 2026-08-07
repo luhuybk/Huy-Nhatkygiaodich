@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, fmtHold, heatColor, holdHours, tradeCompletion, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, tradeCompletion, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -45,6 +45,13 @@ export function JournalFilters({ trades, resources, filters, setFilters }) {
           <option value="yes">Có bài học</option>
           <option value="no">Không có bài học</option>
         </select>
+        <select className="input" value={filters.completion || ""} onChange={(e) => set("completion")(e.target.value)}>
+          <option value="">Tiến độ hoàn thành</option>
+          <option value="low">Thấp (&lt; 40%)</option>
+          <option value="mid">Trung bình (40-79%)</option>
+          <option value="high">Sắp xong (80-99%)</option>
+          <option value="full">Đã hoàn thành đủ (100%)</option>
+        </select>
       </div>
       <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
     </div>
@@ -68,7 +75,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
           <button type="button" className="row-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-body">
-          <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} />
+          <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} missing={missingCompletionFields(t)} />
           <div className="chart-row">
             <DetailGroup title="Thông tin">
               <DetailRow label="Ngày entry" value={t.entryDate} />
@@ -171,14 +178,22 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   );
 }
 
-export function JournalTable({ trades, resources, onEdit, onDelete }) {
+export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll }) {
   const res = resources || { checklistItems: [] };
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
+  const selectable = !!selected && !!onToggleOne;
+  const allSelected = selectable && trades.length > 0 && trades.every((t) => selected.has(t.id));
   return (
     <div className="table-wrap">
       <table className="table">
         <thead>
-          <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Tiến độ</th><th>Bài học</th><th></th></tr>
+          <tr>
+            {selectable ? (
+              <th style={{ width: 30 }}>
+                <input type="checkbox" checked={allSelected} onChange={() => onToggleAll(trades.map((t) => t.id))} aria-label="Chọn tất cả" />
+              </th>
+            ) : null}
+            <th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Tiến độ</th><th>Bài học</th><th></th></tr>
         </thead>
         <tbody>
           {trades.map((t) => {
@@ -187,6 +202,11 @@ export function JournalTable({ trades, resources, onEdit, onDelete }) {
             const completion = tradeCompletion(t);
             return (
               <tr key={t.id} onClick={() => onEdit(t)} className={t.hasLesson ? "row-has-lesson" : ""}>
+                {selectable ? (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(t.id)} onChange={() => onToggleOne(t.id)} aria-label="Chọn lệnh" />
+                  </td>
+                ) : null}
                 <td className="mono">{t.entryDate || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -214,7 +234,9 @@ export function JournalTable({ trades, resources, onEdit, onDelete }) {
                   )}
                 </td>
                 <td>{t.tradeGrade ? <span className="grade-tag">{GRADE_OPTIONS.find((g) => g.id === t.tradeGrade)?.tone === "win" ? "\ud83d\udc4d" : "\u2620\ufe0f"}</span> : "—"}</td>
-                <td className={`mono ${completion.percent >= 80 ? "text-win" : completion.percent < 40 ? "text-loss" : ""}`} title={`${completion.done}/${completion.total} mục`}>
+                <td className={`mono ${completion.percent >= 80 ? "text-win" : completion.percent < 40 ? "text-loss" : ""}`}
+                  title={completion.percent < 100 ? `${completion.done}/${completion.total} mục — Còn thiếu: ${missingCompletionFields(t).join(", ")}` : `${completion.done}/${completion.total} mục — Đã hoàn thành đủ`}>
+                  {completion.percent < 100 ? <AlertCircle size={11} style={{ verticalAlign: -1, marginRight: 3 }} color="var(--loss)" /> : null}
                   {completion.percent}%
                 </td>
                 <td title={t.lessonNote || ""}>{t.hasLesson ? <StickyNote size={16} className="lesson-icon" /> : "—"}</td>
@@ -297,10 +319,24 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, onEdit, onDelete }) {
+export function JournalSection({ trades, resources, onEdit, onDelete, onBulkDelete, onDuplicate }) {
   const [tab, setTab] = useState("list");
   const [filters, setFilters] = useState({});
+  const [selected, setSelected] = useState(() => new Set());
   const filtered = useMemo(() => applyFilters(trades, filters, resources).sort((a, b) => b.createdAt - a.createdAt), [trades, filters, resources]);
+
+  useEffect(() => { setSelected(new Set()); }, [filters]);
+
+  const toggleOne = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = (ids) => setSelected((prev) => {
+    const allIn = ids.length > 0 && ids.every((id) => prev.has(id));
+    if (allIn) { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; }
+    return new Set([...prev, ...ids]);
+  });
 
   if (trades.length === 0) {
     return (
@@ -319,8 +355,18 @@ export function JournalSection({ trades, resources, onEdit, onDelete }) {
       {tab === "list" ? (
         <div>
           <JournalFilters trades={trades} resources={resources} filters={filters} setFilters={setFilters} />
-          <p className="field-hint" style={{ margin: "0 0 10px" }}>{filtered.length} / {trades.length} lệnh</p>
-          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
+            <p className="field-hint" style={{ margin: 0 }}>{filtered.length} / {trades.length} lệnh{selected.size ? ` · Đã chọn ${selected.size}` : ""}</p>
+            {selected.size > 0 ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => { onDuplicate(Array.from(selected)); setSelected(new Set()); }}>
+                  <Copy size={13} /> Nhân bản ({selected.size})
+                </button>
+                <DangerConfirmButton label={`Xóa (${selected.size})`} confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onBulkDelete(Array.from(selected)); setSelected(new Set()); }} />
+              </div>
+            ) : null}
+          </div>
+          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} />
         </div>
       ) : (
         <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} />

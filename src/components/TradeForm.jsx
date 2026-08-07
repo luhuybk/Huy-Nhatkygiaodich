@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle } from "lucide-react";
 import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, emptyTrade, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
+  const missing = (key) => isFieldMissing(t, key);
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
   const accountNames = resources.accounts.map((a) => a.name);
@@ -31,7 +32,23 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
       <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required>
-            <input className="input" list="symbol-suggestions" value={t.symbol} onChange={(e) => set("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+            <input
+              className="input"
+              list="symbol-suggestions"
+              value={t.symbol}
+              onChange={(e) => {
+                const sym = e.target.value.toUpperCase();
+                setT((prev) => {
+                  const next = { ...prev, symbol: sym };
+                  if (prev.entryTime && isForexSymbol(sym)) {
+                    const guess = sessionFromTime(prev.entryTime);
+                    if (guess && resources.sessions.includes(guess)) next.session = guess;
+                  }
+                  return next;
+                });
+              }}
+              placeholder="VD: XAUUSD, HPG..."
+            />
             <datalist id="symbol-suggestions">
               {resources.symbols.map((s) => <option key={s} value={s} />)}
             </datalist>
@@ -46,10 +63,10 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
               </button>
             </div>
           </Field>
-          <Field label="Ngày entry">
+          <Field label="Ngày entry" incomplete={missing("entryDate")}>
             <input type="date" className="input" value={t.entryDate} onChange={(e) => set("entryDate")(e.target.value)} />
           </Field>
-          <Field label="Giờ entry" hint="Tùy chọn — với forex sẽ tự gợi ý phiên giao dịch bên dưới">
+          <Field label="Giờ entry" hint="Tùy chọn — với forex sẽ tự điền phiên giao dịch bên dưới, bạn vẫn chọn lại được">
             <input
               type="time"
               className="input"
@@ -58,7 +75,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
                 const time = e.target.value;
                 setT((prev) => {
                   const next = { ...prev, entryTime: time };
-                  if (!prev.session && time && isForexSymbol(prev.symbol)) {
+                  if (time && isForexSymbol(prev.symbol)) {
                     const guess = sessionFromTime(time);
                     if (guess && resources.sessions.includes(guess)) next.session = guess;
                   }
@@ -67,20 +84,20 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
               }}
             />
           </Field>
-          <Field label="Tài khoản">
+          <Field label="Tài khoản" incomplete={missing("account")}>
             <ResourceSelect value={t.account} onChange={set("account")} options={accountNames} placeholder="Chọn tài khoản" />
           </Field>
-          <Field label="Khung thời gian">
+          <Field label="Khung thời gian" incomplete={missing("timeframe")}>
             <ResourceSelect value={t.timeframe} onChange={set("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
           </Field>
           <Field
             label="Phiên giao dịch"
-            hint={isForexSymbol(t.symbol) && t.entryTime ? `Gợi ý từ giờ entry: ${sessionFromTime(t.entryTime)}` : undefined}
+            hint={isForexSymbol(t.symbol) && t.entryTime ? `Đã tự điền từ giờ entry: ${sessionFromTime(t.entryTime)} — chọn lại nếu cần` : undefined}
           >
             <ResourceSelect value={t.session} onChange={set("session")} options={resources.sessions} placeholder="Chọn phiên" />
           </Field>
         </div>
-        <Field label="Link / hình ảnh lúc vào lệnh">
+        <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")}>
           <ImageOrLink link={t.entryLink} image={t.entryImage} onLinkChange={set("entryLink")} onImageChange={set("entryImage")} label="entry" />
         </Field>
       </Section>
@@ -95,10 +112,10 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
           </div>
         ) : null}
         <div className="grid-3">
-          <Field label="Rủi ro (%)">
+          <Field label="Rủi ro (%)" incomplete={missing("riskPercent")}>
             <input type="number" step="0.01" className="input mono" value={t.riskPercent} onChange={(e) => set("riskPercent")(e.target.value)} placeholder="1.0" />
           </Field>
-          <Field label="Rủi ro (số tiền)">
+          <Field label="Rủi ro (số tiền)" incomplete={missing("riskAmount")}>
             <MoneyInput value={t.riskAmount} onChange={set("riskAmount")} placeholder="100" />
           </Field>
           <Field label="RR thực (tự tính khi có Lãi/Lỗ)">
@@ -107,26 +124,26 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
             </div>
           </Field>
         </div>
-        <Field label="Quản trị vốn">
+        <Field label="Quản trị vốn" incomplete={missing("riskAction")}>
           <ResourceSelect value={t.riskAction} onChange={set("riskAction")} options={resources.riskActions} placeholder="VD: Nâng vốn, Giữ vốn, Giảm risk..." />
         </Field>
         <Field label="Lý do">
           <textarea className="input textarea" value={t.riskActionReason} onChange={(e) => set("riskActionReason")(e.target.value)} placeholder="Vì sao nâng/giữ/giảm vốn lần này..." />
         </Field>
-        <Field label="Tự đánh giá quản trị vốn">
+        <Field label="Tự đánh giá quản trị vốn" incomplete={missing("ratingRisk")}>
           <StarRating value={t.ratingRisk} onChange={set("ratingRisk")} />
         </Field>
       </Section>
 
       <Section num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
         <div className="grid-3">
-          <Field label="Setup">
+          <Field label="Setup" incomplete={missing("setup")}>
             <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} placeholder="Chọn setup" />
           </Field>
           <Field label="Bonus">
             <ResourceSelect value={t.setupBonus} onChange={set("setupBonus")} options={resources.setupBonus} placeholder="Chọn bonus (nếu có)" />
           </Field>
-          <Field label="Nhận xét Setup">
+          <Field label="Nhận xét Setup" incomplete={missing("setupNote")}>
             <ResourceSelect value={t.setupNote} onChange={set("setupNote")} options={resources.setupNotes} placeholder="Chọn nhận xét" />
           </Field>
           <Field label="Điểm cấu trúc (ĐCT)" hint="Cho cặp forex — thang 0 đến 7, bước 0.5">
@@ -136,24 +153,24 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         <Field label="Lý do vào lệnh">
           <textarea className="input textarea" value={t.entryReason} onChange={(e) => set("entryReason")(e.target.value)} placeholder="Điền tay lý do vào lệnh..." />
         </Field>
-        <Field label="Tự đánh giá kiến thức">
+        <Field label="Tự đánh giá kiến thức" incomplete={missing("ratingKnowledge")}>
           <StarRating value={t.ratingKnowledge} onChange={set("ratingKnowledge")} />
         </Field>
       </Section>
 
       <Section num="1A" title="Đóng lệnh" subtitle="Điền khi lệnh đã hoàn thành">
         <div className="grid-3">
-          <Field label="Ngày exit">
+          <Field label="Ngày exit" incomplete={missing("exitDate")}>
             <input type="date" className="input" value={t.exitDate} onChange={(e) => set("exitDate")(e.target.value)} />
           </Field>
           <Field label="Giờ exit" hint="Tùy chọn — giúp tính chính xác thời gian giữ lệnh đến từng giờ">
             <input type="time" className="input" value={t.exitTime} onChange={(e) => set("exitTime")(e.target.value)} />
           </Field>
-          <Field label="Lợi nhuận (+/-, theo tiền tệ tài khoản)">
+          <Field label="Lợi nhuận (+/-, theo tiền tệ tài khoản)" incomplete={missing("profit")}>
             <MoneyInput value={t.profit} onChange={set("profit")} placeholder="+150 hoặc -100" />
           </Field>
         </div>
-        <Field label="Link / hình ảnh lúc thoát lệnh">
+        <Field label="Link / hình ảnh lúc thoát lệnh" incomplete={missing("exitVisual")}>
           <ImageOrLink link={t.exitLink} image={t.exitImage} onLinkChange={set("exitLink")} onImageChange={set("exitImage")} label="exit" />
         </Field>
         {outcome ? (
@@ -163,26 +180,26 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
 
       <Section num="4" title="Kỹ năng" subtitle="Vào lệnh · Trong lệnh · Thoát lệnh">
         <div className="grid-3">
-          <Field label="Vào lệnh">
+          <Field label="Vào lệnh" incomplete={missing("entrySkill")}>
             <ResourceSelect value={t.entrySkill} onChange={set("entrySkill")} options={resources.entrySkills} placeholder="Chọn" />
           </Field>
-          <Field label="Trong lệnh">
+          <Field label="Trong lệnh" incomplete={missing("inTradeSkill")}>
             <ResourceSelect value={t.inTradeSkill} onChange={set("inTradeSkill")} options={resources.inTradeSkills} placeholder="Chọn" />
           </Field>
-          <Field label="Thoát lệnh">
+          <Field label="Thoát lệnh" incomplete={missing("exitSkill")}>
             <ResourceSelect value={t.exitSkill} onChange={set("exitSkill")} options={resources.exitSkills} placeholder="Chọn" />
           </Field>
         </div>
-        <Field label="Tự đánh giá kỹ năng">
+        <Field label="Tự đánh giá kỹ năng" incomplete={missing("ratingSkill")}>
           <StarRating value={t.ratingSkill} onChange={set("ratingSkill")} />
         </Field>
       </Section>
 
       <Section num="5" title="Tâm lý" subtitle="Trạng thái tâm lý khi giao dịch">
-        <Field label="Tâm lý giao dịch">
+        <Field label="Tâm lý giao dịch" incomplete={missing("psychology")}>
           <ResourceSelect value={t.psychology} onChange={set("psychology")} options={resources.psychologies} placeholder="Chọn tâm lý" />
         </Field>
-        <Field label="Tự đánh giá tâm lý">
+        <Field label="Tự đánh giá tâm lý" incomplete={missing("ratingPsychology")}>
           <StarRating value={t.ratingPsychology} onChange={set("ratingPsychology")} />
         </Field>
       </Section>
@@ -202,6 +219,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
       </Section>
 
       <Section num="7" title="Đánh giá giao dịch" subtitle="Tốt/Tồi kết hợp Thắng/Thua & review">
+        {missing("tradeGrade") ? <AlertCircle size={11} className="field-missing-icon" title="Chưa chọn — đang ảnh hưởng tiến độ hoàn thành" /> : null}
         <div className="grade-grid">
           {GRADE_OPTIONS.map((g) => {
             const disabled = outcome && g.matches !== outcome;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle } from "lucide-react";
 import { formatVN } from "../lib/helpers.js";
 
 export function CellImagePreview({ image, link }) {
@@ -81,10 +81,13 @@ export function StarRating({ value, onChange, size = 18 }) {
   );
 }
 
-export function Field({ label, children, hint, required }) {
+export function Field({ label, children, hint, required, incomplete }) {
   return (
     <label className="field">
-      <span className="field-label">{label}{required ? <span className="req">*</span> : null}</span>
+      <span className="field-label">
+        {label}{required ? <span className="req">*</span> : null}
+        {incomplete ? <AlertCircle size={11} className="field-missing-icon" title="Chưa điền — đang ảnh hưởng tiến độ hoàn thành" /> : null}
+      </span>
       {children}
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
@@ -296,7 +299,7 @@ export function DetailGroup({ title, children, className }) {
   );
 }
 
-export function CompletionBar({ done, total, percent, label = "Tiến độ hoàn thành" }) {
+export function CompletionBar({ done, total, percent, label = "Tiến độ hoàn thành", missing }) {
   const tone = percent >= 80 ? "high" : percent >= 40 ? "mid" : "low";
   return (
     <div className={`completion-bar completion-${tone}`}>
@@ -307,6 +310,13 @@ export function CompletionBar({ done, total, percent, label = "Tiến độ hoà
       <div className="completion-bar-track">
         <div className="completion-bar-fill" style={{ width: `${percent}%` }} />
       </div>
+      {missing && missing.length > 0 ? (
+        <div className="completion-missing">
+          {missing.map((m) => (
+            <span key={m} className="completion-missing-chip"><AlertCircle size={11} /> {m}</span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

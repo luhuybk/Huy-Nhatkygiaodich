@@ -122,7 +122,7 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
     <div>
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Chỉ số quan trọng</h3>
-      <p className="field-hint" style={{ marginBottom: 10, marginTop: -6 }}>
+      <p className="field-hint" style={{ marginBottom: 10, marginTop: 4 }}>
         {singleAccount ? `Số liệu hiển thị theo đơn vị tiền tệ của tài khoản "${singleAccount.name}": ${currencyUnit}.` : "Đang gộp nhiều tài khoản — số tiền được quy đổi về USD theo tỷ giá cấu hình ở Tài khoản để cộng được giữa các đơn vị tiền tệ khác nhau."}
       </p>
       <div className="stat-grid">
@@ -280,7 +280,7 @@ export function Dashboard({ trades, resources, account, onAccountChange, onViewT
       ) : null}
 
       <h3 className="block-title">Bản đồ nhiệt theo thứ trong tuần</h3>
-      <p className="field-hint" style={{ marginBottom: 10, marginTop: -6 }}>Tính theo ngày mở lệnh (entry) — giúp thấy thứ nào trong tuần bạn có winrate cao để cân nhắc khi vào lệnh.</p>
+      <p className="field-hint" style={{ marginBottom: 10, marginTop: 4 }}>Tính theo ngày mở lệnh (entry) — giúp thấy thứ nào trong tuần bạn có winrate cao để cân nhắc khi vào lệnh.</p>
       <div className="heat-strip">
         {WEEKDAY_ORDER.filter((wd) => byWeekday[wd]).map((wd) => (
           <div key={wd} className="heat-cell" style={{ background: heatColor(byWeekday[wd].pnl, maxWeekdayAbs) }}>

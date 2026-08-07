@@ -3,11 +3,11 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank,
-  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X,
+  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
-import { safeGet, safeSet, normalizeResources, emptyTrade, accountOpenRisk, setCurrentUserId } from "./lib/helpers.js";
+import { safeGet, safeSet, normalizeResources, emptyTrade, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { JournalSection, TradeDetailModal } from "./components/Journal.jsx";
 import { TradeForm } from "./components/TradeForm.jsx";
@@ -21,6 +21,7 @@ const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").the
 const Analysis = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.Analysis })));
 const TradeAnalysisPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.TradeAnalysisPage })));
 const HeatmapPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.HeatmapPage })));
+const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").then((m) => ({ default: m.SystemQualityPage })));
 const AccountsSection = lazy(() => import("./components/Accounts.jsx").then((m) => ({ default: m.AccountsSection })));
 const EquityIndexPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.EquityIndexPage })));
 const CapitalTrackerPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.CapitalTrackerPage })));
@@ -109,6 +110,15 @@ function AppShell({ onSignOut, userEmail }) {
     setView("journal");
   };
   const handleDelete = (id) => persistTrades(trades.filter((t) => t.id !== id));
+  const handleBulkDelete = (ids) => {
+    const idSet = new Set(ids);
+    persistTrades(trades.filter((t) => !idSet.has(t.id)));
+  };
+  const handleDuplicateTrades = (ids) => {
+    const idSet = new Set(ids);
+    const copies = trades.filter((t) => idSet.has(t.id)).map((t) => ({ ...t, id: uid(), createdAt: Date.now() }));
+    if (copies.length) persistTrades([...trades, ...copies]);
+  };
   const startNew = () => {
     const t = emptyTrade();
     if (activeAccount) t.account = activeAccount;
@@ -168,6 +178,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
         { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
         { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
+        { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
       ]
     },
     {
@@ -263,7 +274,7 @@ function AppShell({ onSignOut, userEmail }) {
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
-              view === "journal" ? <JournalSection trades={trades} resources={resources} onEdit={startEdit} onDelete={handleDelete} /> :
+              view === "journal" ? <JournalSection trades={trades} resources={resources} onEdit={startEdit} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
@@ -279,6 +290,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "structureperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="structure" onViewTrade={startEdit} /> :
               view === "weekdayperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="weekday" onViewTrade={startEdit} /> :
               view === "heatmap" ? <HeatmapPage trades={trades} resources={resources} /> :
+              view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}
                   onAccountsChange={(next) => persistResources({ ...resources, accounts: next })} onLedgerChange={persistLedger}
