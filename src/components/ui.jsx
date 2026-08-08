@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil } from "lucide-react";
 import { formatVN } from "../lib/helpers.js";
 
 export function CellImagePreview({ image, link }) {
@@ -335,6 +335,35 @@ export function RiskAlertBanner({ alerts }) {
         ))}
       </div>
     </div>
+  );
+}
+
+export function SloganBar({ slogan, onChange, onNavigate }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(slogan || "");
+  const startEdit = (e) => { e.stopPropagation(); setDraft(slogan || ""); setEditing(true); };
+  const save = () => { onChange(draft.trim()); setEditing(false); };
+  if (editing) {
+    return (
+      <div className="slogan-bar slogan-bar-edit">
+        <input
+          className="input"
+          value={draft}
+          autoFocus
+          placeholder="Nhập phương châm giao dịch của bạn..."
+          onChange={(e) => setDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+        />
+        <button type="button" className="row-btn slogan-save-btn" onClick={(e) => { e.stopPropagation(); save(); }}><Check size={14} /></button>
+      </div>
+    );
+  }
+  return (
+    <button type="button" className="slogan-bar" onClick={onNavigate} title="Bấm để xem Nguyên tắc giao dịch">
+      <span>{slogan ? slogan : "Bấm để thêm phương châm giao dịch của bạn..."}</span>
+      <span className="slogan-edit-btn" onClick={startEdit} title="Sửa phương châm"><Pencil size={13} /></span>
+    </button>
   );
 }
 

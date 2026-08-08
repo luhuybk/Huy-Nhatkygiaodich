@@ -114,7 +114,9 @@ export const THEME_PRESETS = {
 
 export const ACCENT_PRESETS = { gold: "#d4a24e", green: "#2fae66", blue: "#4a90e2", purple: "#9b7fe0", red: "#e0615a" };
 
-export const DEFAULT_UI_SETTINGS = { mode: "dark", accent: "gold" };
+export const DEFAULT_UI_SETTINGS = { mode: "dark", accent: "gold", journeySlogan: "Kỷ luật hôm nay, thành quả ngày mai." };
+
+export const DEFAULT_PRINCIPLES = { follow: [], avoid: [] };
 
 export const FLOW_TYPES = [
   { id: "deposit", label: "Nạp tiền" },

@@ -3,11 +3,11 @@ import { Download, Upload } from "lucide-react";
 import { ACCENT_PRESETS } from "../lib/constants.js";
 import { DangerConfirmButton, Field, StatCard } from "./ui.jsx";
 
-export function SettingsSection({ trades, resources, ledger, notes, lessons, setupLibrary, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
+export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, principles, setupLibrary, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
-    const payload = { trades, resources, ledger, notes, lessons, setupLibrary, uiSettings, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, exportedAt: new Date().toISOString() };
+    const payload = { trades, resources, ledger, notes, lessons, processImprovements, principles, setupLibrary, uiSettings, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

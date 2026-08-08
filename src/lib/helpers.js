@@ -48,6 +48,18 @@ export function emptySkipped() {
   };
 }
 
+export function startOfWeek(dateStr) {
+  const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function emptyProcessImprovement() {
+  return { id: null, weekStart: startOfWeek(), doneWell: "", mistakes: "", improveNext: "" };
+}
+
 export function emptyReminder() {
   return { id: null, title: "", frequency: "weekly", weekday: 0, dayOfMonth: 1, date: "", active: true, doneDates: [] };
 }

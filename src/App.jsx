@@ -3,18 +3,20 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank,
-  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge,
+  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks,
 } from "lucide-react";
 import "./styles.css";
-import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
+import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
 import { safeGet, safeSet, normalizeResources, emptyTrade, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { JournalSection, TradeDetailModal } from "./components/Journal.jsx";
 import { TradeForm } from "./components/TradeForm.jsx";
-import { MissedSetupsSection, SkippedSetupsSection, LessonsSection, SetupLibrarySection } from "./components/LessonsAndSetups.jsx";
+import { MissedSetupsSection, SkippedSetupsSection, JourneySection, SetupLibrarySection } from "./components/LessonsAndSetups.jsx";
+import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
 import { NotesSection } from "./components/Notes.jsx";
 import { SettingsSection } from "./components/Settings.jsx";
+import { SloganBar } from "./components/ui.jsx";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
 const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.DimensionPerformance })));
@@ -37,6 +39,8 @@ function AppShell({ onSignOut, userEmail }) {
   const [ledger, setLedger] = useState([]);
   const [notes, setNotes] = useState([]);
   const [lessons, setLessons] = useState([]);
+  const [processImprovements, setProcessImprovements] = useState([]);
+  const [principles, setPrinciples] = useState(DEFAULT_PRINCIPLES);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
   const [skippedSetups, setSkippedSetups] = useState([]);
@@ -54,12 +58,14 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pr, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
         safeGet("notes", []),
         safeGet("lessons", []),
+        safeGet("processImprovements", []),
+        safeGet("principles", DEFAULT_PRINCIPLES),
         safeGet("setupLibrary", []),
         safeGet("uiSettings", DEFAULT_UI_SETTINGS),
         safeGet("missedSetups", []),
@@ -74,6 +80,8 @@ function AppShell({ onSignOut, userEmail }) {
       setLedger(lg);
       setNotes(nt);
       setLessons(ls);
+      setProcessImprovements(pi);
+      setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
       setSetupLibrary(sl);
       setUiSettings({ ...DEFAULT_UI_SETTINGS, ...us });
       setMissedSetups(ms);
@@ -93,6 +101,8 @@ function AppShell({ onSignOut, userEmail }) {
   const persistLedger = useCallback(async (next) => { setLedger(next); await safeSet("ledger", next); flashSaved(); }, []);
   const persistNotes = useCallback(async (next) => { setNotes(next); await safeSet("notes", next); flashSaved(); }, []);
   const persistLessons = useCallback(async (next) => { setLessons(next); await safeSet("lessons", next); flashSaved(); }, []);
+  const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); await safeSet("processImprovements", next); flashSaved(); }, []);
+  const persistPrinciples = useCallback(async (next) => { setPrinciples(next); await safeSet("principles", next); flashSaved(); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); await safeSet("setupLibrary", next); flashSaved(); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); await safeSet("missedSetups", next); flashSaved(); }, []);
@@ -134,6 +144,8 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.ledger) persistLedger(data.ledger);
     if (data.notes) persistNotes(data.notes);
     if (data.lessons) persistLessons(data.lessons);
+    if (data.processImprovements) persistProcessImprovements(data.processImprovements);
+    if (data.principles) persistPrinciples({ ...DEFAULT_PRINCIPLES, ...data.principles });
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
     if (data.missedSetups) persistMissedSetups(data.missedSetups);
@@ -148,6 +160,8 @@ function AppShell({ onSignOut, userEmail }) {
     persistResources(DEFAULT_RESOURCES);
     persistLedger([]);
     persistNotes([]);
+    persistProcessImprovements([]);
+    persistPrinciples(DEFAULT_PRINCIPLES);
     persistSetupLibrary([]);
     persistMissedSetups([]);
     persistSkippedSetups([]);
@@ -188,6 +202,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "setuplib", label: "Setup mẫu", icon: Layers },
         { key: "notes", label: "Ghi chú", icon: StickyNote },
         { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
+        { key: "principles", label: "Nguyên tắc", icon: ListChecks },
         { key: "resources", label: "Tài nguyên", icon: Database },
       ]
     },
@@ -210,6 +225,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   return (
     <div className="app" style={cssVars}>
+      <SloganBar slogan={uiSettings.journeySlogan} onChange={(next) => persistUiSettings({ ...uiSettings, journeySlogan: next })} onNavigate={() => goTo("principles")} />
       <div className="app-shell">
         {mobileNavOpen ? <div className="sidebar-backdrop" onClick={() => setMobileNavOpen(false)} /> : null}
         <div className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
@@ -298,11 +314,15 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "setuplib" ? <SetupLibrarySection items={setupLibrary} onChange={persistSetupLibrary} /> :
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
-              view === "lessons" ? <LessonsSection items={lessons} resources={resources} trades={trades} onChange={persistLessons} /> :
+              view === "lessons" ? (
+                <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
+                  processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements} />
+              ) :
+              view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={persistResources} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} setupLibrary={setupLibrary} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} onImportAll={handleImportAll} onReset={handleResetAll} />

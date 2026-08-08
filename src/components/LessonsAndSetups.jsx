@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList } from "lucide-react";
 import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, ResourceSelect } from "./ui.jsx";
 import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptySetupDef, emptySkipped, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptyProcessImprovement, emptySetupDef, emptySkipped, uid } from "../lib/helpers.js";
 
 export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
@@ -395,6 +395,93 @@ export function SetupLibrarySection({ items, onChange }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ProcessImprovementSection({ items, onChange }) {
+  const [form, setForm] = useState(emptyProcessImprovement());
+  const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptyProcessImprovement()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyProcessImprovement()); setError(""); };
+  const save = () => {
+    if (!form.weekStart) { setError("Chọn tuần trước đã."); return; }
+    if (!form.doneWell.trim() && !form.mistakes.trim() && !form.improveNext.trim()) {
+      setError("Trả lời ít nhất 1 trong 3 câu hỏi trước đã.");
+      return;
+    }
+    setError("");
+    const payload = { ...form, id: form.id || uid() };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptyProcessImprovement());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(() => [...items].sort((a, b) => (b.weekStart || "").localeCompare(a.weekStart || "")), [items]);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Mỗi tuần dừng lại trả lời 3 câu hỏi để cải thiện quy trình giao dịch — làm tốt điều gì, mắc lỗi ở đâu, và lần sau cải thiện ra sao.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm đánh giá tuần</button>
+      </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa đánh giá tuần" : "Đánh giá quy trình tuần này"} onClose={closeModal}>
+          <Field label="Tuần bắt đầu">
+            <input type="date" className="input" value={form.weekStart} onChange={(e) => setF("weekStart")(e.target.value)} />
+          </Field>
+          <Field label="1. Tuần này mình đã làm tốt điều gì?">
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.doneWell} onChange={(e) => setF("doneWell")(e.target.value)} placeholder="Những điều đã làm tốt, đúng quy trình..." />
+          </Field>
+          <Field label="2. Mình đã mắc lỗi ở đâu? (hay còn thiếu sót ở đâu?)">
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.mistakes} onChange={(e) => setF("mistakes")(e.target.value)} placeholder="Lỗi, thiếu sót cần nhìn thẳng vào..." />
+          </Field>
+          <Field label="3. Lần sau mình có thể làm gì để tốt hơn?">
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.improveNext} onChange={(e) => setF("improveNext")(e.target.value)} placeholder="Điều cụ thể sẽ thay đổi/cải thiện..." />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu đánh giá"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <div className="resource-list" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có đánh giá tuần nào. Thêm đánh giá đầu tiên nhé.</p> : null}
+        {sorted.map((n) => (
+          <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
+            <div className="note-head">
+              <span className="note-type">Tuần {n.weekStart || "—"}</span>
+              <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+            </div>
+            {n.doneWell ? <p className="note-content"><strong>Làm tốt:</strong> {n.doneWell}</p> : null}
+            {n.mistakes ? <p className="note-content"><strong>Mắc lỗi:</strong> {n.mistakes}</p> : null}
+            {n.improveNext ? <p className="note-content"><strong>Cải thiện:</strong> {n.improveNext}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements }) {
+  const [tab, setTab] = useState("lessons");
+  return (
+    <div>
+      <div className="subtabs">
+        <button className={`subtab ${tab === "lessons" ? "subtab-active" : ""}`} onClick={() => setTab("lessons")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Bài học</button>
+        <button className={`subtab ${tab === "process" ? "subtab-active" : ""}`} onClick={() => setTab("process")}><ClipboardList size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Cải thiện quy trình</button>
+      </div>
+      {tab === "lessons" ? (
+        <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />
+      ) : (
+        <ProcessImprovementSection items={processImprovements} onChange={onChangeProcessImprovements} />
+      )}
     </div>
   );
 }
