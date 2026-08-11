@@ -30,7 +30,21 @@ export function emptyNote(date) {
 }
 
 export function emptyLesson(date) {
-  return { id: null, date: date || todayStr(), categories: [], symbol: "", tradeId: "", content: "", link: "", image: "" };
+  return { id: null, date: date || todayStr(), categories: [], symbol: "", tradeId: "", title: "", content: "", link: "", image: "", images: [{ link: "", image: "" }] };
+}
+
+export const LESSON_MAX_IMAGES = 4;
+
+export function lessonAttachments(lesson) {
+  if (lesson.images && lesson.images.length) return lesson.images;
+  if (lesson.link || lesson.image) return [{ link: lesson.link || "", image: lesson.image || "" }];
+  return [];
+}
+
+export function lessonTitle(lesson) {
+  if (lesson.title && lesson.title.trim()) return lesson.title.trim();
+  const c = (lesson.content || "").trim();
+  return c.length > 70 ? `${c.slice(0, 70)}…` : c;
 }
 
 export function emptySetupDef() {
@@ -57,7 +71,7 @@ export function startOfWeek(dateStr) {
 }
 
 export function emptyProcessImprovement() {
-  return { id: null, weekStart: startOfWeek(), doneWell: "", mistakes: "", improveNext: "" };
+  return { id: null, weekStart: startOfWeek(), doneWell: "", mistakes: "", improveNext: "", violatedPrinciples: [] };
 }
 
 export function emptyReminder() {
@@ -780,7 +794,7 @@ export function applyLessonFilters(items, filters) {
   return items.filter((n) => {
     if (filters.q) {
       const q = filters.q.toLowerCase();
-      if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q)) return false;
+      if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q) && !(n.title || "").toLowerCase().includes(q)) return false;
     }
     if (filters.category && !(n.categories || []).includes(filters.category)) return false;
     if (filters.from && (n.date || "") < filters.from) return false;

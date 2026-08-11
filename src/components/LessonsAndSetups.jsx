@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList } from "lucide-react";
-import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, ResourceSelect } from "./ui.jsx";
+import { useState, useMemo, Suspense, lazy } from "react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight } from "lucide-react";
+import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptyProcessImprovement, emptySetupDef, emptySkipped, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, uid } from "../lib/helpers.js";
+
+const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
 export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
@@ -250,18 +252,25 @@ export function LessonsSection({ items, resources, trades, onChange }) {
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggleExpand = (id) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const tradeItems = useMemo(
     () => trades.map((t) => ({ id: t.id, name: `${t.symbol || "—"} · ${t.entryDate || "—"}` })),
     [trades]
   );
   const openNew = () => { setForm(emptyLesson()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptyLesson()); setError(""); };
   const save = () => {
     if (!form.content.trim()) { setError("Nhập nội dung bài học trước đã."); return; }
     setError("");
-    const payload = { ...form, id: form.id || uid() };
+    const cleanedImages = (form.images || []).filter((it) => (it.link && it.link.trim()) || it.image);
+    const payload = { ...form, id: form.id || uid(), images: cleanedImages, link: "", image: "" };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
@@ -296,11 +305,14 @@ export function LessonsSection({ items, resources, trades, onChange }) {
           <Field label="Liên kết tới lệnh (tùy chọn)">
             <IdSelect value={form.tradeId} onChange={setF("tradeId")} items={tradeItems} placeholder="Không gắn với lệnh cụ thể" />
           </Field>
+          <Field label="Tiêu đề" hint="Hiển thị ngắn gọn trong danh sách — để trống sẽ tự lấy từ nội dung">
+            <input className="input" value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: Đừng vào lệnh khi chưa đủ tín hiệu xác nhận" />
+          </Field>
           <Field label="Nội dung bài học" required>
             <textarea className="input textarea" style={{ minHeight: 100 }} value={form.content} onChange={(e) => setF("content")(e.target.value)} placeholder="Điều rút ra được, cần chú ý lần sau..." />
           </Field>
-          <Field label="Link / hình ảnh TradingView">
-            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="lesson" />
+          <Field label={`Link / hình ảnh TradingView (tối đa ${LESSON_MAX_IMAGES})`}>
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="lesson" max={LESSON_MAX_IMAGES} />
           </Field>
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
@@ -315,17 +327,31 @@ export function LessonsSection({ items, resources, trades, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có bài học nào khớp bộ lọc.</p> : null}
         {sorted.map((n) => {
           const linkedTrade = trades.find((t) => t.id === n.tradeId);
+          const attachments = lessonAttachments(n);
+          const isOpen = expanded.has(n.id);
           return (
-            <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
+            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
               <div className="note-head">
+                {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
                 {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
                 {n.symbol ? <span className="mono" style={{ fontWeight: 600 }}>{n.symbol}</span> : null}
                 <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
-                {(n.image || n.link) ? <span onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></span> : null}
+                {attachments.length ? (
+                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <CellImagePreview image={attachments[0].image} link={attachments[0].link} />
+                    {attachments.length > 1 ? <span className="mono" style={{ fontSize: 10.5, color: "var(--text-dim)" }}>+{attachments.length - 1}</span> : null}
+                  </span>
+                ) : null}
+                <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
                 <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
               </div>
-              <p className="note-content">{n.content}</p>
-              {linkedTrade ? <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span> : null}
+              <p className="note-content" style={{ fontWeight: 600 }}>{lessonTitle(n) || "(Chưa có nội dung)"}</p>
+              {isOpen ? (
+                <>
+                  <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}>{n.content}</p>
+                  {linkedTrade ? <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span> : null}
+                </>
+              ) : null}
             </div>
           );
         })}
@@ -399,77 +425,7 @@ export function SetupLibrarySection({ items, onChange }) {
   );
 }
 
-export function ProcessImprovementSection({ items, onChange }) {
-  const [form, setForm] = useState(emptyProcessImprovement());
-  const [error, setError] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
-  const openNew = () => { setForm(emptyProcessImprovement()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
-  const closeModal = () => { setModalOpen(false); setForm(emptyProcessImprovement()); setError(""); };
-  const save = () => {
-    if (!form.weekStart) { setError("Chọn tuần trước đã."); return; }
-    if (!form.doneWell.trim() && !form.mistakes.trim() && !form.improveNext.trim()) {
-      setError("Trả lời ít nhất 1 trong 3 câu hỏi trước đã.");
-      return;
-    }
-    setError("");
-    const payload = { ...form, id: form.id || uid() };
-    const exists = items.some((n) => n.id === payload.id);
-    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
-    setModalOpen(false);
-    setForm(emptyProcessImprovement());
-  };
-  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
-  const sorted = useMemo(() => [...items].sort((a, b) => (b.weekStart || "").localeCompare(a.weekStart || "")), [items]);
-
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-        <p className="field-hint" style={{ margin: 0 }}>Mỗi tuần dừng lại trả lời 3 câu hỏi để cải thiện quy trình giao dịch — làm tốt điều gì, mắc lỗi ở đâu, và lần sau cải thiện ra sao.</p>
-        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm đánh giá tuần</button>
-      </div>
-      {modalOpen ? (
-        <FormModal title={form.id ? "Sửa đánh giá tuần" : "Đánh giá quy trình tuần này"} onClose={closeModal}>
-          <Field label="Tuần bắt đầu">
-            <input type="date" className="input" value={form.weekStart} onChange={(e) => setF("weekStart")(e.target.value)} />
-          </Field>
-          <Field label="1. Tuần này mình đã làm tốt điều gì?">
-            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.doneWell} onChange={(e) => setF("doneWell")(e.target.value)} placeholder="Những điều đã làm tốt, đúng quy trình..." />
-          </Field>
-          <Field label="2. Mình đã mắc lỗi ở đâu? (hay còn thiếu sót ở đâu?)">
-            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.mistakes} onChange={(e) => setF("mistakes")(e.target.value)} placeholder="Lỗi, thiếu sót cần nhìn thẳng vào..." />
-          </Field>
-          <Field label="3. Lần sau mình có thể làm gì để tốt hơn?">
-            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.improveNext} onChange={(e) => setF("improveNext")(e.target.value)} placeholder="Điều cụ thể sẽ thay đổi/cải thiện..." />
-          </Field>
-          {error ? <p className="error-text">{error}</p> : null}
-          <div className="form-actions" style={{ marginTop: 4 }}>
-            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
-            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
-            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu đánh giá"}</button>
-          </div>
-        </FormModal>
-      ) : null}
-      <div className="resource-list" style={{ marginTop: 16 }}>
-        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có đánh giá tuần nào. Thêm đánh giá đầu tiên nhé.</p> : null}
-        {sorted.map((n) => (
-          <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
-            <div className="note-head">
-              <span className="note-type">Tuần {n.weekStart || "—"}</span>
-              <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
-            </div>
-            {n.doneWell ? <p className="note-content"><strong>Làm tốt:</strong> {n.doneWell}</p> : null}
-            {n.mistakes ? <p className="note-content"><strong>Mắc lỗi:</strong> {n.mistakes}</p> : null}
-            {n.improveNext ? <p className="note-content"><strong>Cải thiện:</strong> {n.improveNext}</p> : null}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements }) {
+export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, avoidPrinciples }) {
   const [tab, setTab] = useState("lessons");
   return (
     <div>
@@ -480,7 +436,9 @@ export function JourneySection({ lessons, resources, trades, onChangeLessons, pr
       {tab === "lessons" ? (
         <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />
       ) : (
-        <ProcessImprovementSection items={processImprovements} onChange={onChangeProcessImprovements} />
+        <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
+          <ProcessImprovementSection items={processImprovements} avoidPrinciples={avoidPrinciples} onChange={onChangeProcessImprovements} />
+        </Suspense>
       )}
     </div>
   );

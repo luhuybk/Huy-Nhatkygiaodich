@@ -124,6 +124,10 @@
         .outcome-pill.loss { background:rgba(224,97,90,0.15); color:var(--loss); }
         .outcome-pill.be { background:var(--surface-2); color:var(--text-dim); }
         .imglink { display:flex; flex-direction:column; gap:8px; }
+        .multi-imglink { display:flex; flex-direction:column; gap:12px; }
+        .multi-imglink-slot { display:flex; flex-direction:column; gap:6px; padding:10px; border:1px dashed var(--border); border-radius:10px; }
+        .multi-imglink-slot-head { display:flex; align-items:center; justify-content:space-between; }
+        .multi-imglink-add { align-self:flex-start; }
         .imglink-row { display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
         .link-preview-anchor { position:relative; display:flex; align-items:center; cursor:pointer; flex-shrink:0; }
         .link-preview-popup { position:absolute; right:0; top:calc(100% + 8px); z-index:20; background:var(--surface); border:1px solid var(--border);

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
-import { safeGet, safeSet, normalizeResources, emptyTrade, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
+import { safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { JournalSection, TradeDetailModal } from "./components/Journal.jsx";
 import { TradeForm } from "./components/TradeForm.jsx";
@@ -83,13 +83,32 @@ function AppShell({ onSignOut, userEmail }) {
       setProcessImprovements(pi);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
       setSetupLibrary(sl);
-      setUiSettings({ ...DEFAULT_UI_SETTINGS, ...us });
       setMissedSetups(ms);
       setSkippedSetups(ss);
-      setReminders(rm);
       setCapitalAccounts(ca);
       setCapitalEntries(ce);
       setCapitalFlows(cf);
+
+      const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
+      if (!mergedUi.defaultRemindersSeeded) {
+        const hasSimilar = (keyword) => rm.some((r) => (r.title || "").toLowerCase().includes(keyword));
+        const candidates = [
+          { keyword: "quy trình", title: "Cải thiện quy trình giao dịch tuần này" },
+          { keyword: "đường cong vốn", title: "Cập nhật đường cong vốn tuần này" },
+        ];
+        const seededReminders = candidates
+          .filter((c) => !hasSimilar(c.keyword))
+          .map((c) => ({ ...emptyReminder(), id: uid(), title: c.title, frequency: "weekly", weekday: 0 }));
+        const nextReminders = seededReminders.length ? [...rm, ...seededReminders] : rm;
+        const nextUi = { ...mergedUi, defaultRemindersSeeded: true };
+        setReminders(nextReminders);
+        setUiSettings(nextUi);
+        if (seededReminders.length) await safeSet("reminders", nextReminders);
+        await safeSet("uiSettings", nextUi);
+      } else {
+        setReminders(rm);
+        setUiSettings(mergedUi);
+      }
       setLoading(false);
     })();
   }, []);
@@ -316,7 +335,8 @@ function AppShell({ onSignOut, userEmail }) {
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
               view === "lessons" ? (
                 <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
-                  processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements} />
+                  processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
+                  avoidPrinciples={principles.avoid || []} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (

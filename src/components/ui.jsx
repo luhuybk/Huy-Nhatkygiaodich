@@ -229,6 +229,41 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
   );
 }
 
+export function MultiImageOrLink({ items, onChange, label, max = 4 }) {
+  const list = items && items.length ? items : [{ link: "", image: "" }];
+  const setItem = (i, patch) => onChange(list.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+  const addSlot = () => { if (list.length < max) onChange([...list, { link: "", image: "" }]); };
+  const removeSlot = (i) => { const next = list.filter((_, idx) => idx !== i); onChange(next.length ? next : [{ link: "", image: "" }]); };
+  return (
+    <div className="multi-imglink">
+      {list.map((it, i) => (
+        <div key={i} className="multi-imglink-slot">
+          <div className="multi-imglink-slot-head">
+            <span className="field-hint" style={{ margin: 0 }}>Ảnh/link {i + 1}</span>
+            {list.length > 1 ? (
+              <button type="button" className="row-btn" onClick={() => removeSlot(i)} aria-label="Xóa ảnh/link này"><X size={13} /></button>
+            ) : null}
+          </div>
+          <ImageOrLink
+            link={it.link}
+            image={it.image}
+            onLinkChange={(v) => setItem(i, { link: v })}
+            onImageChange={(v) => setItem(i, { image: v })}
+            label={`${label}-${i}`}
+          />
+        </div>
+      ))}
+      {list.length < max ? (
+        <button type="button" className="btn btn-ghost multi-imglink-add" onClick={addSlot}>
+          <ImagePlus size={14} /> Thêm ảnh/link ({list.length}/{max})
+        </button>
+      ) : (
+        <p className="field-hint" style={{ margin: 0 }}>Đã đạt tối đa {max} ảnh/link.</p>
+      )}
+    </div>
+  );
+}
+
 export function Section({ num, title, subtitle, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
