@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Plus } from "lucide-react";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, FormModal, MultiChipSelect } from "./ui.jsx";
-import { CATEGORY_COLORS, GRID, MUTED, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
+import { CATEGORY_COLORS, GRID, MUTED, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { emptyProcessImprovement, uid } from "../lib/helpers.js";
 
 export function ProcessImprovementSection({ items, avoidPrinciples, onChange }) {
@@ -63,7 +63,7 @@ export function ProcessImprovementSection({ items, avoidPrinciples, onChange }) 
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
               <XAxis dataKey="weekStart" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={30} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
               {chartPrinciples.map((p, i) => (
                 <Bar key={p} dataKey={p} stackId="violations" fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} maxBarSize={40} />
               ))}
