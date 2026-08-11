@@ -496,7 +496,7 @@ export function SetupLibrarySection({ items, onChange }) {
         <Field label="Ghi chú"><textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điều kiện, quy tắc nhận diện setup..." /></Field>
         {form.image ? (
           <div className="thumb-wrap" style={{ marginBottom: 10 }}>
-            <img src={form.image} alt="setup" className="thumb" style={{ width: 60, height: 60 }} onClick={() => window.open(form.image, "_blank")} />
+            <a href={form.image} target="_blank" rel="noopener noreferrer"><img src={form.image} alt="setup" className="thumb" style={{ width: 60, height: 60 }} /></a>
             <ConfirmButton className="thumb-x" icon={X} onConfirm={() => setF("image")("")} label="Xóa ảnh" />
           </div>
         ) : null}

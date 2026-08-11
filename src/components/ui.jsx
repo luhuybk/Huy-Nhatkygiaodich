@@ -8,10 +8,14 @@ export function CellImagePreview({ image, link }) {
   useEffect(() => setFailed(false), [link]);
   if (!image && !link) return <span style={{ color: "var(--text-dim)" }}>—</span>;
   if (image) {
-    return <img src={image} alt="" className="thumb-mini" onClick={(e) => { e.stopPropagation(); window.open(image, "_blank"); }} />;
+    return (
+      <a href={image} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+        <img src={image} alt="" className="thumb-mini" />
+      </a>
+    );
   }
   return (
-    <span className="link-preview-anchor" onClick={(e) => { e.stopPropagation(); window.open(link, "_blank"); }}
+    <a className="link-preview-anchor" href={link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <ImageIcon size={15} color="var(--accent)" />
       {hover ? (
@@ -19,7 +23,7 @@ export function CellImagePreview({ image, link }) {
           {failed ? <p className="link-preview-fallback">Không xem trước được — bấm để mở link.</p> : <img src={link} alt="" onError={() => setFailed(true)} />}
         </div>
       ) : null}
-    </span>
+    </a>
   );
 }
 
@@ -203,8 +207,8 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
         <input className="input input-inline" placeholder="Dán link TradingView / ảnh chụp màn hình"
           value={link} onChange={(e) => onLinkChange(e.target.value)} />
         {isUrl ? (
-          <div className="link-preview-anchor" onMouseEnter={() => setHoverPreview(true)} onMouseLeave={() => setHoverPreview(false)}
-            onClick={() => window.open(link, "_blank")}>
+          <a className="link-preview-anchor" href={link} target="_blank" rel="noopener noreferrer"
+            onMouseEnter={() => setHoverPreview(true)} onMouseLeave={() => setHoverPreview(false)}>
             <ImageIcon size={15} color="var(--accent)" />
             {hoverPreview ? (
               <div className="link-preview-popup">
@@ -215,7 +219,7 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
                 )}
               </div>
             ) : null}
-          </div>
+          </a>
         ) : null}
       </div>
       <div className="imglink-row">
@@ -225,7 +229,7 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
         </label>
         {image ? (
           <div className="thumb-wrap">
-            <img src={image} alt={label} className="thumb" onClick={() => window.open(image, "_blank")} />
+            <a href={image} target="_blank" rel="noopener noreferrer"><img src={image} alt={label} className="thumb" /></a>
             <button type="button" className={`thumb-x ${confirmDelete ? "confirm-active" : ""}`}
               onClick={() => { if (confirmDelete) { onImageChange(""); setConfirmDelete(false); } else setConfirmDelete(true); }}
               title={confirmDelete ? "Bấm lần nữa để xóa" : "Xóa ảnh"}>
