@@ -796,6 +796,20 @@ export function applyMissSkipFilters(items, filters, dateField) {
   });
 }
 
+export function applyProblemLogFilters(items, filters) {
+  return items.filter((n) => {
+    if (filters.q) {
+      const q = filters.q.toLowerCase();
+      if (!(n.problem || "").toLowerCase().includes(q) && !(n.solution || "").toLowerCase().includes(q)) return false;
+    }
+    if (filters.status === "resolved" && !n.resolved) return false;
+    if (filters.status === "unresolved" && n.resolved) return false;
+    if (filters.from && (n.date || "") < filters.from) return false;
+    if (filters.to && (n.date || "") > filters.to) return false;
+    return true;
+  });
+}
+
 export function applyLessonFilters(items, filters) {
   return items.filter((n) => {
     if (filters.q) {

@@ -2,7 +2,7 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, PROBLEM_MAX_IMAGES, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, PROBLEM_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -363,9 +363,30 @@ export function LessonsSection({ items, resources, trades, onChange }) {
   );
 }
 
+export function ProblemLogFilterPanel({ filters, setFilters }) {
+  const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
+  const clear = () => setFilters({});
+  return (
+    <div className="filter-panel">
+      <div className="filter-grid">
+        <input className="input" placeholder="Tìm theo vấn đề / hướng xử lý..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
+        <select className="input" value={filters.status || ""} onChange={(e) => set("status")(e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          <option value="unresolved">Chưa xử lý</option>
+          <option value="resolved">Đã xử lý</option>
+        </select>
+        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+      </div>
+      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+    </div>
+  );
+}
+
 export function ProblemLogSection({ items, onChange }) {
   const [form, setForm] = useState(emptyProblemLog());
   const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
   const toggleExpand = (id) => setExpanded((prev) => {
@@ -389,7 +410,10 @@ export function ProblemLogSection({ items, onChange }) {
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
   const toggleResolved = (n, e) => { e.stopPropagation(); onChange(items.map((it) => (it.id === n.id ? { ...it, resolved: !it.resolved } : it))); };
-  const sorted = useMemo(() => [...items].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [items]);
+  const sorted = useMemo(
+    () => applyProblemLogFilters(items, filters).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    [items, filters]
+  );
 
   return (
     <div>
@@ -397,6 +421,7 @@ export function ProblemLogSection({ items, onChange }) {
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại vấn đề gặp phải khi giao dịch và hướng xử lý — VD: FOMO vào lệnh khi có giờ ra tin, cách xử lý là tạo nhắc hẹn không vào lệnh đồng tiền đó.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm vấn đề</button>
       </div>
+      <ProblemLogFilterPanel filters={filters} setFilters={setFilters} />
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal}>
           <Field label="Ngày">
@@ -426,7 +451,7 @@ export function ProblemLogSection({ items, onChange }) {
         </FormModal>
       ) : null}
       <div className="resource-list" style={{ marginTop: 16 }}>
-        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có vấn đề nào được ghi nhận.</p> : null}
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có vấn đề nào khớp bộ lọc.</p> : null}
         {sorted.map((n) => {
           const attachments = n.images || [];
           const isOpen = expanded.has(n.id);
@@ -528,8 +553,29 @@ export function SetupLibrarySection({ items, onChange }) {
 
 export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, avoidPrinciples }) {
   const [tab, setTab] = useState("lessons");
+  const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
+  const thisWeekViolations = useMemo(() => {
+    const thisMonday = startOfWeek(todayStr());
+    return processImprovements
+      .filter((n) => n.weekStart && startOfWeek(n.weekStart) === thisMonday)
+      .reduce((sum, n) => sum + (n.violatedPrinciples || []).length, 0);
+  }, [processImprovements]);
   return (
     <div>
+      {unresolvedCount > 0 || thisWeekViolations > 0 ? (
+        <div className="journey-summary">
+          {unresolvedCount > 0 ? (
+            <button type="button" className="journey-summary-item" onClick={() => setTab("problems")}>
+              <Wrench size={13} /> {unresolvedCount} vấn đề chưa xử lý
+            </button>
+          ) : null}
+          {thisWeekViolations > 0 ? (
+            <button type="button" className="journey-summary-item" onClick={() => setTab("process")}>
+              <ClipboardList size={13} /> {thisWeekViolations} vi phạm nguyên tắc tuần này
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="subtabs">
         <button className={`subtab ${tab === "lessons" ? "subtab-active" : ""}`} onClick={() => setTab("lessons")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Bài học</button>
         <button className={`subtab ${tab === "process" ? "subtab-active" : ""}`} onClick={() => setTab("process")}><ClipboardList size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Cải thiện quy trình</button>

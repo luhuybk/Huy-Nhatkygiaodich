@@ -9,9 +9,6 @@ import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
 import { safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
-import { JournalSection, TradeDetailModal } from "./components/Journal.jsx";
-import { TradeForm } from "./components/TradeForm.jsx";
-import { MissedSetupsSection, SkippedSetupsSection, JourneySection, SetupLibrarySection } from "./components/LessonsAndSetups.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
 import { NotesSection } from "./components/Notes.jsx";
@@ -27,6 +24,13 @@ const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").th
 const AccountsSection = lazy(() => import("./components/Accounts.jsx").then((m) => ({ default: m.AccountsSection })));
 const EquityIndexPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.EquityIndexPage })));
 const CapitalTrackerPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.CapitalTrackerPage })));
+const JournalSection = lazy(() => import("./components/Journal.jsx").then((m) => ({ default: m.JournalSection })));
+const TradeDetailModal = lazy(() => import("./components/Journal.jsx").then((m) => ({ default: m.TradeDetailModal })));
+const TradeForm = lazy(() => import("./components/TradeForm.jsx").then((m) => ({ default: m.TradeForm })));
+const MissedSetupsSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.MissedSetupsSection })));
+const SkippedSetupsSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SkippedSetupsSection })));
+const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.JourneySection })));
+const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
 
 function LazyFallback() {
   return <p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>;
@@ -360,12 +364,14 @@ function AppShell({ onSignOut, userEmail }) {
         </div>
       </div>
       {viewingTrade ? (
-        <TradeDetailModal
-          trade={viewingTrade}
-          onClose={() => setViewingTrade(null)}
-          onEdit={(t) => { setViewingTrade(null); openEditForm(t); }}
-          onDelete={handleDelete}
-        />
+        <Suspense fallback={null}>
+          <TradeDetailModal
+            trade={viewingTrade}
+            onClose={() => setViewingTrade(null)}
+            onEdit={(t) => { setViewingTrade(null); openEditForm(t); }}
+            onDelete={handleDelete}
+          />
+        </Suspense>
       ) : null}
     </div>
   );
