@@ -176,7 +176,13 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
   const [err, setErr] = useState("");
   const [linkPreviewFailed, setLinkPreviewFailed] = useState(false);
   const [hoverPreview, setHoverPreview] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => setLinkPreviewFailed(false), [link]);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 2000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
   const handleFile = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -220,7 +226,11 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
         {image ? (
           <div className="thumb-wrap">
             <img src={image} alt={label} className="thumb" onClick={() => window.open(image, "_blank")} />
-            <button type="button" className="thumb-x" onClick={() => onImageChange("")}><X size={12} /></button>
+            <button type="button" className={`thumb-x ${confirmDelete ? "confirm-active" : ""}`}
+              onClick={() => { if (confirmDelete) { onImageChange(""); setConfirmDelete(false); } else setConfirmDelete(true); }}
+              title={confirmDelete ? "Bấm lần nữa để xóa" : "Xóa ảnh"}>
+              {confirmDelete ? <Check size={12} /> : <X size={12} />}
+            </button>
           </div>
         ) : null}
       </div>

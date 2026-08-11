@@ -51,6 +51,12 @@ export function emptySetupDef() {
   return { id: null, name: "", note: "", image: "" };
 }
 
+export const PROBLEM_MAX_IMAGES = 4;
+
+export function emptyProblemLog(date) {
+  return { id: null, date: date || todayStr(), problem: "", solution: "", images: [{ link: "", image: "" }], resolved: false };
+}
+
 export function emptyMissed() {
   return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
 }

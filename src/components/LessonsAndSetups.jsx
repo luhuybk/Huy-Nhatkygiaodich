@@ -1,8 +1,8 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, PROBLEM_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -333,24 +333,125 @@ export function LessonsSection({ items, resources, trades, onChange }) {
             <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
-                {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
-                {n.symbol ? <span className="mono" style={{ fontWeight: 600 }}>{n.symbol}</span> : null}
-                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
-                {attachments.length ? (
-                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <CellImagePreview image={attachments[0].image} link={attachments[0].link} />
-                    {attachments.length > 1 ? <span className="mono" style={{ fontSize: 10.5, color: "var(--text-dim)" }}>+{attachments.length - 1}</span> : null}
-                  </span>
-                ) : null}
+                <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>{lessonTitle(n) || "(Chưa có nội dung)"}</span>
                 <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
                 <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
               </div>
-              <p className="note-content" style={{ fontWeight: 600 }}>{lessonTitle(n) || "(Chưa có nội dung)"}</p>
+              <div className="note-head" style={{ marginTop: 2 }}>
+                {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
+                {n.symbol || linkedTrade ? (
+                  <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Lệnh: {n.symbol || linkedTrade.symbol}</span>
+                ) : null}
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
+                {attachments.length ? (
+                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  </span>
+                ) : null}
+              </div>
               {isOpen ? (
                 <>
                   <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}>{n.content}</p>
                   {linkedTrade ? <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span> : null}
                 </>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ProblemLogSection({ items, onChange }) {
+  const [form, setForm] = useState(emptyProblemLog());
+  const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggleExpand = (id) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptyProblemLog()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: (n.images && n.images.length) ? n.images : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyProblemLog()); setError(""); };
+  const save = () => {
+    if (!form.problem.trim()) { setError("Nhập vấn đề gặp phải trước đã."); return; }
+    setError("");
+    const cleanedImages = (form.images || []).filter((it) => (it.link && it.link.trim()) || it.image);
+    const payload = { ...form, id: form.id || uid(), images: cleanedImages };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptyProblemLog());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const toggleResolved = (n, e) => { e.stopPropagation(); onChange(items.map((it) => (it.id === n.id ? { ...it, resolved: !it.resolved } : it))); };
+  const sorted = useMemo(() => [...items].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [items]);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Ghi lại vấn đề gặp phải khi giao dịch và hướng xử lý — VD: FOMO vào lệnh khi có giờ ra tin, cách xử lý là tạo nhắc hẹn không vào lệnh đồng tiền đó.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm vấn đề</button>
+      </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal}>
+          <Field label="Ngày">
+            <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
+          </Field>
+          <Field label="Vấn đề gặp phải" required>
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.problem} onChange={(e) => setF("problem")(e.target.value)} placeholder="VD: FOMO vào lệnh khi có giờ ra tin..." />
+          </Field>
+          <Field label="Hướng xử lý">
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.solution} onChange={(e) => setF("solution")(e.target.value)} placeholder="VD: Tạo nhắc hẹn không vào lệnh đồng tiền đó trong giờ ra tin..." />
+          </Field>
+          <Field label={`Link / hình ảnh minh họa (tối đa ${PROBLEM_MAX_IMAGES})`}>
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="problem" max={PROBLEM_MAX_IMAGES} />
+          </Field>
+          <Field label="Trạng thái">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!form.resolved} onChange={(e) => setF("resolved")(e.target.checked)} />
+              <span>Đã xử lý vấn đề</span>
+            </label>
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu vấn đề"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <div className="resource-list" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có vấn đề nào được ghi nhận.</p> : null}
+        {sorted.map((n) => {
+          const attachments = n.images || [];
+          const isOpen = expanded.has(n.id);
+          return (
+            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
+              <div className="note-head">
+                {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
+                <span onClick={(e) => toggleResolved(n, e)} title={n.resolved ? "Đã xử lý — bấm để bỏ đánh dấu" : "Bấm để đánh dấu đã xử lý"}>
+                  <input type="checkbox" checked={!!n.resolved} onChange={() => {}} style={{ cursor: "pointer" }} />
+                </span>
+                <span className="note-content" style={{ fontWeight: 600, flex: 1, textDecoration: n.resolved ? "line-through" : "none", color: n.resolved ? "var(--text-dim)" : "var(--text)" }}>{n.problem}</span>
+                <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
+                <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+              </div>
+              <div className="note-head" style={{ marginTop: 2 }}>
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
+                {n.resolved ? <span className="note-type" style={{ color: "var(--win)" }}>Đã xử lý</span> : <span className="note-type" style={{ color: "var(--loss)" }}>Chưa xử lý</span>}
+                {attachments.length ? (
+                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  </span>
+                ) : null}
+              </div>
+              {isOpen ? (
+                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}><strong>Hướng xử lý:</strong> {n.solution || "—"}</p>
               ) : null}
             </div>
           );
@@ -396,7 +497,7 @@ export function SetupLibrarySection({ items, onChange }) {
         {form.image ? (
           <div className="thumb-wrap" style={{ marginBottom: 10 }}>
             <img src={form.image} alt="setup" className="thumb" style={{ width: 60, height: 60 }} onClick={() => window.open(form.image, "_blank")} />
-            <button type="button" className="thumb-x" onClick={() => setF("image")("")}><X size={12} /></button>
+            <ConfirmButton className="thumb-x" icon={X} onConfirm={() => setF("image")("")} label="Xóa ảnh" />
           </div>
         ) : null}
         {error ? <p className="error-text">{error}</p> : null}
@@ -425,20 +526,23 @@ export function SetupLibrarySection({ items, onChange }) {
   );
 }
 
-export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, avoidPrinciples }) {
+export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, avoidPrinciples }) {
   const [tab, setTab] = useState("lessons");
   return (
     <div>
       <div className="subtabs">
         <button className={`subtab ${tab === "lessons" ? "subtab-active" : ""}`} onClick={() => setTab("lessons")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Bài học</button>
         <button className={`subtab ${tab === "process" ? "subtab-active" : ""}`} onClick={() => setTab("process")}><ClipboardList size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Cải thiện quy trình</button>
+        <button className={`subtab ${tab === "problems" ? "subtab-active" : ""}`} onClick={() => setTab("problems")}><Wrench size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Xử lý vấn đề</button>
       </div>
       {tab === "lessons" ? (
         <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />
-      ) : (
+      ) : tab === "process" ? (
         <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
           <ProcessImprovementSection items={processImprovements} avoidPrinciples={avoidPrinciples} onChange={onChangeProcessImprovements} />
         </Suspense>
+      ) : (
+        <ProblemLogSection items={problemLogs} onChange={onChangeProblemLogs} />
       )}
     </div>
   );
