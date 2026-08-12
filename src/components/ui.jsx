@@ -255,7 +255,7 @@ export function MultiImageOrLink({ items, onChange, label, max = 4 }) {
           <div className="multi-imglink-slot-head">
             <span className="field-hint" style={{ margin: 0 }}>Ảnh/link {i + 1}</span>
             {list.length > 1 ? (
-              <button type="button" className="row-btn" onClick={() => removeSlot(i)} aria-label="Xóa ảnh/link này"><X size={13} /></button>
+              <ConfirmButton onConfirm={() => removeSlot(i)} icon={X} label="Xóa ảnh/link này" />
             ) : null}
           </div>
           <ImageOrLink
