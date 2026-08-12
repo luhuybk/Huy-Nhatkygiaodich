@@ -495,39 +495,79 @@ export function ProblemLogSection({ items, onChange }) {
 }
 
 export function SetupLibrarySection({ items, onChange }) {
-  const [form, setForm] = useState(emptySetupDef());
+  const [viewingId, setViewingId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [variantForm, setVariantForm] = useState(null);
   const [error, setError] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
-  const openNew = () => { setForm(emptySetupDef()); setError(""); setModalOpen(true); };
-  const openEdit = (it) => { setForm({ ...emptySetupDef(), ...it, checklist: it.checklist || [], variants: it.variants || [] }); setError(""); setModalOpen(true); };
-  const closeModal = () => { setModalOpen(false); setForm(emptySetupDef()); setError(""); };
-  const save = () => {
+  const viewing = items.find((it) => it.id === viewingId) || null;
+
+  const openNew = () => { setForm(emptySetupDef()); setError(""); };
+  const openEditMain = (it) => { setForm({ ...emptySetupDef(), ...it, checklist: it.checklist || [], variants: it.variants || [] }); setError(""); };
+  const closeMainModal = () => { setForm(null); setError(""); };
+  const saveMain = () => {
     if (!form.name.trim()) { setError("Nhập tên setup."); return; }
     setError("");
     const cleanedChecklist = (form.checklist || []).map((c) => c.trim()).filter(Boolean);
-    const cleanedVariants = (form.variants || [])
-      .filter((v) => v.name.trim())
-      .map((v) => ({ ...v, id: v.id || uid(), checklist: (v.checklist || []).map((c) => c.trim()).filter(Boolean) }));
-    const payload = { ...form, id: form.id || uid(), checklist: cleanedChecklist, variants: cleanedVariants };
+    const payload = { ...form, id: form.id || uid(), checklist: cleanedChecklist, variants: form.variants || [] };
     const exists = items.some((it) => it.id === payload.id);
     onChange(exists ? items.map((it) => (it.id === payload.id ? payload : it)) : [...items, payload]);
-    closeModal();
+    setForm(null);
+    setViewingId(payload.id);
   };
-  const remove = (id) => { onChange(items.filter((it) => it.id !== id)); if (form.id === id) closeModal(); };
+  const removeMain = (id) => { onChange(items.filter((it) => it.id !== id)); setViewingId(null); setForm(null); };
 
-  const addVariant = () => setF("variants")([...(form.variants || []), emptySetupVariant()]);
-  const updateVariant = (i, patch) => setF("variants")((form.variants || []).map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
-  const removeVariant = (i) => setF("variants")((form.variants || []).filter((_, idx) => idx !== i));
+  const openNewVariant = (parentId) => { setVariantForm({ parentId, index: -1, data: emptySetupVariant() }); setError(""); };
+  const openEditVariant = (parentId, index, data) => { setVariantForm({ parentId, index, data: { ...data } }); setError(""); };
+  const closeVariantModal = () => { setVariantForm(null); setError(""); };
+  const setVariantField = (k) => (v) => setVariantForm((p) => ({ ...p, data: { ...p.data, [k]: v } }));
+  const saveVariant = () => {
+    if (!variantForm.data.name.trim()) { setError("Nhập tên biến thể."); return; }
+    setError("");
+    const cleaned = { ...variantForm.data, id: variantForm.data.id || uid(), checklist: (variantForm.data.checklist || []).map((c) => c.trim()).filter(Boolean) };
+    onChange(items.map((it) => {
+      if (it.id !== variantForm.parentId) return it;
+      const variants = it.variants || [];
+      const nextVariants = variantForm.index === -1 ? [...variants, cleaned] : variants.map((v, i) => (i === variantForm.index ? cleaned : v));
+      return { ...it, variants: nextVariants };
+    }));
+    setVariantForm(null);
+  };
+  const removeVariant = (parentId, index) => {
+    onChange(items.map((it) => (it.id === parentId ? { ...it, variants: (it.variants || []).filter((_, i) => i !== index) } : it)));
+    setVariantForm(null);
+  };
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-        <p className="field-hint" style={{ margin: 0 }}>Thư viện setup mẫu — ảnh minh họa, checklist nhận diện và các biến thể (VD: RB có biến thể A, B, C) để tra cứu nhanh khi vào lệnh.</p>
+        <p className="field-hint" style={{ margin: 0 }}>Thư viện setup mẫu — bấm vào 1 setup để xem ảnh, checklist nhận diện và các biến thể (VD: RB có biến thể A, B, C).</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup</button>
       </div>
-      {modalOpen ? (
-        <FormModal title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeModal}>
+
+      {variantForm ? (
+        <FormModal title={variantForm.index === -1 ? "Thêm biến thể" : "Sửa biến thể"} onClose={closeVariantModal}>
+          <Field label="Tên biến thể" required>
+            <input className="input" value={variantForm.data.name} onChange={(e) => setVariantField("name")(e.target.value)} placeholder="VD: RB - A" />
+          </Field>
+          <Field label="Ảnh minh họa / link TradingView">
+            <ImageOrLink link={variantForm.data.link} image={variantForm.data.image} onLinkChange={setVariantField("link")} onImageChange={setVariantField("image")} label="variant" />
+          </Field>
+          <Field label="Ghi chú">
+            <textarea className="input textarea" value={variantForm.data.note} onChange={(e) => setVariantField("note")(e.target.value)} placeholder="Điều kiện riêng của biến thể này..." />
+          </Field>
+          <Field label="Checklist nhận diện">
+            <ChecklistEditor items={variantForm.data.checklist} onChange={setVariantField("checklist")} placeholder="VD: Chạm bật..." />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {variantForm.index !== -1 ? <DangerConfirmButton label="Xóa biến thể" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => removeVariant(variantForm.parentId, variantForm.index)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeVariantModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={saveVariant}>{variantForm.index !== -1 ? "Cập nhật" : "Lưu biến thể"}</button>
+          </div>
+        </FormModal>
+      ) : form ? (
+        <FormModal title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeMainModal}>
           <Field label="Tên Setup" required>
             <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: RB - Range Breakout" />
           </Field>
@@ -540,49 +580,69 @@ export function SetupLibrarySection({ items, onChange }) {
           <Field label="Checklist nhận diện">
             <ChecklistEditor items={form.checklist} onChange={setF("checklist")} placeholder="VD: Có đoạn nén, Chạm bật..." />
           </Field>
-
-          <div style={{ marginTop: 14, borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span className="field-label">Biến thể ({(form.variants || []).length})</span>
-              <button type="button" className="btn btn-ghost" onClick={addVariant}><Plus size={13} /> Thêm biến thể</button>
-            </div>
-            <p className="field-hint" style={{ margin: "4px 0 0" }}>VD: RB có biến thể A, B, C — mỗi biến thể có ảnh, ghi chú và checklist riêng.</p>
-            {(form.variants || []).map((v, i) => (
-              <div key={v.id || i} className="setup-variant-block">
-                <div className="setup-variant-head">
-                  <span className="field-hint" style={{ margin: 0, fontWeight: 600 }}>Biến thể {i + 1}</span>
-                  <ConfirmButton onConfirm={() => removeVariant(i)} icon={X} label="Xóa biến thể" />
-                </div>
-                <Field label="Tên biến thể">
-                  <input className="input" value={v.name} onChange={(e) => updateVariant(i, { name: e.target.value })} placeholder="VD: RB - A" />
-                </Field>
-                <Field label="Ảnh minh họa / link TradingView">
-                  <ImageOrLink link={v.link} image={v.image} onLinkChange={(val) => updateVariant(i, { link: val })} onImageChange={(val) => updateVariant(i, { image: val })} label={`variant-${i}`} />
-                </Field>
-                <Field label="Ghi chú">
-                  <textarea className="input textarea" value={v.note} onChange={(e) => updateVariant(i, { note: e.target.value })} placeholder="Điều kiện riêng của biến thể này..." />
-                </Field>
-                <Field label="Checklist nhận diện">
-                  <ChecklistEditor items={v.checklist} onChange={(next) => updateVariant(i, { checklist: next })} placeholder="VD: Chạm bật..." />
-                </Field>
-              </div>
-            ))}
-          </div>
-
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
-            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
-            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
-            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật Setup" : "Lưu Setup"}</button>
+            <button type="button" className="btn btn-ghost" onClick={closeMainModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={saveMain}>{form.id ? "Cập nhật Setup" : "Lưu Setup"}</button>
+          </div>
+        </FormModal>
+      ) : viewing ? (
+        <FormModal title={viewing.name} onClose={() => setViewingId(null)}>
+          <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
+            {viewing.image || viewing.link ? (
+              <a href={viewing.image || viewing.link} target="_blank" rel="noopener noreferrer">
+                <img src={viewing.image || viewing.link} alt={viewing.name} className="thumb" style={{ width: 96, height: 96, borderRadius: 8 }} />
+              </a>
+            ) : (
+              <div className="setup-img setup-img-empty" style={{ width: 96, height: 96, borderRadius: 8, flexShrink: 0 }}><Layers size={22} color="var(--text-dim)" /></div>
+            )}
+            <p className="note-content" style={{ color: "var(--text-dim)", margin: 0 }}>{viewing.note || "Chưa có ghi chú."}</p>
+          </div>
+          {(viewing.checklist || []).length ? (
+            <div style={{ marginBottom: 14 }}>
+              <span className="field-label">Checklist nhận diện</span>
+              <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {viewing.checklist.map((c, i) => <li key={i} style={{ fontSize: 13, marginBottom: 3 }}>{c}</li>)}
+              </ol>
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => openEditMain(viewing)}><Pencil size={13} /> Sửa setup</button>
+            <DangerConfirmButton label="Xóa setup" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => removeMain(viewing.id)} />
+          </div>
+          <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="field-label">Biến thể ({(viewing.variants || []).length})</span>
+              <button type="button" className="btn btn-ghost" onClick={() => openNewVariant(viewing.id)}><Plus size={13} /> Thêm biến thể</button>
+            </div>
+            {(viewing.variants || []).length === 0 ? (
+              <p className="empty-note" style={{ padding: "16px 0" }}>Chưa có biến thể nào — VD: RB có biến thể A, B, C, mỗi biến thể có ảnh, ghi chú và checklist riêng.</p>
+            ) : (
+              <div className="setup-variant-grid">
+                {viewing.variants.map((v, i) => {
+                  const vThumb = v.image || v.link;
+                  return (
+                    <div key={v.id || i} className="setup-variant-card" onClick={() => openEditVariant(viewing.id, i, v)}>
+                      {vThumb ? <img src={vThumb} alt={v.name} className="setup-variant-img" /> : <div className="setup-variant-img setup-img-empty"><Layers size={16} color="var(--text-dim)" /></div>}
+                      <div className="setup-variant-card-body">
+                        <strong>{v.name}</strong>
+                        {(v.checklist || []).length ? <div className="setup-card-meta"><span className="note-type">{v.checklist.length} checklist</span></div> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </FormModal>
       ) : null}
+
       <div className="setup-grid">
         {items.length === 0 ? <p className="empty-note">Chưa có setup mẫu nào.</p> : null}
         {items.map((it) => {
           const thumb = it.image || it.link;
           return (
-            <div key={it.id} className="setup-card" onClick={() => openEdit(it)}>
+            <div key={it.id} className="setup-card" onClick={() => setViewingId(it.id)}>
               {thumb ? <img src={thumb} alt={it.name} className="setup-img" /> : <div className="setup-img setup-img-empty"><Layers size={20} color="var(--text-dim)" /></div>}
               <div className="setup-card-body">
                 <strong>{it.name}</strong>
@@ -593,8 +653,7 @@ export function SetupLibrarySection({ items, onChange }) {
                 </div>
               </div>
               <span onClick={(e) => e.stopPropagation()} className="setup-card-actions">
-                <button type="button" className="row-btn" onClick={() => openEdit(it)}><Pencil size={13} /></button>
-                <ConfirmButton onConfirm={() => remove(it.id)} />
+                <ConfirmButton onConfirm={() => removeMain(it.id)} />
               </span>
             </div>
           );
