@@ -48,7 +48,11 @@ export function lessonTitle(lesson) {
 }
 
 export function emptySetupDef() {
-  return { id: null, name: "", note: "", image: "" };
+  return { id: null, name: "", note: "", link: "", image: "", checklist: [], variants: [] };
+}
+
+export function emptySetupVariant() {
+  return { id: null, name: "", note: "", link: "", image: "", checklist: [] };
 }
 
 export const PROBLEM_MAX_IMAGES = 4;

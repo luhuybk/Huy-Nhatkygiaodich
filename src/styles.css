@@ -358,6 +358,11 @@
         .setup-card-body strong { font-size:13px; }
         .setup-note { font-size:11.5px; color:var(--text-dim); margin:4px 0 0; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
         .setup-card-actions { position:absolute; top:6px; right:6px; display:flex; gap:2px; background:rgba(10,12,15,0.7); border-radius:6px; padding:2px; }
+        .setup-card-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+        .checklist-editor { display:flex; flex-direction:column; gap:6px; }
+        .checklist-editor-row { display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border); padding-bottom:6px; }
+        .setup-variant-block { border:1px dashed var(--border); border-radius:10px; padding:12px; margin-top:10px; display:flex; flex-direction:column; gap:10px; }
+        .setup-variant-head { display:flex; align-items:center; justify-content:space-between; }
         .heat-strip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
         .heat-cell { flex:1; min-width:100px; border:1px solid var(--border); border-radius:9px; padding:10px 12px; display:flex; flex-direction:column; gap:3px; }
         .heat-label { font-size:11px; color:rgba(255,255,255,0.78); font-weight:600; text-shadow:0 1px 2px rgba(0,0,0,0.4); }

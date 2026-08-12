@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
 import { formatVN } from "../lib/helpers.js";
 
 export function CellImagePreview({ image, link }) {
@@ -274,6 +274,37 @@ export function MultiImageOrLink({ items, onChange, label, max = 4 }) {
       ) : (
         <p className="field-hint" style={{ margin: 0 }}>Đã đạt tối đa {max} ảnh/link.</p>
       )}
+    </div>
+  );
+}
+
+export function ChecklistEditor({ items, onChange, placeholder }) {
+  const list = items || [];
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const v = draft.trim();
+    if (!v) return;
+    onChange([...list, v]);
+    setDraft("");
+  };
+  const removeAt = (i) => onChange(list.filter((_, idx) => idx !== i));
+  const updateAt = (i, v) => onChange(list.map((it, idx) => (idx === i ? v : it)));
+  return (
+    <div className="checklist-editor">
+      {list.map((it, i) => (
+        <div key={i} className="checklist-editor-row">
+          <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5, minWidth: 16 }}>{i + 1}.</span>
+          <input className="input input-inline" value={it} onChange={(e) => updateAt(i, e.target.value)} />
+          <button type="button" className="row-btn" onClick={() => removeAt(i)} aria-label="Xóa mục checklist"><X size={13} /></button>
+        </div>
+      ))}
+      <div className="checklist-editor-row">
+        <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5, minWidth: 16 }}>{list.length + 1}.</span>
+        <input className="input input-inline" value={draft} placeholder={placeholder || "Thêm mục checklist..."}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
+        <button type="button" className="row-btn" onClick={add} aria-label="Thêm mục checklist"><Plus size={13} /></button>
+      </div>
     </div>
   );
 }

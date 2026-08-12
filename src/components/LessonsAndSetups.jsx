@@ -1,8 +1,8 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper } from "lucide-react";
-import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
+import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -497,63 +497,108 @@ export function ProblemLogSection({ items, onChange }) {
 export function SetupLibrarySection({ items, onChange }) {
   const [form, setForm] = useState(emptySetupDef());
   const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptySetupDef()); setError(""); setModalOpen(true); };
+  const openEdit = (it) => { setForm({ ...emptySetupDef(), ...it, checklist: it.checklist || [], variants: it.variants || [] }); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptySetupDef()); setError(""); };
   const save = () => {
     if (!form.name.trim()) { setError("Nhập tên setup."); return; }
     setError("");
-    if (form.id) onChange(items.map((it) => (it.id === form.id ? form : it)));
-    else onChange([...items, { ...form, id: uid() }]);
-    setForm(emptySetupDef());
+    const cleanedChecklist = (form.checklist || []).map((c) => c.trim()).filter(Boolean);
+    const cleanedVariants = (form.variants || [])
+      .filter((v) => v.name.trim())
+      .map((v) => ({ ...v, id: v.id || uid(), checklist: (v.checklist || []).map((c) => c.trim()).filter(Boolean) }));
+    const payload = { ...form, id: form.id || uid(), checklist: cleanedChecklist, variants: cleanedVariants };
+    const exists = items.some((it) => it.id === payload.id);
+    onChange(exists ? items.map((it) => (it.id === payload.id ? payload : it)) : [...items, payload]);
+    closeModal();
   };
-  const remove = (id) => { onChange(items.filter((it) => it.id !== id)); if (form.id === id) setForm(emptySetupDef()); };
-  const handleImg = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    if (file.size > 1.5 * 1024 * 1024) { setError("Ảnh quá lớn (>1.5MB)."); e.target.value = ""; return; }
-    const reader = new FileReader();
-    reader.onload = () => setF("image")(reader.result);
-    reader.readAsDataURL(file);
-  };
+  const remove = (id) => { onChange(items.filter((it) => it.id !== id)); if (form.id === id) closeModal(); };
+
+  const addVariant = () => setF("variants")([...(form.variants || []), emptySetupVariant()]);
+  const updateVariant = (i, patch) => setF("variants")((form.variants || []).map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
+  const removeVariant = (i) => setF("variants")((form.variants || []).filter((_, idx) => idx !== i));
 
   return (
     <div>
-      <p className="field-hint" style={{ marginBottom: 12 }}>Thư viện setup mẫu kèm ảnh minh họa để tra cứu nhanh khi vào lệnh.</p>
-      <div className="account-form">
-        <div className="grid-2">
-          <Field label="Tên Setup"><input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: RB - Range Breakout" /></Field>
-          <Field label="Ảnh minh họa">
-            <label className="upload-btn"><ImagePlus size={14} /><span>{form.image ? "Đổi ảnh" : "Tải ảnh lên"}</span>
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleImg} /></label>
-          </Field>
-        </div>
-        <Field label="Ghi chú"><textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điều kiện, quy tắc nhận diện setup..." /></Field>
-        {form.image ? (
-          <div className="thumb-wrap" style={{ marginBottom: 10 }}>
-            <a href={form.image} target="_blank" rel="noopener noreferrer"><img src={form.image} alt="setup" className="thumb" style={{ width: 60, height: 60 }} /></a>
-            <ConfirmButton className="thumb-x" icon={X} onConfirm={() => setF("image")("")} label="Xóa ảnh" />
-          </div>
-        ) : null}
-        {error ? <p className="error-text">{error}</p> : null}
-        <div className="form-actions" style={{ marginTop: 4 }}>
-          {form.id ? <button type="button" className="btn btn-ghost" onClick={() => setForm(emptySetupDef())}>Hủy sửa</button> : null}
-          <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật Setup" : "Thêm Setup"}</button>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Thư viện setup mẫu — ảnh minh họa, checklist nhận diện và các biến thể (VD: RB có biến thể A, B, C) để tra cứu nhanh khi vào lệnh.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup</button>
       </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeModal}>
+          <Field label="Tên Setup" required>
+            <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: RB - Range Breakout" />
+          </Field>
+          <Field label="Ảnh minh họa / link TradingView">
+            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="setup" />
+          </Field>
+          <Field label="Ghi chú">
+            <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điều kiện, quy tắc nhận diện setup..." />
+          </Field>
+          <Field label="Checklist nhận diện">
+            <ChecklistEditor items={form.checklist} onChange={setF("checklist")} placeholder="VD: Có đoạn nén, Chạm bật..." />
+          </Field>
+
+          <div style={{ marginTop: 14, borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="field-label">Biến thể ({(form.variants || []).length})</span>
+              <button type="button" className="btn btn-ghost" onClick={addVariant}><Plus size={13} /> Thêm biến thể</button>
+            </div>
+            <p className="field-hint" style={{ margin: "4px 0 0" }}>VD: RB có biến thể A, B, C — mỗi biến thể có ảnh, ghi chú và checklist riêng.</p>
+            {(form.variants || []).map((v, i) => (
+              <div key={v.id || i} className="setup-variant-block">
+                <div className="setup-variant-head">
+                  <span className="field-hint" style={{ margin: 0, fontWeight: 600 }}>Biến thể {i + 1}</span>
+                  <ConfirmButton onConfirm={() => removeVariant(i)} icon={X} label="Xóa biến thể" />
+                </div>
+                <Field label="Tên biến thể">
+                  <input className="input" value={v.name} onChange={(e) => updateVariant(i, { name: e.target.value })} placeholder="VD: RB - A" />
+                </Field>
+                <Field label="Ảnh minh họa / link TradingView">
+                  <ImageOrLink link={v.link} image={v.image} onLinkChange={(val) => updateVariant(i, { link: val })} onImageChange={(val) => updateVariant(i, { image: val })} label={`variant-${i}`} />
+                </Field>
+                <Field label="Ghi chú">
+                  <textarea className="input textarea" value={v.note} onChange={(e) => updateVariant(i, { note: e.target.value })} placeholder="Điều kiện riêng của biến thể này..." />
+                </Field>
+                <Field label="Checklist nhận diện">
+                  <ChecklistEditor items={v.checklist} onChange={(next) => updateVariant(i, { checklist: next })} placeholder="VD: Chạm bật..." />
+                </Field>
+              </div>
+            ))}
+          </div>
+
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật Setup" : "Lưu Setup"}</button>
+          </div>
+        </FormModal>
+      ) : null}
       <div className="setup-grid">
         {items.length === 0 ? <p className="empty-note">Chưa có setup mẫu nào.</p> : null}
-        {items.map((it) => (
-          <div key={it.id} className="setup-card" onClick={() => { setForm(it); setError(""); }}>
-            {it.image ? <img src={it.image} alt={it.name} className="setup-img" /> : <div className="setup-img setup-img-empty"><Layers size={20} color="var(--text-dim)" /></div>}
-            <div className="setup-card-body">
-              <strong>{it.name}</strong>
-              {it.note ? <p className="setup-note">{it.note}</p> : null}
+        {items.map((it) => {
+          const thumb = it.image || it.link;
+          return (
+            <div key={it.id} className="setup-card" onClick={() => openEdit(it)}>
+              {thumb ? <img src={thumb} alt={it.name} className="setup-img" /> : <div className="setup-img setup-img-empty"><Layers size={20} color="var(--text-dim)" /></div>}
+              <div className="setup-card-body">
+                <strong>{it.name}</strong>
+                {it.note ? <p className="setup-note">{it.note}</p> : null}
+                <div className="setup-card-meta">
+                  {(it.checklist || []).length ? <span className="note-type">{it.checklist.length} checklist</span> : null}
+                  {(it.variants || []).length ? <span className="note-type">{it.variants.length} biến thể</span> : null}
+                </div>
+              </div>
+              <span onClick={(e) => e.stopPropagation()} className="setup-card-actions">
+                <button type="button" className="row-btn" onClick={() => openEdit(it)}><Pencil size={13} /></button>
+                <ConfirmButton onConfirm={() => remove(it.id)} />
+              </span>
             </div>
-            <span onClick={(e) => e.stopPropagation()} className="setup-card-actions">
-              <button type="button" className="row-btn" onClick={() => { setForm(it); setError(""); }}><Pencil size={13} /></button>
-              <ConfirmButton onConfirm={() => remove(it.id)} />
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
