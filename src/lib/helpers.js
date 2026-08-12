@@ -71,6 +71,25 @@ export function emptySkipped() {
   };
 }
 
+export const NEWS_MAX_IMAGES = 4;
+
+export function emptyNewsLog(date) {
+  return { id: null, date: date || todayStr(), title: "", currencies: [], content: "", images: [{ link: "", image: "" }] };
+}
+
+export function applyNewsLogFilters(items, filters) {
+  return items.filter((n) => {
+    if (filters.q) {
+      const q = filters.q.toLowerCase();
+      if (!(n.title || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q)) return false;
+    }
+    if (filters.currency && !(n.currencies || []).includes(filters.currency)) return false;
+    if (filters.from && (n.date || "") < filters.from) return false;
+    if (filters.to && (n.date || "") > filters.to) return false;
+    return true;
+  });
+}
+
 export function startOfWeek(dateStr) {
   const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
   const day = d.getDay();

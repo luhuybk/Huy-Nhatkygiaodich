@@ -107,6 +107,8 @@ export const GRADE_OPTIONS = [
 
 export const CURRENCIES = ["USD", "VND", "EUR", "GBP", "JPY"];
 
+export const MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"];
+
 export const THEME_PRESETS = {
   dark: { bg: "#0a0b0d", surface: "#131519", surface2: "#191c21", border: "#252930", text: "#eae7e0", textDim: "#8d9198", win: "#4caf7d", loss: "#e0615a" },
   light: { bg: "#f6f4f0", surface: "#ffffff", surface2: "#f1efe8", border: "#e2ddd0", text: "#211d17", textDim: "#726a5c", win: "#22935c", loss: "#c9403a" },

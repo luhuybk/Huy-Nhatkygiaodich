@@ -1,8 +1,8 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper } from "lucide-react";
 import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
-import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
+import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -559,7 +559,124 @@ export function SetupLibrarySection({ items, onChange }) {
   );
 }
 
-export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, avoidPrinciples }) {
+export function NewsLogFilterPanel({ filters, setFilters }) {
+  const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
+  const clear = () => setFilters({});
+  return (
+    <div className="filter-panel">
+      <div className="filter-grid">
+        <input className="input" placeholder="Tìm theo tên tin / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
+        <select className="input" value={filters.currency || ""} onChange={(e) => set("currency")(e.target.value)}>
+          <option value="">Tất cả đồng tiền</option>
+          {MAJOR_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+      </div>
+      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+    </div>
+  );
+}
+
+export function NewsLogSection({ items, onChange }) {
+  const [form, setForm] = useState(emptyNewsLog());
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggleExpand = (id) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptyNewsLog()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: (n.images && n.images.length) ? n.images : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyNewsLog()); setError(""); };
+  const save = () => {
+    if (!form.title.trim()) { setError("Nhập tên tin tức trước đã."); return; }
+    setError("");
+    const cleanedImages = (form.images || []).filter((it) => (it.link && it.link.trim()) || it.image);
+    const payload = { ...form, id: form.id || uid(), images: cleanedImages };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptyNewsLog());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(
+    () => applyNewsLogFilters(items, filters).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    [items, filters]
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Ghi lại biến động tin tức ảnh hưởng tới các đồng tiền khi trade forex — VD: CPI Mỹ ra tin ảnh hưởng USD, các cặp dính USD biến động mạnh.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm tin tức</button>
+      </div>
+      <NewsLogFilterPanel filters={filters} setFilters={setFilters} />
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa tin tức" : "Ghi nhận tin tức mới"} onClose={closeModal}>
+          <div className="grid-2">
+            <Field label="Ngày">
+              <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
+            </Field>
+            <Field label="Tên tin tức" required>
+              <input className="input" value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: CPI Mỹ, NFP, Lãi suất FED..." />
+            </Field>
+          </div>
+          <Field label="Đồng tiền ảnh hưởng">
+            <MultiChipSelect value={form.currencies} onChange={setF("currencies")} options={MAJOR_CURRENCIES} />
+          </Field>
+          <Field label="Nội dung / biến động">
+            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.content} onChange={(e) => setF("content")(e.target.value)} placeholder="Diễn biến tin tức, các cặp tiền bị ảnh hưởng, biên độ dao động..." />
+          </Field>
+          <Field label={`Hình ảnh theo dõi (tối đa ${NEWS_MAX_IMAGES})`}>
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="news" max={NEWS_MAX_IMAGES} />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu tin tức"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <div className="resource-list" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có tin tức nào khớp bộ lọc.</p> : null}
+        {sorted.map((n) => {
+          const attachments = n.images || [];
+          const isOpen = expanded.has(n.id);
+          return (
+            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
+              <div className="note-head">
+                {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
+                <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>{n.title || "(Chưa có tên)"}</span>
+                <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
+                <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+              </div>
+              <div className="note-head" style={{ marginTop: 2 }}>
+                {(n.currencies || []).map((c) => <span key={c} className="note-type">{c}</span>)}
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
+                {attachments.length ? (
+                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  </span>
+                ) : null}
+              </div>
+              {isOpen ? (
+                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}>{n.content || "—"}</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples }) {
   const [tab, setTab] = useState("lessons");
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
@@ -588,6 +705,7 @@ export function JourneySection({ lessons, resources, trades, onChangeLessons, pr
         <button className={`subtab ${tab === "lessons" ? "subtab-active" : ""}`} onClick={() => setTab("lessons")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Bài học</button>
         <button className={`subtab ${tab === "process" ? "subtab-active" : ""}`} onClick={() => setTab("process")}><ClipboardList size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Cải thiện quy trình</button>
         <button className={`subtab ${tab === "problems" ? "subtab-active" : ""}`} onClick={() => setTab("problems")}><Wrench size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Xử lý vấn đề</button>
+        <button className={`subtab ${tab === "news" ? "subtab-active" : ""}`} onClick={() => setTab("news")}><Newspaper size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Nhật ký tin tức</button>
       </div>
       {tab === "lessons" ? (
         <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />
@@ -595,8 +713,10 @@ export function JourneySection({ lessons, resources, trades, onChangeLessons, pr
         <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
           <ProcessImprovementSection items={processImprovements} avoidPrinciples={avoidPrinciples} onChange={onChangeProcessImprovements} />
         </Suspense>
-      ) : (
+      ) : tab === "problems" ? (
         <ProblemLogSection items={problemLogs} onChange={onChangeProblemLogs} />
+      ) : (
+        <NewsLogSection items={newsLogs} onChange={onChangeNewsLogs} />
       )}
     </div>
   );

@@ -45,6 +45,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [lessons, setLessons] = useState([]);
   const [processImprovements, setProcessImprovements] = useState([]);
   const [problemLogs, setProblemLogs] = useState([]);
+  const [newsLogs, setNewsLogs] = useState([]);
   const [principles, setPrinciples] = useState(DEFAULT_PRINCIPLES);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
@@ -63,7 +64,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, pr, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -71,6 +72,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("lessons", []),
         safeGet("processImprovements", []),
         safeGet("problemLogs", []),
+        safeGet("newsLogs", []),
         safeGet("principles", DEFAULT_PRINCIPLES),
         safeGet("setupLibrary", []),
         safeGet("uiSettings", DEFAULT_UI_SETTINGS),
@@ -88,6 +90,7 @@ function AppShell({ onSignOut, userEmail }) {
       setLessons(ls);
       setProcessImprovements(pi);
       setProblemLogs(pl);
+      setNewsLogs(nl);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
       setSetupLibrary(sl);
       setMissedSetups(ms);
@@ -129,6 +132,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistLessons = useCallback(async (next) => { setLessons(next); await safeSet("lessons", next); flashSaved(); }, []);
   const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); await safeSet("processImprovements", next); flashSaved(); }, []);
   const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); await safeSet("problemLogs", next); flashSaved(); }, []);
+  const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); await safeSet("newsLogs", next); flashSaved(); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); await safeSet("principles", next); flashSaved(); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); await safeSet("setupLibrary", next); flashSaved(); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
@@ -173,6 +177,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.lessons) persistLessons(data.lessons);
     if (data.processImprovements) persistProcessImprovements(data.processImprovements);
     if (data.problemLogs) persistProblemLogs(data.problemLogs);
+    if (data.newsLogs) persistNewsLogs(data.newsLogs);
     if (data.principles) persistPrinciples({ ...DEFAULT_PRINCIPLES, ...data.principles });
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
@@ -190,6 +195,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistNotes([]);
     persistProcessImprovements([]);
     persistProblemLogs([]);
+    persistNewsLogs([]);
     persistPrinciples(DEFAULT_PRINCIPLES);
     persistSetupLibrary([]);
     persistMissedSetups([]);
@@ -347,13 +353,14 @@ function AppShell({ onSignOut, userEmail }) {
                 <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
+                  newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
                   avoidPrinciples={principles.avoid || []} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={persistResources} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} onImportAll={handleImportAll} onReset={handleResetAll} />
