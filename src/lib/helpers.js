@@ -57,13 +57,16 @@ export function emptyProblemLog(date) {
   return { id: null, date: date || todayStr(), problem: "", solution: "", images: [{ link: "", image: "" }], resolved: false };
 }
 
+export const MISS_MAX_IMAGES = 4;
+export const SKIP_MAX_IMAGES = 4;
+
 export function emptyMissed() {
-  return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", reason: "", note: "" };
+  return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "" };
 }
 
 export function emptySkipped() {
   return {
-    id: null, symbol: "", skipDate: "", timeframe: "", link: "", image: "", reason: "", note: "",
+    id: null, symbol: "", skipDate: "", timeframe: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
     reviewDate: "", reviewDirection: "", reviewNote: "",
   };
 }

@@ -2,7 +2,7 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { CellImagePreview, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, PROBLEM_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyProblemLog, emptySetupDef, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -30,7 +30,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const openNew = () => { setForm(emptyMissed()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptyMissed()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
@@ -68,7 +68,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
             </Field>
           </div>
           <Field label="Link / hình ảnh TradingView">
-            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="miss" />
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="miss" max={MISS_MAX_IMAGES} />
           </Field>
           <Field label="Lý do miss">
             <ChipSelect value={form.reason} onChange={setF("reason")} options={resources.missReasons} />
@@ -96,7 +96,11 @@ export function MissedSetupsSection({ items, resources, onChange }) {
                 <tr key={n.id} onClick={() => openEdit(n)}>
                   <td className="mono">{n.missDate || "—"}</td>
                   <td style={{ fontWeight: 600 }}>{n.symbol}</td>
-                  <td onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
+                    </div>
+                  </td>
                   <td className="mono">{n.timeframe || "—"}</td>
                   <td>{n.reason || "—"}</td>
                   <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
@@ -123,7 +127,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const openNew = () => { setForm(emptySkipped()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm(n); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptySkipped()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
@@ -161,7 +165,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
             </Field>
           </div>
           <Field label="Link / hình ảnh TradingView">
-            <ImageOrLink link={form.link} image={form.image} onLinkChange={setF("link")} onImageChange={setF("image")} label="skip" />
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="skip" max={SKIP_MAX_IMAGES} />
           </Field>
           <Field label="Lý do skip">
             <ChipSelect value={form.reason} onChange={setF("reason")} options={resources.skipReasons} />
@@ -210,7 +214,11 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
                   <tr key={n.id} onClick={() => openEdit(n)}>
                     <td className="mono">{n.skipDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
-                    <td onClick={(e) => e.stopPropagation()}><CellImagePreview image={n.image} link={n.link} /></td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
+                      </div>
+                    </td>
                     <td className="mono">{n.timeframe || "—"}</td>
                     <td>{n.reason || "—"}</td>
                     <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
