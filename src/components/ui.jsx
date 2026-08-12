@@ -418,7 +418,7 @@ export function SloganBar({ slogan, onChange, onNavigate }) {
 
 export function FormModal({ title, onClose, children }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 style={{ margin: 0 }}>{title}</h3>
