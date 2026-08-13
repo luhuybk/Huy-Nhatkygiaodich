@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, ChevronDown, ChevronRight, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
 import { formatVN } from "../lib/helpers.js";
 
 export function CellImagePreview({ image, link }) {
@@ -309,19 +309,17 @@ export function ChecklistEditor({ items, onChange, placeholder }) {
   );
 }
 
-export function Section({ num, title, subtitle, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen);
+export function Section({ num, title, subtitle, children, optional }) {
   return (
-    <div className="section">
-      <button type="button" className="section-head" onClick={() => setOpen((o) => !o)}>
+    <div className={`section ${optional ? "section-optional" : ""}`}>
+      <div className="section-head">
         <span className="section-num">{num}</span>
         <span className="section-titles">
-          <span className="section-title">{title}</span>
+          <span className="section-title">{title}{optional ? <span className="section-optional-tag">Không bắt buộc</span> : null}</span>
           {subtitle ? <span className="section-sub">{subtitle}</span> : null}
         </span>
-        {open ? <ChevronDown size={16} color="var(--text-dim)" /> : <ChevronRight size={16} color="var(--text-dim)" />}
-      </button>
-      {open ? <div className="section-body">{children}</div> : null}
+      </div>
+      <div className="section-body">{children}</div>
     </div>
   );
 }

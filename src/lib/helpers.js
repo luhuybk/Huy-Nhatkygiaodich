@@ -5,12 +5,15 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+export const IN_TRADE_MAX_IMAGES = 2;
+
 export function emptyTrade() {
   return {
     id: uid(),
     createdAt: Date.now(),
     symbol: "", entryDate: "", entryTime: "", entryLink: "", entryImage: "",
     direction: "buy", account: "", timeframe: "", session: "",
+    inTradeImages: [{ link: "", image: "" }], inTradeNote: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",

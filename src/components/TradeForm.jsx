@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle } from "lucide-react";
-import { CompletionBar, Field, ImageOrLink, MoneyInput, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
+import { CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyTrade, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyTrade, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
@@ -160,7 +160,16 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         </Field>
       </Section>
 
-      <Section num="1A" title="Đóng lệnh" subtitle="Điền khi lệnh đã hoàn thành">
+      <Section num="1A" title="Trong khi lệnh chạy" subtitle="Diễn biến & cảm nghĩ trong lúc lệnh đang mở" optional>
+        <Field label="Link / hình ảnh trong khi lệnh chạy" hint={`Tối đa ${IN_TRADE_MAX_IMAGES} ảnh/link`}>
+          <MultiImageOrLink items={t.inTradeImages} onChange={set("inTradeImages")} label="in-trade" max={IN_TRADE_MAX_IMAGES} />
+        </Field>
+        <Field label="Cảm nghĩ khi lệnh đang chạy">
+          <textarea className="input textarea" value={t.inTradeNote} onChange={(e) => set("inTradeNote")(e.target.value)} placeholder="Bạn nghĩ gì, cảm thấy thế nào trong lúc lệnh đang mở..." />
+        </Field>
+      </Section>
+
+      <Section num="1B" title="Đóng lệnh" subtitle="Điền khi lệnh đã hoàn thành">
         <div className="grid-3">
           <Field label="Ngày exit" incomplete={missing("exitDate")}>
             <input type="date" className="input" value={t.exitDate} onChange={(e) => set("exitDate")(e.target.value)} />
