@@ -14,6 +14,7 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
+        <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
         <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" />
         <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
         <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
@@ -67,6 +68,9 @@ export function MissedSetupsSection({ items, resources, onChange }) {
               <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
             </Field>
           </div>
+          <Field label="Setup">
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+          </Field>
           <Field label="Link / hình ảnh TradingView">
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="miss" max={MISS_MAX_IMAGES} />
           </Field>
@@ -89,7 +93,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Lý do</th><th>Bonus</th><th></th></tr>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Setup</th><th>Lý do</th><th>Bonus</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((n) => (
@@ -102,6 +106,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
                     </div>
                   </td>
                   <td className="mono">{n.timeframe || "—"}</td>
+                  <td>{n.setup || "—"}</td>
                   <td>{n.reason || "—"}</td>
                   <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
                   <td onClick={(e) => e.stopPropagation()}>
@@ -164,6 +169,9 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
               <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
             </Field>
           </div>
+          <Field label="Setup">
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+          </Field>
           <Field label="Link / hình ảnh TradingView">
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="skip" max={SKIP_MAX_IMAGES} />
           </Field>
@@ -205,7 +213,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Lý do</th><th>Review</th><th></th></tr>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>TF</th><th>Setup</th><th>Lý do</th><th>Review</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((n) => {
@@ -220,6 +228,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
                       </div>
                     </td>
                     <td className="mono">{n.timeframe || "—"}</td>
+                    <td>{n.setup || "—"}</td>
                     <td>{n.reason || "—"}</td>
                     <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
                     <td onClick={(e) => e.stopPropagation()}>

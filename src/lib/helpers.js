@@ -65,12 +65,12 @@ export const MISS_MAX_IMAGES = 4;
 export const SKIP_MAX_IMAGES = 4;
 
 export function emptyMissed() {
-  return { id: null, symbol: "", missDate: "", timeframe: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "" };
+  return { id: null, symbol: "", missDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "" };
 }
 
 export function emptySkipped() {
   return {
-    id: null, symbol: "", skipDate: "", timeframe: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
+    id: null, symbol: "", skipDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
     reviewDate: "", reviewDirection: "", reviewNote: "",
   };
 }
@@ -815,6 +815,7 @@ export function applyMissSkipFilters(items, filters, dateField) {
   return items.filter((n) => {
     if (filters.q && !(n.symbol || "").toLowerCase().includes(filters.q.toLowerCase())) return false;
     if (filters.timeframe && n.timeframe !== filters.timeframe) return false;
+    if (filters.setup && n.setup !== filters.setup) return false;
     if (filters.reason && n.reason !== filters.reason) return false;
     if (filters.from && (n[dateField] || "") < filters.from) return false;
     if (filters.to && (n[dateField] || "") > filters.to) return false;
