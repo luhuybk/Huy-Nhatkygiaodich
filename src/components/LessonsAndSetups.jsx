@@ -88,6 +88,31 @@ export function MissedSetupsSection({ items, resources, onChange }) {
           >
             <Eye size={15} /> {form.watch ? "👁 Cần theo dõi lệnh này" : "Đánh dấu cần theo dõi (tùy chọn)"}
           </button>
+          {form.watch ? (
+            <div className="section" style={{ marginTop: 10 }}>
+              <div className="section-body" style={{ paddingTop: 14, borderTop: "1px dashed var(--border)" }}>
+                <p className="field-hint" style={{ marginBottom: 10 }}>Review sau vài ngày — quay lại đây khi đã có đủ thời gian để xem hướng đi thực tế nếu đã vào lệnh.</p>
+                <div className="grid-2">
+                  <Field label="Ngày review">
+                    <input type="date" className="input" value={form.reviewDate} onChange={(e) => setF("reviewDate")(e.target.value)} />
+                  </Field>
+                  <Field label="Hướng lệnh diễn biến">
+                    <select className="input" value={form.reviewDirection} onChange={(e) => setF("reviewDirection")(e.target.value)}>
+                      <option value="">— Chọn —</option>
+                      {REVIEW_DIRECTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Nhận xét review">
+                  <textarea className="input textarea" value={form.reviewNote} onChange={(e) => setF("reviewNote")(e.target.value)} placeholder="Nếu vào lệnh thì sẽ thế nào, bài học rút ra..." />
+                </Field>
+                <label className={`checklist-item ${form.watchDone ? "checklist-checked" : ""}`}>
+                  <input type="checkbox" checked={!!form.watchDone} onChange={(e) => setF("watchDone")(e.target.checked)} />
+                  <span>Đã hoàn thành theo dõi (đã review xong)</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
             {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
@@ -101,31 +126,37 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Bonus</th><th>Theo dõi</th><th></th></tr>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Bonus</th><th>Review</th><th>Theo dõi</th><th></th></tr>
             </thead>
             <tbody>
-              {sorted.map((n) => (
-                <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
-                  <td className="mono">{n.missDate || "—"}</td>
-                  <td style={{ fontWeight: 600 }}>{n.symbol}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
-                    </div>
-                  </td>
-                  <td>{n.setup || "—"}</td>
-                  <td className="mono">{n.timeframe || "—"}</td>
-                  <td>{n.reason || "—"}</td>
-                  <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
-                  <td>{n.watch ? <span className="watch-badge"><Eye size={12} /> Cần theo dõi</span> : "—"}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 2 }}>
-                      <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
-                      <ConfirmButton onConfirm={() => remove(n.id)} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {sorted.map((n) => {
+                const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
+                return (
+                  <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
+                    <td className="mono">{n.missDate || "—"}</td>
+                    <td style={{ fontWeight: 600 }}>{n.symbol}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
+                      </div>
+                    </td>
+                    <td>{n.setup || "—"}</td>
+                    <td className="mono">{n.timeframe || "—"}</td>
+                    <td>{n.reason || "—"}</td>
+                    <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
+                    <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
+                    <td>{n.watch ? (
+                      <span className={`watch-badge ${n.watchDone ? "watch-badge-done" : ""}`}><Eye size={12} /> {n.watchDone ? "Đã theo dõi" : "Cần theo dõi"}</span>
+                    ) : "—"}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 2 }}>
+                        <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
+                        <ConfirmButton onConfirm={() => remove(n.id)} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -190,25 +221,6 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
           <Field label="Ghi chú thêm">
             <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
           </Field>
-          <div className="section" style={{ marginTop: 4 }}>
-            <div className="section-body" style={{ paddingTop: 14, borderTop: "1px dashed var(--border)" }}>
-              <p className="field-hint" style={{ marginBottom: 10 }}>Review sau vài ngày — quay lại đây khi đã có đủ thời gian để xem hướng đi thực tế của lệnh đã skip.</p>
-              <div className="grid-2">
-                <Field label="Ngày review">
-                  <input type="date" className="input" value={form.reviewDate} onChange={(e) => setF("reviewDate")(e.target.value)} />
-                </Field>
-                <Field label="Hướng lệnh diễn biến">
-                  <select className="input" value={form.reviewDirection} onChange={(e) => setF("reviewDirection")(e.target.value)}>
-                    <option value="">— Chọn —</option>
-                    {REVIEW_DIRECTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </select>
-                </Field>
-              </div>
-              <Field label="Nhận xét review">
-                <textarea className="input textarea" value={form.reviewNote} onChange={(e) => setF("reviewNote")(e.target.value)} placeholder="Nếu vào lệnh thì sẽ thế nào, bài học rút ra..." />
-              </Field>
-            </div>
-          </div>
           <button
             type="button"
             className={`lesson-toggle-btn ${form.watch ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
@@ -217,6 +229,31 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
           >
             <Eye size={15} /> {form.watch ? "👁 Cần theo dõi lệnh này" : "Đánh dấu cần theo dõi (tùy chọn)"}
           </button>
+          {form.watch ? (
+            <div className="section" style={{ marginTop: 10 }}>
+              <div className="section-body" style={{ paddingTop: 14, borderTop: "1px dashed var(--border)" }}>
+                <p className="field-hint" style={{ marginBottom: 10 }}>Review sau vài ngày — quay lại đây khi đã có đủ thời gian để xem hướng đi thực tế của lệnh đã skip.</p>
+                <div className="grid-2">
+                  <Field label="Ngày review">
+                    <input type="date" className="input" value={form.reviewDate} onChange={(e) => setF("reviewDate")(e.target.value)} />
+                  </Field>
+                  <Field label="Hướng lệnh diễn biến">
+                    <select className="input" value={form.reviewDirection} onChange={(e) => setF("reviewDirection")(e.target.value)}>
+                      <option value="">— Chọn —</option>
+                      {REVIEW_DIRECTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Nhận xét review">
+                  <textarea className="input textarea" value={form.reviewNote} onChange={(e) => setF("reviewNote")(e.target.value)} placeholder="Nếu vào lệnh thì sẽ thế nào, bài học rút ra..." />
+                </Field>
+                <label className={`checklist-item ${form.watchDone ? "checklist-checked" : ""}`}>
+                  <input type="checkbox" checked={!!form.watchDone} onChange={(e) => setF("watchDone")(e.target.checked)} />
+                  <span>Đã hoàn thành theo dõi (đã review xong)</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
             {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
@@ -248,7 +285,9 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
                     <td className="mono">{n.timeframe || "—"}</td>
                     <td>{n.reason || "—"}</td>
                     <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
-                    <td>{n.watch ? <span className="watch-badge"><Eye size={12} /> Cần theo dõi</span> : "—"}</td>
+                    <td>{n.watch ? (
+                      <span className={`watch-badge ${n.watchDone ? "watch-badge-done" : ""}`}><Eye size={12} /> {n.watchDone ? "Đã theo dõi" : "Cần theo dõi"}</span>
+                    ) : "—"}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 2 }}>
                         <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>

@@ -207,6 +207,7 @@
         .table tbody tr.row-watch:hover { background:rgba(212,162,78,0.13); }
         .watch-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600;
           background:rgba(212,162,78,0.15); color:var(--accent); white-space:nowrap; }
+        .watch-badge.watch-badge-done { background:rgba(76,175,125,0.15); color:var(--win); }
         .text-win { color:var(--win); } .text-loss { color:var(--loss); }
         .dir-pill { padding:3px 9px; border-radius:6px; font-size:11.5px; font-weight:600; }
         .dir-pill.buy { background:rgba(76,175,125,0.15); color:var(--win); }
