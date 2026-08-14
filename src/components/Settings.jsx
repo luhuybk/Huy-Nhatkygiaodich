@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { ACCENT_PRESETS } from "../lib/constants.js";
 import { DangerConfirmButton, Field, StatCard } from "./ui.jsx";
+import { SlReminderPanel } from "./SlReminders.jsx";
 
-export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, onImportAll, onReset }) {
+export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, onSlReminderSettingsChange, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
-    const payload = { trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, uiSettings, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, exportedAt: new Date().toISOString() };
+    const payload = { trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, uiSettings, missedSetups, skippedSetups, reminders, capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -58,6 +59,8 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
           </div>
         </Field>
       </div>
+
+      <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
 
       <h3 className="block-title">Nhập / Xuất dữ liệu</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>Toàn bộ giao dịch, tài nguyên, sổ vốn, ghi chú và thư viện setup được gộp vào một file JSON để sao lưu hoặc chuyển sang máy khác.</p>

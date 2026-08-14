@@ -394,6 +394,8 @@
           border-radius:9px; font-size:13px; cursor:pointer; }
         .checklist-item input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
         .checklist-checked { border-color:rgba(212,162,78,0.4); color:var(--text); }
+        .sl-reminder-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding-bottom:10px; border-bottom:1px solid var(--border); }
+        .sl-reminder-row:last-child { border-bottom:none; padding-bottom:14px; }
         .scope-bar { display:flex; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:4px; }
         .detail-header { display:flex; align-items:center; gap:4px; margin-bottom:16px; flex-wrap:wrap; }
         .metric-group { margin-bottom:22px; }

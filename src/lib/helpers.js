@@ -81,6 +81,23 @@ export function emptySkipped() {
   };
 }
 
+export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "21:00"];
+
+export function emptySlReminderSettings() {
+  return { enabled: false, telegramBotToken: "", telegramChatId: "", schedules: [] };
+}
+
+export function emptyReminderSchedule(accountId, accountName) {
+  return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS] };
+}
+
+export function parseHoursInput(text) {
+  return (text || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
+}
+
 export const NEWS_MAX_IMAGES = 4;
 
 export function emptyNewsLog(date) {

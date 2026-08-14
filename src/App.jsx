@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
-import { safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
+import { safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
@@ -55,6 +55,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [capitalFlows, setCapitalFlows] = useState([]);
   const [uiSettings, setUiSettings] = useState(DEFAULT_UI_SETTINGS);
+  const [slReminderSettings, setSlReminderSettings] = useState(emptySlReminderSettings());
   const [view, setView] = useState("dashboard");
   const [activeAccount, setActiveAccount] = useState("");
   const [viewingTrade, setViewingTrade] = useState(null);
@@ -64,7 +65,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf, sr] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -82,6 +83,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("capitalAccounts", []),
         safeGet("capitalEntries", []),
         safeGet("capitalFlows", []),
+        safeGet("slReminderSettings", emptySlReminderSettings()),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -98,6 +100,7 @@ function AppShell({ onSignOut, userEmail }) {
       setCapitalAccounts(ca);
       setCapitalEntries(ce);
       setCapitalFlows(cf);
+      setSlReminderSettings({ ...emptySlReminderSettings(), ...sr });
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
       if (!mergedUi.defaultRemindersSeeded) {
@@ -142,6 +145,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); await safeSet("capitalAccounts", next); flashSaved(); }, []);
   const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); await safeSet("capitalEntries", next); flashSaved(); }, []);
   const persistCapitalFlows = useCallback(async (next) => { setCapitalFlows(next); await safeSet("capitalFlows", next); flashSaved(); }, []);
+  const persistSlReminderSettings = useCallback(async (next) => { setSlReminderSettings(next); await safeSet("slReminderSettings", next); flashSaved(); }, []);
 
   const handleSaveTrade = (t) => {
     const exists = trades.some((x) => x.id === t.id);
@@ -187,6 +191,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.capitalAccounts) persistCapitalAccounts(data.capitalAccounts);
     if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
+    if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
   };
   const handleResetAll = () => {
     persistTrades([]);
@@ -363,7 +368,9 @@ function AppShell({ onSignOut, userEmail }) {
               <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
-                uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} onImportAll={handleImportAll} onReset={handleResetAll} />
+                uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
+                slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings}
+                onImportAll={handleImportAll} onReset={handleResetAll} />
               }
             </Suspense>
             )}
