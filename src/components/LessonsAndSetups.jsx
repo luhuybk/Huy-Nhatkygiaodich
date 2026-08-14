@@ -1,5 +1,5 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye } from "lucide-react";
 import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
@@ -80,6 +80,14 @@ export function MissedSetupsSection({ items, resources, onChange }) {
           <Field label="Bonus — ghi chú thêm">
             <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
           </Field>
+          <button
+            type="button"
+            className={`lesson-toggle-btn ${form.watch ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+            style={{ marginTop: 4 }}
+            onClick={() => setF("watch")(!form.watch)}
+          >
+            <Eye size={15} /> {form.watch ? "👁 Cần theo dõi lệnh này" : "Đánh dấu cần theo dõi (tùy chọn)"}
+          </button>
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
             {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
@@ -93,11 +101,11 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Bonus</th><th></th></tr>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Bonus</th><th>Theo dõi</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((n) => (
-                <tr key={n.id} onClick={() => openEdit(n)}>
+                <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
                   <td className="mono">{n.missDate || "—"}</td>
                   <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                   <td onClick={(e) => e.stopPropagation()}>
@@ -109,6 +117,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
                   <td className="mono">{n.timeframe || "—"}</td>
                   <td>{n.reason || "—"}</td>
                   <td style={{ maxWidth: 220, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
+                  <td>{n.watch ? <span className="watch-badge"><Eye size={12} /> Cần theo dõi</span> : "—"}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: "flex", gap: 2 }}>
                       <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
@@ -200,6 +209,14 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
               </Field>
             </div>
           </div>
+          <button
+            type="button"
+            className={`lesson-toggle-btn ${form.watch ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+            style={{ marginTop: 4 }}
+            onClick={() => setF("watch")(!form.watch)}
+          >
+            <Eye size={15} /> {form.watch ? "👁 Cần theo dõi lệnh này" : "Đánh dấu cần theo dõi (tùy chọn)"}
+          </button>
           {error ? <p className="error-text">{error}</p> : null}
           <div className="form-actions" style={{ marginTop: 4 }}>
             {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
@@ -213,13 +230,13 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p> : (
           <table className="table">
             <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Review</th><th></th></tr>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Lý do</th><th>Review</th><th>Theo dõi</th><th></th></tr>
             </thead>
             <tbody>
               {sorted.map((n) => {
                 const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
                 return (
-                  <tr key={n.id} onClick={() => openEdit(n)}>
+                  <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
                     <td className="mono">{n.skipDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -231,6 +248,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
                     <td className="mono">{n.timeframe || "—"}</td>
                     <td>{n.reason || "—"}</td>
                     <td>{dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : "—"}</td>
+                    <td>{n.watch ? <span className="watch-badge"><Eye size={12} /> Cần theo dõi</span> : "—"}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 2 }}>
                         <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>

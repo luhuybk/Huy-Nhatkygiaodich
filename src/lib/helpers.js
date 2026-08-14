@@ -68,13 +68,13 @@ export const MISS_MAX_IMAGES = 4;
 export const SKIP_MAX_IMAGES = 4;
 
 export function emptyMissed() {
-  return { id: null, symbol: "", missDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "" };
+  return { id: null, symbol: "", missDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "", watch: false };
 }
 
 export function emptySkipped() {
   return {
     id: null, symbol: "", skipDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
-    reviewDate: "", reviewDirection: "", reviewNote: "",
+    reviewDate: "", reviewDirection: "", reviewNote: "", watch: false,
   };
 }
 
