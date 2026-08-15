@@ -1,6 +1,7 @@
 // Supabase Edge Function: kiểm tra định kỳ tài khoản nào đang có lệnh mở đúng vào khung giờ
 // người dùng đã đặt (Thông báo → Nhắc dời SL), và bắn tin nhắn Telegram nhắc dời SL.
-// Đồng thời kiểm tra các nhắc nhở chung (tab "Hôm nay"/"Tất cả") có bật "Nhắc qua Telegram" và đến hạn hôm nay.
+// Đồng thời kiểm tra các nhắc nhở chung (tab "Hôm nay"/"Tất cả") có bật "Nhắc qua Telegram" và đến hạn hôm nay,
+// và lịch nhắc kiểm tra setup theo tài khoản (Thông báo → Kiểm tra setup) để tránh miss setup vì không theo dõi kịp.
 // Deploy: supabase functions deploy sl-reminder
 // Cần biến môi trường SUPABASE_URL và SUPABASE_SERVICE_ROLE_KEY — Supabase tự cấp sẵn cho mọi Edge Function.
 // Kích hoạt gọi định kỳ bằng file supabase-sl-reminder-cron.sql (pg_cron + pg_net) ở thư mục gốc repo.
@@ -94,19 +95,24 @@ Deno.serve(async () => {
       telegramBotToken?: string;
       telegramChatId?: string;
       schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
+      setupCheckEnabled?: boolean;
+      setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
     };
-    // Bot Token + Chat ID dùng chung cho cả nhắc dời SL và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
+    // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
 
     const schedules = settings.enabled ? (settings.schedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
+    const setupCheckSchedules = settings.setupCheckEnabled ? (settings.setupCheckSchedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
 
     // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
     // activeDays không tồn tại (dữ liệu cũ trước khi có tính năng này) → mặc định coi như chạy mọi ngày.
-    const dueSchedules = schedules.filter((s) => {
+    const isDueNow = (s: { activeDays?: string[]; hours?: string[] }) => {
       const activeDays = Array.isArray(s.activeDays) ? s.activeDays : null;
       if (activeDays && !activeDays.includes(todayWeekdayCode)) return false;
       return (s.hours || []).some((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
-    });
+    };
+    const dueSchedules = schedules.filter(isDueNow);
+    const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
     const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }] = await Promise.all([
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "resources").maybeSingle(),
@@ -142,6 +148,39 @@ Deno.serve(async () => {
         `Tài khoản: [${accountName}]\n` +
         `----\n` +
         lines.join("\n");
+
+      const threadId = sched.threadId ? Number(sched.threadId) : undefined;
+      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text };
+      if (threadId && !Number.isNaN(threadId)) payload.message_thread_id = threadId;
+
+      const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (tgRes.ok) {
+        log[logKey] = true;
+        logChanged = true;
+        sent++;
+      }
+    }
+
+    for (const sched of dueSetupChecks) {
+      const account = accounts.find((a) => a.id === sched.accountId);
+      const accountName = account ? account.name : sched.accountName;
+      if (!accountName) continue;
+
+      const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
+      const logKey = `setup_${today}_${sched.accountId}_${matchedHour}`;
+      if (log[logKey]) continue;
+
+      const text =
+        `🔍 Nhắc kiểm tra setup\n` +
+        `Tài khoản: [${accountName}]\n` +
+        `----\n` +
+        `. Đến giờ theo dõi, kiểm tra xem có setup nào không nhé!`;
 
       const threadId = sched.threadId ? Number(sched.threadId) : undefined;
       const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text };

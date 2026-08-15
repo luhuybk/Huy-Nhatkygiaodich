@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send } from "lucide-react";
+import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search } from "lucide-react";
 import { ConfirmButton, Field } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { emptyReminder, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
-import { SlReminderPanel } from "./SlReminders.jsx";
+import { SlReminderPanel, SetupCheckPanel } from "./SlReminders.jsx";
 
 export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   const [r, setR] = useState(initial || emptyReminder());
@@ -117,7 +117,7 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
     <div className="reminders-page">
       <div className="reminders-page-head">
         <h2 style={{ fontSize: 19 }}>Thông báo &amp; nhắc nhở</h2>
-        {tab !== "sl" ? (
+        {tab === "today" || tab === "all" ? (
           <button type="button" className="btn btn-primary" onClick={() => setEditing(emptyReminder())}>
             <PlusCircle size={15} /> Thêm nhắc nhở
           </button>
@@ -131,9 +131,14 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
         <button className={`subtab ${tab === "sl" ? "subtab-active" : ""}`} onClick={() => setTab("sl")}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Send size={12} /> Nhắc dời SL</span>
         </button>
+        <button className={`subtab ${tab === "setupcheck" ? "subtab-active" : ""}`} onClick={() => setTab("setupcheck")}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Search size={12} /> Kiểm tra setup</span>
+        </button>
       </div>
       {tab === "sl" ? (
         <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
+      ) : tab === "setupcheck" ? (
+        <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
       ) : (
       <div className="reminder-list">
         {list.length === 0 ? (

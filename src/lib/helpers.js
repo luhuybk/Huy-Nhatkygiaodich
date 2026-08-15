@@ -87,7 +87,7 @@ export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "2
 export const WEEKDAY_CODES = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 export function emptySlReminderSettings() {
-  return { enabled: false, telegramBotToken: "", telegramChatId: "", schedules: [] };
+  return { enabled: false, telegramBotToken: "", telegramChatId: "", schedules: [], setupCheckEnabled: false, setupCheckSchedules: [] };
 }
 
 export function emptyReminderSchedule(accountId, accountName) {
