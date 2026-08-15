@@ -133,7 +133,7 @@ export function emptyProcessImprovement() {
 }
 
 export function emptyReminder() {
-  return { id: null, title: "", frequency: "weekly", weekday: 0, dayOfMonth: 1, date: "", active: true, doneDates: [] };
+  return { id: null, title: "", frequency: "weekly", weekday: 0, dayOfMonth: 1, date: "", active: true, doneDates: [], notifyTelegram: false, notifyTime: "08:00" };
 }
 
 export function todayStr() {

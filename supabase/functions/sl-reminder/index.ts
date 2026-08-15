@@ -1,5 +1,6 @@
 // Supabase Edge Function: kiểm tra định kỳ tài khoản nào đang có lệnh mở đúng vào khung giờ
-// người dùng đã đặt (Cài đặt → Nhắc dời SL qua Telegram), và bắn tin nhắn Telegram nhắc dời SL.
+// người dùng đã đặt (Thông báo → Nhắc dời SL), và bắn tin nhắn Telegram nhắc dời SL.
+// Đồng thời kiểm tra các nhắc nhở chung (tab "Hôm nay"/"Tất cả") có bật "Nhắc qua Telegram" và đến hạn hôm nay.
 // Deploy: supabase functions deploy sl-reminder
 // Cần biến môi trường SUPABASE_URL và SUPABASE_SERVICE_ROLE_KEY — Supabase tự cấp sẵn cho mọi Edge Function.
 // Kích hoạt gọi định kỳ bằng file supabase-sl-reminder-cron.sql (pg_cron + pg_net) ở thư mục gốc repo.
@@ -29,6 +30,11 @@ const WEEKDAY_CODE_BY_EN_SHORT: Record<string, string> = {
   Mon: "T2", Tue: "T3", Wed: "T4", Thu: "T5", Fri: "T6", Sat: "T7", Sun: "CN",
 };
 
+// Khớp với Date.getDay() dùng ở reminderDueToday() trong src/lib/helpers.js — Chủ nhật = 0
+const JS_WEEKDAY_NUM_BY_EN_SHORT: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
 // Trả về ngày + giờ hiện tại theo múi giờ Việt Nam, bất kể server chạy ở UTC hay múi giờ nào khác.
 function vnNowParts(date: Date) {
   const parts = Object.fromEntries(vnFormatter.formatToParts(date).map((p) => [p.type, p.value])) as Record<string, string>;
@@ -44,10 +50,24 @@ function vnWeekdayCode(date: Date) {
   return WEEKDAY_CODE_BY_EN_SHORT[vnWeekdayFormatter.format(date)] || "";
 }
 
+function vnWeekdayNum(date: Date) {
+  return JS_WEEKDAY_NUM_BY_EN_SHORT[vnWeekdayFormatter.format(date)];
+}
+
 function minutesDiff(a: string, b: string) {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
   return Math.abs(ah * 60 + am - (bh * 60 + bm));
+}
+
+// Tương đương reminderDueToday() ở src/lib/helpers.js, tính theo ngày/thứ VN thay vì giờ máy chủ.
+function reminderDueOnVn(r: { frequency?: string; weekday?: number; dayOfMonth?: number; date?: string; active?: boolean; doneDates?: string[] }, vnDate: string, vnWeekdayN: number) {
+  if (!r.active) return false;
+  if ((r.doneDates || []).includes(vnDate)) return false;
+  if (r.frequency === "weekly") return Number(r.weekday) === vnWeekdayN;
+  if (r.frequency === "monthly") return Number(r.dayOfMonth) === Number(vnDate.split("-")[2]);
+  if (r.frequency === "once") return r.date === vnDate;
+  return false;
 }
 
 Deno.serve(async () => {
@@ -55,6 +75,7 @@ Deno.serve(async () => {
   const now = new Date();
   const { date: today, time: currentHHMM } = vnNowParts(now);
   const todayWeekdayCode = vnWeekdayCode(now);
+  const todayWeekdayNum = vnWeekdayNum(now);
 
   const { data: settingsRows, error: settingsErr } = await supabase
     .from("app_data")
@@ -74,10 +95,10 @@ Deno.serve(async () => {
       telegramChatId?: string;
       schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
     };
-    if (!settings?.enabled || !settings.telegramBotToken || !settings.telegramChatId) continue;
+    // Bot Token + Chat ID dùng chung cho cả nhắc dời SL và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
+    if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
 
-    const schedules = (settings.schedules || []).filter((s) => s.enabled && (s.hours || []).length);
-    if (!schedules.length) continue;
+    const schedules = settings.enabled ? (settings.schedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
 
     // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
     // activeDays không tồn tại (dữ liệu cũ trước khi có tính năng này) → mặc định coi như chạy mọi ngày.
@@ -86,17 +107,21 @@ Deno.serve(async () => {
       if (activeDays && !activeDays.includes(todayWeekdayCode)) return false;
       return (s.hours || []).some((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
     });
-    if (!dueSchedules.length) continue;
 
-    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }] = await Promise.all([
+    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }] = await Promise.all([
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "resources").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "trades").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slReminderLog").maybeSingle(),
+      supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "reminders").maybeSingle(),
     ]);
 
     const accounts = (resourcesRow?.value?.accounts || []) as { id: string; name: string }[];
     const trades = (tradesRow?.value || []) as { account?: string; symbol?: string; entryDate?: string; entryTime?: string; exitDate?: string }[];
     const log = (logRow?.value || {}) as Record<string, boolean>;
+    const reminders = (remindersRow?.value || []) as {
+      id?: string; title?: string; frequency?: string; weekday?: number; dayOfMonth?: number; date?: string;
+      active?: boolean; doneDates?: string[]; notifyTelegram?: boolean; notifyTime?: string;
+    }[];
     let logChanged = false;
 
     for (const sched of dueSchedules) {
@@ -126,6 +151,33 @@ Deno.serve(async () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
+      });
+
+      if (tgRes.ok) {
+        log[logKey] = true;
+        logChanged = true;
+        sent++;
+      }
+    }
+
+    // Nhắc việc chung (VD: cập nhật đường cong vốn) đã bật "Nhắc qua Telegram" và đến hạn hôm nay,
+    // đúng khung giờ đã đặt cho từng nhắc nhở — gửi vào chat chính, không gắn Topic vì không thuộc tài khoản nào.
+    const dueReminders = reminders.filter((r) => {
+      if (!r.notifyTelegram || !r.id) return false;
+      if (!reminderDueOnVn(r, today, todayWeekdayNum)) return false;
+      return minutesDiff(r.notifyTime || "08:00", currentHHMM) <= MATCH_TOLERANCE_MIN;
+    });
+
+    for (const r of dueReminders) {
+      // Giữ vị trí "ngày" ở phần tử thứ 2 của key (giống key nhắc dời SL) để logic dọn log cũ bên dưới hoạt động đúng.
+      const logKey = `reminder_${today}_${r.id}`;
+      if (log[logKey]) continue;
+
+      const text = `🔔 Nhắc nhở\n----\n${r.title || "(không có tiêu đề)"}`;
+      const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: settings.telegramChatId, text }),
       });
 
       if (tgRes.ok) {

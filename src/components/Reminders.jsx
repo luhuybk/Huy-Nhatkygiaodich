@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock } from "lucide-react";
+import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send } from "lucide-react";
 import { ConfirmButton, Field } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { emptyReminder, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
+import { SlReminderPanel } from "./SlReminders.jsx";
 
-export function ReminderForm({ initial, onSave, onCancel }) {
+export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   const [r, setR] = useState(initial || emptyReminder());
   const [error, setError] = useState("");
   const set = (k) => (v) => setR((p) => ({ ...p, [k]: v }));
@@ -43,6 +44,20 @@ export function ReminderForm({ initial, onSave, onCancel }) {
           </Field>
         )}
       </div>
+      <label className={`checklist-item ${r.notifyTelegram ? "checklist-checked" : ""}`} style={{ marginTop: 4 }}>
+        <input type="checkbox" checked={!!r.notifyTelegram} onChange={(e) => set("notifyTelegram")(e.target.checked)} />
+        <span>Nhắc qua Telegram vào ngày đến hạn</span>
+      </label>
+      {r.notifyTelegram ? (
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <Field label="Giờ nhắc (giờ Việt Nam)">
+            <input type="time" className="input" value={r.notifyTime || "08:00"} onChange={(e) => set("notifyTime")(e.target.value)} />
+          </Field>
+        </div>
+      ) : null}
+      {r.notifyTelegram && !telegramReady ? (
+        <p className="field-hint" style={{ color: "var(--loss)" }}>Chưa cấu hình Bot Token / Chat ID ở tab "Nhắc dời SL" — điền trước để tin nhắn gửi được.</p>
+      ) : null}
       {error ? <p className="error-text">{error}</p> : null}
       <div className="form-actions" style={{ marginTop: 4 }}>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
@@ -69,12 +84,13 @@ export function ReminderBell({ reminders, onOpen }) {
   );
 }
 
-export function RemindersPage({ reminders, onChange }) {
+export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange }) {
   const [editing, setEditing] = useState(null);
   const [tab, setTab] = useState("today");
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
   const list = tab === "today" ? dueList : reminders;
+  const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
 
   const markDone = (r) => {
     onChange(reminders.map((x) => (x.id === r.id ? { ...x, doneDates: [...(x.doneDates || []), ts] } : x)));
@@ -92,7 +108,7 @@ export function RemindersPage({ reminders, onChange }) {
         <div className="reminders-page-head">
           <h2 style={{ fontSize: 19 }}>{editing.id ? "Sửa nhắc nhở" : "Nhắc nhở mới"}</h2>
         </div>
-        <ReminderForm initial={editing.id ? editing : null} onSave={saveReminder} onCancel={() => setEditing(null)} />
+        <ReminderForm initial={editing.id ? editing : null} onSave={saveReminder} onCancel={() => setEditing(null)} telegramReady={telegramReady} />
       </div>
     );
   }
@@ -101,16 +117,24 @@ export function RemindersPage({ reminders, onChange }) {
     <div className="reminders-page">
       <div className="reminders-page-head">
         <h2 style={{ fontSize: 19 }}>Thông báo &amp; nhắc nhở</h2>
-        <button type="button" className="btn btn-primary" onClick={() => setEditing(emptyReminder())}>
-          <PlusCircle size={15} /> Thêm nhắc nhở
-        </button>
+        {tab !== "sl" ? (
+          <button type="button" className="btn btn-primary" onClick={() => setEditing(emptyReminder())}>
+            <PlusCircle size={15} /> Thêm nhắc nhở
+          </button>
+        ) : null}
       </div>
       <div className="subtabs">
         <button className={`subtab ${tab === "today" ? "subtab-active" : ""}`} onClick={() => setTab("today")}>
           Hôm nay {dueList.length ? <span className="subtab-badge">{dueList.length}</span> : null}
         </button>
         <button className={`subtab ${tab === "all" ? "subtab-active" : ""}`} onClick={() => setTab("all")}>Tất cả</button>
+        <button className={`subtab ${tab === "sl" ? "subtab-active" : ""}`} onClick={() => setTab("sl")}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Send size={12} /> Nhắc dời SL</span>
+        </button>
       </div>
+      {tab === "sl" ? (
+        <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
+      ) : (
       <div className="reminder-list">
         {list.length === 0 ? (
           <p className="empty-note" style={{ padding: "16px 0" }}>
@@ -124,7 +148,10 @@ export function RemindersPage({ reminders, onChange }) {
                 <Clock size={14} color="var(--text-dim)" />
                 <div>
                   <div className="reminder-item-title">{r.title}</div>
-                  <div className="reminder-item-sub">{reminderScheduleLabel(r)}{r.active ? "" : " · Tạm tắt"}</div>
+                  <div className="reminder-item-sub">
+                    {reminderScheduleLabel(r)}{r.active ? "" : " · Tạm tắt"}
+                    {r.notifyTelegram ? <span className="watch-badge" style={{ marginLeft: 6 }}><Send size={10} /> Telegram {r.notifyTime || "08:00"}</span> : null}
+                  </div>
                 </div>
               </div>
               <div className="reminder-item-actions">
@@ -136,6 +163,7 @@ export function RemindersPage({ reminders, onChange }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
