@@ -95,13 +95,10 @@ Deno.serve(async () => {
       const logKey = `${sched.accountId}_${today}_${matchedHour}`;
       if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-      const lines = openTrades.map(
-        (t) => `• ${t.symbol} — vào lệnh ${t.entryDate}${t.entryTime ? " " + t.entryTime : ""}`
-      );
+      const lines = openTrades.map((t) => `[${t.symbol}] - Dời SL`);
       const text =
         `⏰ <b>Nhắc dời SL</b>\n` +
-        `Tài khoản: <b>${accountName}</b>\n` +
-        `Đang có ${openTrades.length} lệnh mở, kiểm tra và dời SL nếu cần:\n` +
+        `Tài khoản: <b>${accountName}</b>\n\n` +
         lines.join("\n");
 
       const threadId = sched.threadId ? Number(sched.threadId) : undefined;
