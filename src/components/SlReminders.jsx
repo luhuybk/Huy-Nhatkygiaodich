@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle } from "lucide-react";
 import { Field } from "./ui.jsx";
-import { emptyReminderSchedule, parseHoursInput, SL_REMINDER_DEFAULT_HOURS } from "../lib/helpers.js";
+import { emptyReminderSchedule, parseHoursInput, SL_REMINDER_DEFAULT_HOURS, WEEKDAY_CODES } from "../lib/helpers.js";
 
 export function SlReminderPanel({ settings, resources, onChange }) {
   const [testState, setTestState] = useState(null); // null | "sending" | "ok" | "error"
@@ -15,6 +15,11 @@ export function SlReminderPanel({ settings, resources, onChange }) {
       ? s.schedules.map((sc) => (sc.accountId === account.id ? { ...sc, ...patch } : sc))
       : [...s.schedules, { ...emptyReminderSchedule(account.id, account.name), ...patch }];
     onChange({ ...s, schedules: next });
+  };
+  const toggleDay = (account, sched, day) => {
+    const days = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
+    const next = days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
+    updateSchedule(account, { activeDays: next });
   };
 
   const sendTest = async (threadId) => {
@@ -72,48 +77,48 @@ export function SlReminderPanel({ settings, resources, onChange }) {
 
       <h3 className="block-title">Lịch nhắc theo tài khoản</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Chọn tài khoản cần nhắc, các khung giờ trong ngày (định dạng HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy) và Topic (Thread ID) nếu nhóm Telegram có chia Topics riêng cho từng tài khoản. Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
+        Chọn tài khoản cần nhắc, các khung giờ trong ngày (định dạng HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu nhóm Telegram có chia Topics riêng, và các ngày trong tuần được phép nhắc (VD bỏ T7/CN cho tài khoản Forex nghỉ cuối tuần). Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
       </p>
       {resources.accounts.length === 0 ? (
         <p className="empty-note">Chưa có tài khoản nào — thêm ở mục Tài khoản trước.</p>
       ) : (
-        <div className="account-form" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="sl-reminder-row sl-reminder-row-head">
-            <span className="field-hint" style={{ minWidth: 200, margin: 0 }}>Tài khoản</span>
-            <span className="field-hint" style={{ flex: 1, margin: 0 }}>Khung giờ (HH:mm, giờ VN)</span>
-            <span className="field-hint" style={{ width: 110, margin: 0 }}>Thread ID</span>
-            <span style={{ width: 32 }} />
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {resources.accounts.map((acc) => {
             const sched = scheduleFor(acc.id) || emptyReminderSchedule(acc.id, acc.name);
+            const activeDays = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
             return (
-              <div key={acc.id} className="sl-reminder-row">
-                <label className={`checklist-item ${sched.enabled ? "checklist-checked" : ""}`} style={{ minWidth: 200 }}>
-                  <input type="checkbox" checked={!!sched.enabled} onChange={(e) => updateSchedule(acc, { enabled: e.target.checked })} />
-                  <span>{acc.name}</span>
-                </label>
-                <input
-                  className="input input-inline"
-                  style={{ flex: 1 }}
-                  defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
-                  placeholder="09:00, 12:00, 15:00, 18:00, 21:00"
-                  onBlur={(e) => updateSchedule(acc, { hours: parseHoursInput(e.target.value) })}
-                />
-                <input
-                  className="input input-inline mono"
-                  style={{ width: 110 }}
-                  defaultValue={sched.threadId || ""}
-                  placeholder="VD: 2"
-                  onBlur={(e) => updateSchedule(acc, { threadId: e.target.value.trim() })}
-                />
-                <button
-                  type="button"
-                  className="row-btn"
-                  title="Gửi thử vào Topic này"
-                  onClick={() => sendTest(sched.threadId)}
-                >
-                  <Send size={13} />
-                </button>
+              <div key={acc.id} className="account-form sl-reminder-card">
+                <div className="sl-reminder-row">
+                  <label className={`checklist-item ${sched.enabled ? "checklist-checked" : ""}`} style={{ minWidth: 200 }}>
+                    <input type="checkbox" checked={!!sched.enabled} onChange={(e) => updateSchedule(acc, { enabled: e.target.checked })} />
+                    <span>{acc.name}</span>
+                  </label>
+                  <input
+                    className="input input-inline"
+                    style={{ flex: 1 }}
+                    defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
+                    placeholder="09:00, 12:00, 15:00, 18:00, 21:00"
+                    onBlur={(e) => updateSchedule(acc, { hours: parseHoursInput(e.target.value) })}
+                  />
+                  <input
+                    className="input input-inline mono"
+                    style={{ width: 90 }}
+                    defaultValue={sched.threadId || ""}
+                    placeholder="Thread ID"
+                    onBlur={(e) => updateSchedule(acc, { threadId: e.target.value.trim() })}
+                  />
+                  <button type="button" className="row-btn" title="Gửi thử vào Topic này" onClick={() => sendTest(sched.threadId)}>
+                    <Send size={13} />
+                  </button>
+                </div>
+                <div className="sl-reminder-days">
+                  {WEEKDAY_CODES.map((day) => (
+                    <label key={day} className={`sl-day-chip ${activeDays.includes(day) ? "sl-day-chip-active" : ""}`}>
+                      <input type="checkbox" checked={activeDays.includes(day)} onChange={() => toggleDay(acc, sched, day)} />
+                      {day}
+                    </label>
+                  ))}
+                </div>
               </div>
             );
           })}

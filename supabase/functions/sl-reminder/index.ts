@@ -22,6 +22,13 @@ const vnFormatter = new Intl.DateTimeFormat("en-CA", {
   hour12: false,
 });
 
+const vnWeekdayFormatter = new Intl.DateTimeFormat("en-US", { timeZone: VN_TZ, weekday: "short" });
+
+// Khớp với WEEKDAY_CODES ở src/lib/helpers.js — Thứ 2 → Chủ nhật
+const WEEKDAY_CODE_BY_EN_SHORT: Record<string, string> = {
+  Mon: "T2", Tue: "T3", Wed: "T4", Thu: "T5", Fri: "T6", Sat: "T7", Sun: "CN",
+};
+
 // Trả về ngày + giờ hiện tại theo múi giờ Việt Nam, bất kể server chạy ở UTC hay múi giờ nào khác.
 function vnNowParts(date: Date) {
   const parts = Object.fromEntries(vnFormatter.formatToParts(date).map((p) => [p.type, p.value])) as Record<string, string>;
@@ -31,6 +38,10 @@ function vnNowParts(date: Date) {
     date: `${parts.year}-${parts.month}-${parts.day}`,
     time: `${hour}:${parts.minute}`,
   };
+}
+
+function vnWeekdayCode(date: Date) {
+  return WEEKDAY_CODE_BY_EN_SHORT[vnWeekdayFormatter.format(date)] || "";
 }
 
 function minutesDiff(a: string, b: string) {
@@ -43,6 +54,7 @@ Deno.serve(async () => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const now = new Date();
   const { date: today, time: currentHHMM } = vnNowParts(now);
+  const todayWeekdayCode = vnWeekdayCode(now);
 
   const { data: settingsRows, error: settingsErr } = await supabase
     .from("app_data")
@@ -60,16 +72,20 @@ Deno.serve(async () => {
       enabled?: boolean;
       telegramBotToken?: string;
       telegramChatId?: string;
-      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string }[];
+      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
     };
     if (!settings?.enabled || !settings.telegramBotToken || !settings.telegramChatId) continue;
 
     const schedules = (settings.schedules || []).filter((s) => s.enabled && (s.hours || []).length);
     if (!schedules.length) continue;
 
-    const dueSchedules = schedules.filter((s) =>
-      (s.hours || []).some((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN)
-    );
+    // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
+    // activeDays không tồn tại (dữ liệu cũ trước khi có tính năng này) → mặc định coi như chạy mọi ngày.
+    const dueSchedules = schedules.filter((s) => {
+      const activeDays = Array.isArray(s.activeDays) ? s.activeDays : null;
+      if (activeDays && !activeDays.includes(todayWeekdayCode)) return false;
+      return (s.hours || []).some((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+    });
     if (!dueSchedules.length) continue;
 
     const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }] = await Promise.all([
@@ -95,14 +111,15 @@ Deno.serve(async () => {
       const logKey = `${sched.accountId}_${today}_${matchedHour}`;
       if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-      const lines = openTrades.map((t) => `[${t.symbol}] - Dời SL`);
+      const lines = openTrades.map((t) => `. [${t.symbol}] - Dời SL`);
       const text =
-        `⏰ <b>Nhắc dời SL</b>\n` +
-        `Tài khoản: <b>${accountName}</b>\n\n` +
+        `⏰ Nhắc dời SL\n` +
+        `Tài khoản: [${accountName}]\n` +
+        `----\n` +
         lines.join("\n");
 
       const threadId = sched.threadId ? Number(sched.threadId) : undefined;
-      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text, parse_mode: "HTML" };
+      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text };
       if (threadId && !Number.isNaN(threadId)) payload.message_thread_id = threadId;
 
       const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
@@ -134,5 +151,8 @@ Deno.serve(async () => {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, sent, vnTime: currentHHMM, vnDate: today }), { headers: { "content-type": "application/json" } });
+  return new Response(
+    JSON.stringify({ ok: true, sent, vnTime: currentHHMM, vnDate: today, vnWeekday: todayWeekdayCode }),
+    { headers: { "content-type": "application/json" } }
+  );
 });

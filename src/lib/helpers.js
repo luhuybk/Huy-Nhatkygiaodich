@@ -83,12 +83,15 @@ export function emptySkipped() {
 
 export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "21:00"];
 
+// Thứ 2 → Chủ nhật — dùng trực tiếp làm value lưu trong activeDays, khớp với nhãn hiển thị trên UI
+export const WEEKDAY_CODES = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
 export function emptySlReminderSettings() {
   return { enabled: false, telegramBotToken: "", telegramChatId: "", schedules: [] };
 }
 
 export function emptyReminderSchedule(accountId, accountName) {
-  return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS], threadId: "" };
+  return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS], threadId: "", activeDays: [...WEEKDAY_CODES] };
 }
 
 export function parseHoursInput(text) {
