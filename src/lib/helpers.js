@@ -88,7 +88,7 @@ export function emptySlReminderSettings() {
 }
 
 export function emptyReminderSchedule(accountId, accountName) {
-  return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS] };
+  return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS], threadId: "" };
 }
 
 export function parseHoursInput(text) {

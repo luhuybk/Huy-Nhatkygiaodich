@@ -396,6 +396,8 @@
         .checklist-checked { border-color:rgba(212,162,78,0.4); color:var(--text); }
         .sl-reminder-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding-bottom:10px; border-bottom:1px solid var(--border); }
         .sl-reminder-row:last-child { border-bottom:none; padding-bottom:14px; }
+        .sl-reminder-row-head { padding-bottom:6px; }
+        .sl-reminder-row-head span { text-transform:uppercase; letter-spacing:0.4px; font-size:10.5px; }
         .scope-bar { display:flex; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:4px; }
         .detail-header { display:flex; align-items:center; gap:4px; margin-bottom:16px; flex-wrap:wrap; }
         .metric-group { margin-bottom:22px; }

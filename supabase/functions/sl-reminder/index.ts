@@ -8,20 +8,29 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const TZ_OFFSET_MIN = 7 * 60; // Asia/Ho_Chi_Minh, UTC+7
+const VN_TZ = "Asia/Ho_Chi_Minh"; // UTC+7, không có DST — nhưng vẫn dùng Intl để tránh tự tính offset thủ công
 const MATCH_TOLERANCE_MIN = 2; // dung sai so khớp giờ, phù hợp với cron chạy mỗi 5 phút
 const LOG_RETENTION_DAYS = 3;
 
-function vnNow() {
-  return new Date(Date.now() + TZ_OFFSET_MIN * 60000);
-}
+const vnFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: VN_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
-function hhmm(d: Date) {
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-}
-
-function dateStr(d: Date) {
-  return d.toISOString().slice(0, 10);
+// Trả về ngày + giờ hiện tại theo múi giờ Việt Nam, bất kể server chạy ở UTC hay múi giờ nào khác.
+function vnNowParts(date: Date) {
+  const parts = Object.fromEntries(vnFormatter.formatToParts(date).map((p) => [p.type, p.value])) as Record<string, string>;
+  let hour = parts.hour;
+  if (hour === "24") hour = "00"; // một số runtime trả "24:00" thay vì "00:00" cho nửa đêm với hour12:false
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${hour}:${parts.minute}`,
+  };
 }
 
 function minutesDiff(a: string, b: string) {
@@ -32,9 +41,8 @@ function minutesDiff(a: string, b: string) {
 
 Deno.serve(async () => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const now = vnNow();
-  const currentHHMM = hhmm(now);
-  const today = dateStr(now);
+  const now = new Date();
+  const { date: today, time: currentHHMM } = vnNowParts(now);
 
   const { data: settingsRows, error: settingsErr } = await supabase
     .from("app_data")
@@ -52,7 +60,7 @@ Deno.serve(async () => {
       enabled?: boolean;
       telegramBotToken?: string;
       telegramChatId?: string;
-      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[] }[];
+      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string }[];
     };
     if (!settings?.enabled || !settings.telegramBotToken || !settings.telegramChatId) continue;
 
@@ -96,10 +104,14 @@ Deno.serve(async () => {
         `Đang có ${openTrades.length} lệnh mở, kiểm tra và dời SL nếu cần:\n` +
         lines.join("\n");
 
+      const threadId = sched.threadId ? Number(sched.threadId) : undefined;
+      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text, parse_mode: "HTML" };
+      if (threadId && !Number.isNaN(threadId)) payload.message_thread_id = threadId;
+
       const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: settings.telegramChatId, text, parse_mode: "HTML" }),
+        body: JSON.stringify(payload),
       });
 
       if (tgRes.ok) {
@@ -110,8 +122,8 @@ Deno.serve(async () => {
     }
 
     if (logChanged) {
-      const cutoff = new Date(now.getTime() - LOG_RETENTION_DAYS * 24 * 60 * 60000);
-      const cutoffStr = dateStr(cutoff);
+      const cutoffDate = new Date(now.getTime() - LOG_RETENTION_DAYS * 24 * 60 * 60000);
+      const cutoffStr = vnNowParts(cutoffDate).date;
       for (const k of Object.keys(log)) {
         const d = k.split("_")[1];
         if (d && d < cutoffStr) delete log[k];
@@ -125,5 +137,5 @@ Deno.serve(async () => {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, sent }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, sent, vnTime: currentHHMM, vnDate: today }), { headers: { "content-type": "application/json" } });
 });

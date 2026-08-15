@@ -17,17 +17,19 @@ export function SlReminderPanel({ settings, resources, onChange }) {
     onChange({ ...s, schedules: next });
   };
 
-  const sendTest = async () => {
+  const sendTest = async (threadId) => {
     if (!s.telegramBotToken || !s.telegramChatId) {
       setTestState("error");
       return;
     }
     setTestState("sending");
     try {
+      const body = { chat_id: s.telegramChatId, text: "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây." };
+      if (threadId) body.message_thread_id = Number(threadId);
       const res = await fetch(`https://api.telegram.org/bot${s.telegramBotToken}/sendMessage`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: s.telegramChatId, text: "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây." }),
+        body: JSON.stringify(body),
       });
       setTestState(res.ok ? "ok" : "error");
     } catch (e) {
@@ -55,13 +57,13 @@ export function SlReminderPanel({ settings, resources, onChange }) {
           <Field label="Telegram Bot Token" hint="Lấy từ @BotFather trên Telegram">
             <input className="input mono" value={s.telegramBotToken} onChange={(e) => set("telegramBotToken")(e.target.value.trim())} placeholder="123456789:AA...xyz" />
           </Field>
-          <Field label="Telegram Chat ID" hint="ID cuộc trò chuyện sẽ nhận tin nhắn">
-            <input className="input mono" value={s.telegramChatId} onChange={(e) => set("telegramChatId")(e.target.value.trim())} placeholder="123456789" />
+          <Field label="Main Chat ID" hint="ID nhóm/cuộc trò chuyện chính sẽ nhận tin nhắn (Supergroup nếu dùng Topics)">
+            <input className="input mono" value={s.telegramChatId} onChange={(e) => set("telegramChatId")(e.target.value.trim())} placeholder="-100123456789" />
           </Field>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button type="button" className="btn btn-ghost" onClick={sendTest} disabled={testState === "sending"}>
-            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử"}
+          <button type="button" className="btn btn-ghost" onClick={() => sendTest()} disabled={testState === "sending"}>
+            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử (chat chính)"}
           </button>
           {testState === "ok" ? <span className="field-hint" style={{ color: "var(--win)", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span> : null}
           {testState === "error" ? <span className="field-hint" style={{ color: "var(--loss)", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> Gửi thất bại — kiểm tra lại Token/Chat ID</span> : null}
@@ -70,12 +72,18 @@ export function SlReminderPanel({ settings, resources, onChange }) {
 
       <h3 className="block-title">Lịch nhắc theo tài khoản</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Chọn tài khoản cần nhắc và các khung giờ trong ngày (định dạng HH:mm, cách nhau bằng dấu phẩy). Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
+        Chọn tài khoản cần nhắc, các khung giờ trong ngày (định dạng HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy) và Topic (Thread ID) nếu nhóm Telegram có chia Topics riêng cho từng tài khoản. Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
       </p>
       {resources.accounts.length === 0 ? (
         <p className="empty-note">Chưa có tài khoản nào — thêm ở mục Tài khoản trước.</p>
       ) : (
         <div className="account-form" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="sl-reminder-row sl-reminder-row-head">
+            <span className="field-hint" style={{ minWidth: 200, margin: 0 }}>Tài khoản</span>
+            <span className="field-hint" style={{ flex: 1, margin: 0 }}>Khung giờ (HH:mm, giờ VN)</span>
+            <span className="field-hint" style={{ width: 110, margin: 0 }}>Thread ID</span>
+            <span style={{ width: 32 }} />
+          </div>
           {resources.accounts.map((acc) => {
             const sched = scheduleFor(acc.id) || emptyReminderSchedule(acc.id, acc.name);
             return (
@@ -91,6 +99,21 @@ export function SlReminderPanel({ settings, resources, onChange }) {
                   placeholder="09:00, 12:00, 15:00, 18:00, 21:00"
                   onBlur={(e) => updateSchedule(acc, { hours: parseHoursInput(e.target.value) })}
                 />
+                <input
+                  className="input input-inline mono"
+                  style={{ width: 110 }}
+                  defaultValue={sched.threadId || ""}
+                  placeholder="VD: 2"
+                  onBlur={(e) => updateSchedule(acc, { threadId: e.target.value.trim() })}
+                />
+                <button
+                  type="button"
+                  className="row-btn"
+                  title="Gửi thử vào Topic này"
+                  onClick={() => sendTest(sched.threadId)}
+                >
+                  <Send size={13} />
+                </button>
               </div>
             );
           })}
@@ -103,8 +126,11 @@ export function SlReminderPanel({ settings, resources, onChange }) {
           <li>Deploy function <code>supabase/functions/sl-reminder</code> (đã có sẵn trong repo) bằng Supabase CLI: <code>supabase functions deploy sl-reminder</code>.</li>
           <li>Vào Supabase Dashboard → Database → Extensions, bật <code>pg_cron</code> và <code>pg_net</code>.</li>
           <li>Chạy file <code>supabase-sl-reminder-cron.sql</code> (đã có sẵn trong repo) trong SQL Editor để tạo cron job gọi function mỗi 5 phút.</li>
-          <li>Điền Bot Token + Chat ID ở trên, bật lịch cho tài khoản cần theo dõi, bấm "Gửi thử" để xác nhận kết nối.</li>
+          <li>Điền Bot Token + Main Chat ID ở trên, bật lịch cho tài khoản cần theo dõi, điền Thread ID nếu nhóm có chia Topics, bấm nút gửi thử để xác nhận đúng chỗ.</li>
         </ol>
+        <p className="field-hint" style={{ marginTop: 8 }}>
+          Khung giờ bạn nhập luôn được hiểu theo giờ Việt Nam (Asia/Ho_Chi_Minh) — Edge Function tự quy đổi giờ máy chủ (UTC) sang giờ VN trước khi so khớp, nên nhập "09:00" là đúng 9 giờ sáng VN.
+        </p>
       </details>
     </div>
   );
