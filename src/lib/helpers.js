@@ -1,5 +1,5 @@
 import { supabase } from "../supabaseClient.js";
-import { DEFAULT_RESOURCES, NOTE_TYPES, WEEKDAY_LABEL } from "./constants.js";
+import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, WEEKDAY_LABEL } from "./constants.js";
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -588,6 +588,55 @@ export function buildGrowthSeries(curve, initialBalance, granularity) {
   });
   const keys = Object.keys(byPeriod).sort();
   return keys.map((k) => ({ period: k, growth: initialBalance ? Number((((byPeriod[k] - initialBalance) / Math.abs(initialBalance)) * 100).toFixed(2)) : 0 }));
+}
+
+// Trả về giá trị dùng để so sánh khi sắp xếp bảng nhật ký. Trả null khi ô trống —
+// những dòng này luôn bị đẩy xuống cuối, dù đang sắp xếp tăng hay giảm dần.
+export function tradeSortValue(t, key, resources) {
+  const num = (v) => (v === "" || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
+  const str = (v) => (v ? String(v).toLowerCase() : null);
+  const r = computeResult(t);
+  switch (key) {
+    case "entryDate": return t.entryDate || null;
+    case "account": return str(t.account);
+    case "symbol": return str(t.symbol);
+    case "direction": return t.direction === "buy" ? 0 : t.direction === "sell" ? 1 : null;
+    case "setup": return str(t.setup);
+    case "timeframe": return str(t.timeframe);
+    case "riskPercent": return num(t.riskPercent);
+    case "profit": return r.profit;
+    case "rr": return r.rr;
+    // Lệnh đang mở luôn đứng thành một nhóm riêng để dễ soi "lệnh nào còn chạy".
+    case "status": return r.status === "open" ? 0 : r.outcome === "win" ? 1 : r.outcome === "be" ? 2 : 3;
+    case "score": return avgPillarScore(t);
+    case "checklist": {
+      const cp = checklistProgress(t, resources);
+      return cp ? cp.checked / cp.total : null;
+    }
+    case "grade": {
+      const g = GRADE_OPTIONS.find((x) => x.id === t.tradeGrade);
+      return g ? (g.tone === "win" ? 0 : 1) : null;
+    }
+    case "completion": return tradeCompletion(t).percent;
+    case "hasLesson": return t.hasLesson ? 0 : 1;
+    default: return null;
+  }
+}
+
+export function sortTrades(trades, sort, resources) {
+  const { key, dir } = sort || {};
+  if (!key) return trades;
+  const mul = dir === "asc" ? 1 : -1;
+  return [...trades].sort((a, b) => {
+    const av = tradeSortValue(a, key, resources);
+    const bv = tradeSortValue(b, key, resources);
+    if (av === null && bv === null) return (b.createdAt || 0) - (a.createdAt || 0);
+    if (av === null) return 1; // ô trống luôn xuống cuối
+    if (bv === null) return -1;
+    if (av < bv) return -1 * mul;
+    if (av > bv) return 1 * mul;
+    return (b.createdAt || 0) - (a.createdAt || 0); // hòa thì lệnh nhập sau lên trước
+  });
 }
 
 export function applyFilters(trades, filters, resources) {

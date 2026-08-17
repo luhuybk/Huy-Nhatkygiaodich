@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle } from "lucide-react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, tradeCompletion, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -178,11 +178,38 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   );
 }
 
-export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll }) {
+// Các cột có thể bấm để sắp xếp — key khớp với tradeSortValue() ở helpers.js.
+const JOURNAL_COLUMNS = [
+  { key: "entryDate", label: "Ngày" },
+  { key: "account", label: "Tài khoản" },
+  { key: "symbol", label: "Symbol" },
+  { key: null, label: "Ảnh" },
+  { key: "direction", label: "Hướng" },
+  { key: "setup", label: "Setup" },
+  { key: "timeframe", label: "TF" },
+  { key: "riskPercent", label: "%Risk" },
+  { key: "profit", label: "Lãi/Lỗ" },
+  { key: "rr", label: "RR" },
+  { key: "status", label: "Kết quả" },
+  { key: "score", label: "Chấm điểm" },
+  { key: "checklist", label: "Checklist" },
+  { key: "grade", label: "Đánh giá" },
+  { key: "completion", label: "Tiến độ" },
+  { key: "hasLesson", label: "Bài học" },
+];
+
+export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange }) {
   const res = resources || { checklistItems: [] };
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   const selectable = !!selected && !!onToggleOne;
   const allSelected = selectable && trades.length > 0 && trades.every((t) => selected.has(t.id));
+  const sortable = !!onSortChange;
+  // Bấm cột đang sắp xếp thì đảo chiều, bấm cột khác thì bắt đầu ở chiều giảm dần
+  // (ngày mới nhất / lãi lớn nhất lên đầu — hợp với thói quen soi nhật ký).
+  const clickHeader = (key) => {
+    if (!sortable || !key) return;
+    onSortChange(sort && sort.key === key ? { key, dir: sort.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" });
+  };
   return (
     <div className="table-wrap">
       <table className="table">
@@ -193,7 +220,20 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <input type="checkbox" checked={allSelected} onChange={() => onToggleAll(trades.map((t) => t.id))} aria-label="Chọn tất cả" />
               </th>
             ) : null}
-            <th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Hướng</th><th>Setup</th><th>TF</th><th>%Risk</th><th>Lãi/Lỗ</th><th>RR</th><th>Kết quả</th><th>Chấm điểm</th><th>Checklist</th><th>Đánh giá</th><th>Tiến độ</th><th>Bài học</th><th></th></tr>
+            {JOURNAL_COLUMNS.map((col, i) => {
+              const active = sortable && col.key && sort && sort.key === col.key;
+              return (
+                <th key={col.key || `col-${i}`}
+                  className={sortable && col.key ? `th-sortable ${active ? "th-sorted" : ""}` : ""}
+                  onClick={() => clickHeader(col.key)}
+                  title={sortable && col.key ? `Sắp xếp theo ${col.label}` : undefined}>
+                  {col.label}
+                  {active ? <ArrowUpDown size={11} className={sort.dir === "asc" ? "th-sort-asc" : ""} style={{ marginLeft: 4, verticalAlign: -1 }} /> : null}
+                </th>
+              );
+            })}
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {trades.map((t) => {
@@ -208,6 +248,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                   </td>
                 ) : null}
                 <td className="mono">{t.entryDate || "—"}</td>
+                <td>{t.account || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: 5 }}>
@@ -323,7 +364,11 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
   const [tab, setTab] = useState("list");
   const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(() => new Set());
-  const filtered = useMemo(() => applyFilters(trades, filters, resources).sort((a, b) => b.createdAt - a.createdAt), [trades, filters, resources]);
+  const [sort, setSort] = useState({ key: "entryDate", dir: "desc" });
+  const filtered = useMemo(
+    () => sortTrades(applyFilters(trades, filters, resources), sort, resources),
+    [trades, filters, resources, sort]
+  );
   const riskAlerts = useMemo(() => computeRiskAlerts(resources, trades, ledger), [resources, trades, ledger]);
 
   useEffect(() => { setSelected(new Set()); }, [filters]);
@@ -368,7 +413,7 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
               </div>
             ) : null}
           </div>
-          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} />
+          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} />
         </div>
       ) : (
         <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} />
