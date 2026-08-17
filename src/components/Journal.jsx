@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -260,7 +260,10 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <td>{t.setup || "—"}</td>
                 <td className="mono">{t.timeframe || "—"}</td>
                 <td className="mono">{t.riskPercent === "" || t.riskPercent === null || t.riskPercent === undefined ? "—" : `${t.riskPercent}%`}</td>
-                <td className={`mono ${Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""}`}>{t.profit === "" ? "—" : fmt(Number(t.profit))}</td>
+                <td className={`mono ${Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""}`}
+                  title={t.profit === "" ? "" : `Quy đổi: ${fmtMoney(tradeProfitUSD(t, res), "USD")}`}>
+                  {t.profit === "" ? "—" : fmtMoney(Number(t.profit), tradeCurrency(t, res))}
+                </td>
                 <td className={`mono ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}>{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</td>
                 <td>{status === "open" ? <span className="status-pill open">Đang mở</span> :
                   <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>}</td>
@@ -304,18 +307,24 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const pad = (n) => String(n).padStart(2, "0");
 
+  // Gộp nhiều tài khoản khác tiền tệ nên phải quy đổi USD trước khi cộng,
+  // nếu không một lệnh VNĐ sẽ áp đảo toàn bộ con số của ngày đó.
   const byDay = useMemo(() => {
     const out = {};
     trades.forEach((t) => {
-      const r = computeResult(t);
       const key = dateKey(t);
       if (!key) return;
       if (!out[key]) out[key] = { pnl: 0, count: 0 };
       out[key].count += 1;
-      if (r.profit) out[key].pnl += r.profit;
+      const usd = tradeProfitUSD(t, resources);
+      if (usd) out[key].pnl += usd;
     });
     return out;
-  }, [trades]);
+  }, [trades, resources]);
+  const mixedCurrency = useMemo(() => {
+    const set = new Set(trades.map((t) => tradeCurrency(t, resources)));
+    return set.size > 1;
+  }, [trades, resources]);
 
   const cells = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
@@ -330,6 +339,11 @@ export function TradingCalendar({ trades, resources, onEdit }) {
         <span className="cal-title">Tháng {m + 1}/{y}</span>
         <button type="button" className="row-btn" onClick={() => setCursor(new Date(y, m + 1, 1))}><ChevronRight size={16} /></button>
       </div>
+      {mixedCurrency ? (
+        <p className="field-hint" style={{ textAlign: "center", marginBottom: 10 }}>
+          Có nhiều tài khoản khác đơn vị tiền — số tiền trong lịch được quy đổi sang USD theo tỷ giá ở mục Tài khoản.
+        </p>
+      ) : null}
       <div className="cal-grid cal-head">
         {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((d) => <div key={d} className="cal-dow">{d}</div>)}
       </div>

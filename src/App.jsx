@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Suspense, lazy } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
@@ -7,7 +7,11 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
-import { safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk, setCurrentUserId, uid } from "./lib/helpers.js";
+import {
+  safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
+  setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField,
+  shouldSnapshot, makeSnapshot, pruneBackups,
+} from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
@@ -63,10 +67,13 @@ function AppShell({ onSignOut, userEmail }) {
   const [editing, setEditing] = useState(null);
   const [saveState, setSaveState] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [backups, setBackups] = useState([]);
+  const [undo, setUndo] = useState(null);
+  const undoTimerRef = useRef(null);
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf, sr, sw] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf, sr, sw, bk] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -86,6 +93,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("capitalFlows", []),
         safeGet("slReminderSettings", emptySlReminderSettings()),
         safeGet("symbolWatches", []),
+        safeGet("backups", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -104,6 +112,7 @@ function AppShell({ onSignOut, userEmail }) {
       setCapitalFlows(cf);
       setSlReminderSettings({ ...emptySlReminderSettings(), ...sr });
       setSymbolWatches(Array.isArray(sw) ? sw : []);
+      setBackups(Array.isArray(bk) ? bk : []);
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
       if (!mergedUi.defaultRemindersSeeded) {
@@ -126,6 +135,21 @@ function AppShell({ onSignOut, userEmail }) {
         setUiSettings(mergedUi);
       }
       setLoading(false);
+
+      // Tự chụp một bản sao lưu nếu bản gần nhất đã quá 7 ngày.
+      const currentBackups = Array.isArray(bk) ? bk : [];
+      if (shouldSnapshot(currentBackups, Date.now())) {
+        const snap = makeSnapshot({
+          trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
+          processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr,
+          setupLibrary: sl, missedSetups: ms, skippedSetups: ss, reminders: rm,
+          capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
+          slReminderSettings: sr, symbolWatches: sw,
+        }, Date.now());
+        const nextBackups = pruneBackups([snap, ...currentBackups]);
+        setBackups(nextBackups);
+        await safeSet("backups", nextBackups);
+      }
     })();
   }, []);
 
@@ -155,7 +179,29 @@ function AppShell({ onSignOut, userEmail }) {
   const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); flashSaved(await safeSet("capitalEntries", next)); }, []);
   const persistCapitalFlows = useCallback(async (next) => { setCapitalFlows(next); flashSaved(await safeSet("capitalFlows", next)); }, []);
   const persistSlReminderSettings = useCallback(async (next) => { setSlReminderSettings(next); flashSaved(await safeSet("slReminderSettings", next)); }, []);
-  const persistSymbolWatches = useCallback(async (next) => { setSymbolWatches(next); flashSaved(await safeSet("symbolWatches", next)); }, []);
+  // symbolWatches bị CẢ HAI phía cùng ghi: web (sửa symbol/giờ) và Edge Function (bấm nút trên Telegram).
+  // Ghi đè thẳng sẽ nuốt mất trạng thái hoãn/xong vừa bấm trên điện thoại, nên đọc lại bản trên server
+  // rồi chỉ giữ nguyên các trường do server làm chủ.
+  const persistSymbolWatches = useCallback(async (next, prev) => {
+    const server = await safeGet("symbolWatches", null);
+    let merged = next;
+    if (Array.isArray(server)) {
+      merged = next.map((w) => {
+        const remote = server.find((x) => x.id === w.id);
+        const before = (prev || []).find((x) => x.id === w.id);
+        if (!remote || !before) return w;
+        // Chỉ lấy giá trị từ server cho những trường mà lần sửa này người dùng KHÔNG đụng tới.
+        // Nếu người dùng vừa bấm "Nhắc lại ngay" thì ý muốn của họ phải thắng.
+        const keep = {};
+        ["snoozeUntil", "done", "lastNotifiedAt"].forEach((k) => {
+          if (w[k] === before[k] && remote[k] !== undefined) keep[k] = remote[k];
+        });
+        return { ...w, ...keep };
+      });
+    }
+    setSymbolWatches(merged);
+    flashSaved(await safeSet("symbolWatches", merged));
+  }, []);
 
   // Giao dịch (và setup miss/skip) tham chiếu tài khoản bằng TÊN, không phải id.
   // Nên khi đổi tên tài khoản phải đổi luôn tên trong mọi bản ghi cũ, nếu không toàn bộ
@@ -188,6 +234,44 @@ function AppShell({ onSignOut, userEmail }) {
     }
   }, [resources, trades, missedSetups, skippedSetups, slReminderSettings, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSlReminderSettings]);
 
+  // Tài nguyên (Setup, Tâm lý, Checklist...) cũng được lệnh tham chiếu bằng TÊN.
+  // Đổi tên một mục thì phải đổi theo trong mọi lệnh / setup miss / skip / bài học đã ghi.
+  const handleResourcesChange = useCallback(async (nextResources, rename) => {
+    await persistResources(nextResources);
+    if (!rename || !rename.resourceKey || rename.renamedFrom === rename.renamedTo) return;
+
+    const map = RESOURCE_TRADE_FIELDS[rename.resourceKey];
+    if (!map) return;
+    const { renamedFrom: from, renamedTo: to } = rename;
+
+    if (map.checklistKey) {
+      const r = renameChecklistKey(trades, from, to);
+      if (r.changed) await persistTrades(r.items);
+    }
+    if (map.trade) {
+      const r = renameInList(trades, map.trade, from, to);
+      if (r.changed) await persistTrades(r.items);
+    }
+    if (map.missed) {
+      const r = renameInList(missedSetups, map.missed, from, to);
+      if (r.changed) await persistMissedSetups(r.items);
+    }
+    if (map.skipped) {
+      const r = renameInList(skippedSetups, map.skipped, from, to);
+      if (r.changed) await persistSkippedSetups(r.items);
+    }
+    if (map.lessonArray) {
+      const r = renameInArrayField(lessons, map.lessonArray, from, to);
+      if (r.changed) await persistLessons(r.items);
+    }
+  }, [trades, missedSetups, skippedSetups, lessons, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistLessons]);
+
+  // Chuyển toàn bộ lệnh của một tài khoản sang tài khoản khác (hoặc bỏ trống) trước khi xóa tài khoản đó.
+  const handleMoveTrades = useCallback(async (fromName, toName) => {
+    const r = renameInList(trades, ["account"], fromName, toName);
+    if (r.changed) await persistTrades(r.items);
+  }, [trades, persistTrades]);
+
   const handleSaveTrade = (t) => {
     const exists = trades.some((x) => x.id === t.id);
     const next = exists ? trades.map((x) => (x.id === t.id ? t : x)) : [...trades, t];
@@ -195,10 +279,31 @@ function AppShell({ onSignOut, userEmail }) {
     setEditing(null);
     setView("journal");
   };
-  const handleDelete = (id) => persistTrades(trades.filter((t) => t.id !== id));
+  // Xóa lệnh là hành động không hoàn tác được và dữ liệu này không thể dựng lại từ đâu khác,
+  // nên giữ bản vừa xóa 10 giây kèm nút "Hoàn tác".
+  const offerUndo = (removed, label) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndo({ trades: removed, label });
+    undoTimerRef.current = setTimeout(() => setUndo(null), 10000);
+  };
+  const runUndo = () => {
+    if (!undo) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    const existing = new Set(trades.map((t) => t.id));
+    persistTrades([...trades, ...undo.trades.filter((t) => !existing.has(t.id))]);
+    setUndo(null);
+  };
+
+  const handleDelete = (id) => {
+    const removed = trades.filter((t) => t.id === id);
+    persistTrades(trades.filter((t) => t.id !== id));
+    if (removed.length) offerUndo(removed, `Đã xóa lệnh ${removed[0].symbol || ""}`.trim());
+  };
   const handleBulkDelete = (ids) => {
     const idSet = new Set(ids);
+    const removed = trades.filter((t) => idSet.has(t.id));
     persistTrades(trades.filter((t) => !idSet.has(t.id)));
+    if (removed.length) offerUndo(removed, `Đã xóa ${removed.length} lệnh`);
   };
   const handleDuplicateTrades = (ids) => {
     const idSet = new Set(ids);
@@ -233,9 +338,25 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
     if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
-    if (data.symbolWatches) persistSymbolWatches(data.symbolWatches);
+    if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
   };
-  const handleResetAll = () => {
+  const handleRestoreBackup = (id) => {
+    const snap = backups.find((b) => b.id === id);
+    if (snap && snap.data) handleImportAll(snap.data);
+  };
+  const handleBackupNow = async () => {
+    const snap = makeSnapshot({
+      trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs,
+      principles, setupLibrary, missedSetups, skippedSetups, reminders,
+      capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches,
+    }, Date.now());
+    const next = pruneBackups([snap, ...backups]);
+    setBackups(next);
+    flashSaved(await safeSet("backups", next));
+  };
+
+  const handleResetAll = async () => {
+    await handleBackupNow(); // chụp lại trước khi xóa để còn đường lùi
     persistTrades([]);
     persistResources(DEFAULT_RESOURCES);
     persistLedger([]);
@@ -373,7 +494,7 @@ function AppShell({ onSignOut, userEmail }) {
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} ledger={ledger} onEdit={startEdit} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
-              view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={persistSymbolWatches} /> :
+              view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "missed" ? <MissedSetupsSection items={missedSetups} resources={resources} onChange={persistMissedSetups} /> :
@@ -391,7 +512,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}
-                  onAccountsChange={handleAccountsChange} onLedgerChange={persistLedger}
+                  onAccountsChange={handleAccountsChange} onMoveTrades={handleMoveTrades} onLedgerChange={persistLedger}
                   fxRates={resources.fxRates} onFxRatesChange={(next) => persistResources({ ...resources, fxRates: next })} />
               ) :
               view === "setuplib" ? <SetupLibrarySection items={setupLibrary} onChange={persistSetupLibrary} /> :
@@ -405,13 +526,14 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (
-                <ResourceManager resources={resources} onChange={persistResources} />
+                <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
               <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
                 slReminderSettings={slReminderSettings} symbolWatches={symbolWatches}
+                backups={backups} onRestoreBackup={handleRestoreBackup} onBackupNow={handleBackupNow}
                 onImportAll={handleImportAll} onReset={handleResetAll} />
               }
             </Suspense>
@@ -419,6 +541,13 @@ function AppShell({ onSignOut, userEmail }) {
           </div>
         </div>
       </div>
+      {undo ? (
+        <div className="undo-toast">
+          <span>{undo.label}</span>
+          <button type="button" className="undo-btn" onClick={runUndo}>Hoàn tác</button>
+          <button type="button" className="row-btn" onClick={() => setUndo(null)} aria-label="Đóng"><X size={14} /></button>
+        </div>
+      ) : null}
       {viewingTrade ? (
         <Suspense fallback={null}>
           <TradeDetailModal

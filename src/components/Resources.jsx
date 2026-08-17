@@ -19,9 +19,12 @@ export function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, pla
   const saveEdit = () => {
     const v = editValue.trim();
     if (v && v !== list[editingIndex] && !list.includes(v)) {
+      const oldName = list[editingIndex];
       const next = [...list];
       next[editingIndex] = v;
-      onSetList(next);
+      // Báo kèm tên cũ để bên ngoài đổi luôn trong các lệnh đã ghi — nếu chỉ đổi trong
+      // danh sách thì lệnh cũ vẫn giữ tên cũ và rơi khỏi thống kê/bộ lọc.
+      onSetList(next, { renamedFrom: oldName, renamedTo: v });
     }
     setEditingIndex(-1);
   };
@@ -101,7 +104,7 @@ export function ResourceManager({ resources, onChange }) {
           <ResourceListEditor list={resources[childDef.key] || []} hint={childDef.hint} placeholder={`Thêm mục cho "${childDef.label}"...`}
             onAdd={(v) => onChange({ ...resources, [childDef.key]: [...(resources[childDef.key] || []), v] })}
             onRemove={(item) => onChange({ ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item) })}
-            onSetList={(next) => onChange({ ...resources, [childDef.key]: next })} />
+            onSetList={(next, rename) => onChange({ ...resources, [childDef.key]: next }, rename ? { ...rename, resourceKey: childDef.key } : null)} />
         </div>
       </div>
     </div>

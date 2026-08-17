@@ -122,6 +122,35 @@ export function parseHoursInput(text) {
     .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
 }
 
+// Toàn bộ dữ liệu nằm trong vài blob JSON, không có lịch sử phiên bản.
+// Một lần nhập nhầm file hoặc bấm "Xóa toàn bộ" là mất sạch — nên tự giữ vài bản chụp gần nhất.
+export const BACKUP_KEEP = 4;
+export const BACKUP_INTERVAL_DAYS = 7;
+
+export function shouldSnapshot(backups, nowMs) {
+  if (!backups || !backups.length) return true;
+  const latest = backups.reduce((a, b) => ((a.createdAt || 0) > (b.createdAt || 0) ? a : b));
+  return (nowMs - (latest.createdAt || 0)) >= BACKUP_INTERVAL_DAYS * 24 * 3600000;
+}
+
+export function makeSnapshot(data, nowMs) {
+  return {
+    id: uid(),
+    createdAt: nowMs,
+    counts: {
+      trades: (data.trades || []).length,
+      lessons: (data.lessons || []).length,
+      missedSetups: (data.missedSetups || []).length,
+      skippedSetups: (data.skippedSetups || []).length,
+    },
+    data,
+  };
+}
+
+export function pruneBackups(backups) {
+  return [...backups].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, BACKUP_KEEP);
+}
+
 export const NEWS_MAX_IMAGES = 4;
 
 export function emptyNewsLog(date) {
@@ -266,6 +295,90 @@ export function toUSD(amount, currency, fxRates) {
   return amount / rate;
 }
 
+// Lãi/lỗ của một lệnh quy đổi sang USD theo tiền tệ của tài khoản.
+// Bắt buộc dùng khi gộp nhiều tài khoản lại (lịch, tổng quan, sắp xếp) — nếu không
+// một lệnh VNĐ sẽ nuốt trọn tổng của cả tháng vì con số lớn gấp hàng chục nghìn lần.
+export function tradeProfitUSD(t, resources) {
+  const { profit } = computeResult(t);
+  if (profit === null) return null;
+  const acc = ((resources && resources.accounts) || []).find((a) => a.name === t.account);
+  return toUSD(profit, acc ? acc.currency : "USD", resources && resources.fxRates);
+}
+
+export function tradeCurrency(t, resources) {
+  const acc = ((resources && resources.accounts) || []).find((a) => a.name === t.account);
+  return acc && acc.currency ? acc.currency : "USD";
+}
+
+// Với mỗi loại tài nguyên: đổi tên nó thì phải đổi theo ở những trường nào của lệnh / setup miss / skip.
+// Thiếu bảng này là đổi tên xong toàn bộ dữ liệu cũ rơi ra khỏi thống kê và bộ lọc.
+export const RESOURCE_TRADE_FIELDS = {
+  symbols: { trade: ["symbol"], missed: ["symbol"], skipped: ["symbol"] },
+  setups: { trade: ["setup"], missed: ["setup"], skipped: ["setup"] },
+  setupBonus: { trade: ["setupBonus"] },
+  setupNotes: { trade: ["setupNote"] },
+  entrySkills: { trade: ["entrySkill"] },
+  inTradeSkills: { trade: ["inTradeSkill"] },
+  exitSkills: { trade: ["exitSkill"] },
+  psychologies: { trade: ["psychology"] },
+  riskActions: { trade: ["riskAction"] },
+  timeframes: { trade: ["timeframe"], missed: ["timeframe"], skipped: ["timeframe"] },
+  sessions: { trade: ["session"] },
+  missReasons: { missed: ["reason"] },
+  skipReasons: { skipped: ["reason"] },
+  checklistItems: { checklistKey: true },
+  lessonCategories: { lessonArray: ["categories"] },
+};
+
+export function renameInList(items, fields, oldName, newName) {
+  if (!fields || !fields.length) return { items, changed: false };
+  let changed = false;
+  const next = items.map((item) => {
+    let copy = item;
+    fields.forEach((f) => {
+      if (copy[f] === oldName) {
+        if (copy === item) copy = { ...item };
+        copy[f] = newName;
+        changed = true;
+      }
+    });
+    return copy;
+  });
+  return { items: changed ? next : items, changed };
+}
+
+// Checklist lưu theo dạng { "Tên mục": true } nên đổi tên mục phải đổi cả khóa,
+// nếu không mọi lệnh đã tick sẽ bị coi như chưa tick.
+export function renameChecklistKey(trades, oldName, newName) {
+  let changed = false;
+  const next = trades.map((t) => {
+    if (!t.checklist || !(oldName in t.checklist)) return t;
+    const checklist = { ...t.checklist };
+    checklist[newName] = checklist[oldName];
+    delete checklist[oldName];
+    changed = true;
+    return { ...t, checklist };
+  });
+  return { items: changed ? next : trades, changed };
+}
+
+export function renameInArrayField(items, fields, oldName, newName) {
+  let changed = false;
+  const next = items.map((item) => {
+    let copy = item;
+    fields.forEach((f) => {
+      const arr = item[f];
+      if (Array.isArray(arr) && arr.includes(oldName)) {
+        if (copy === item) copy = { ...item };
+        copy[f] = arr.map((v) => (v === oldName ? newName : v));
+        changed = true;
+      }
+    });
+    return copy;
+  });
+  return { items: changed ? next : items, changed };
+}
+
 export function computeResult(trade) {
   const profit = trade.profit === "" || trade.profit === null || trade.profit === undefined ? null : Number(trade.profit);
   const riskAmount = trade.riskAmount === "" || trade.riskAmount === null || trade.riskAmount === undefined ? null : Number(trade.riskAmount);
@@ -305,7 +418,7 @@ export function accountOpenRisk(account, ledger, trades) {
   openTrades.forEach((t) => {
     if (t.riskPercent !== "" && t.riskPercent !== null && t.riskPercent !== undefined && !Number.isNaN(Number(t.riskPercent))) {
       pct += Number(t.riskPercent);
-    } else if (t.riskAmount !== "" && t.riskAmount !== null && balance) {
+    } else if (t.riskAmount !== "" && t.riskAmount !== null && t.riskAmount !== undefined && balance && !Number.isNaN(Number(t.riskAmount))) {
       pct += (Number(t.riskAmount) / balance) * 100;
     }
   });
@@ -625,7 +738,8 @@ export function tradeSortValue(t, key, resources) {
     case "setup": return str(t.setup);
     case "timeframe": return str(t.timeframe);
     case "riskPercent": return num(t.riskPercent);
-    case "profit": return r.profit;
+    // Quy đổi USD trước khi so sánh, nếu không lệnh VNĐ luôn nằm ở cực trị của cột này.
+    case "profit": return tradeProfitUSD(t, resources);
     case "rr": return r.rr;
     // Lệnh đang mở luôn đứng thành một nhóm riêng để dễ soi "lệnh nào còn chạy".
     case "status": return r.status === "open" ? 0 : r.outcome === "win" ? 1 : r.outcome === "be" ? 2 : 3;

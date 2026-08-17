@@ -5,7 +5,7 @@ import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, 
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
 import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid } from "../lib/helpers.js";
 
-export function AccountsList({ accounts, ledger, trades, onChange, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
+export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
   const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "" };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState("");
@@ -23,9 +23,28 @@ export function AccountsList({ accounts, ledger, trades, onChange, fxRates, onFx
     else onChange([...accounts, { ...payload, id: uid() }]);
     setForm(blank);
   };
-  const remove = (id) => {
+  // Lệnh tham chiếu tài khoản bằng tên, nên xóa thẳng sẽ để lệnh mồ côi —
+  // biến mất khỏi mọi thống kê theo tài khoản mà không báo gì. Bắt chuyển lệnh đi trước.
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [moveTarget, setMoveTarget] = useState("");
+
+  const doRemove = (id) => {
     onChange(accounts.filter((a) => a.id !== id).map((a) => (a.parentId === id ? { ...a, parentId: "" } : a)));
     if (form.id === id) setForm(blank);
+    setPendingDelete(null);
+    setMoveTarget("");
+  };
+  const remove = (id) => {
+    const acc = accounts.find((a) => a.id === id);
+    const owned = acc ? trades.filter((t) => t.account === acc.name) : [];
+    if (owned.length) { setPendingDelete({ account: acc, count: owned.length }); setMoveTarget(""); return; }
+    doRemove(id);
+  };
+  const confirmDeleteWithMove = () => {
+    const acc = pendingDelete.account;
+    const target = accounts.find((a) => a.id === moveTarget);
+    if (onMoveTrades) onMoveTrades(acc.name, target ? target.name : "");
+    doRemove(acc.id);
   };
 
   const roots = accounts.filter((a) => !a.parentId);
@@ -115,6 +134,25 @@ export function AccountsList({ accounts, ledger, trades, onChange, fxRates, onFx
           <button type="button" className="btn btn-primary" onClick={submit}>{form.id ? "Cập nhật tài khoản" : "Thêm tài khoản"}</button>
         </div>
       </div>
+      {pendingDelete ? (
+        <div className="risk-alert-banner" style={{ marginTop: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="risk-alert-body" style={{ flex: 1, minWidth: 260 }}>
+            <span className="risk-alert-title">Tài khoản "{pendingDelete.account.name}" đang có {pendingDelete.count} lệnh</span>
+            <p className="risk-alert-line">Chọn tài khoản để chuyển các lệnh này sang trước khi xóa, nếu không chúng sẽ mất liên kết và biến mất khỏi mọi thống kê theo tài khoản.</p>
+          </div>
+          <select className="input" style={{ maxWidth: 220 }} value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)}>
+            <option value="">— Xóa luôn, không chuyển —</option>
+            {accounts.filter((a) => a.id !== pendingDelete.account.id).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => { setPendingDelete(null); setMoveTarget(""); }}>Hủy</button>
+            <DangerConfirmButton
+              label={moveTarget ? "Chuyển lệnh rồi xóa" : "Vẫn xóa (bỏ liên kết)"}
+              confirmLabel="Bấm lần nữa để xác nhận"
+              onConfirm={confirmDeleteWithMove} />
+          </div>
+        </div>
+      ) : null}
       <div className="account-card-grid" style={{ marginTop: 16 }}>
         {accounts.length === 0 ? <p className="empty-note">Chưa có tài khoản nào.</p> : null}
         {roots.map((a) => renderGroup(a))}
@@ -297,7 +335,7 @@ export function AccountDetail({ account, ledger, trades, onBack, onEdit, onDelet
   );
 }
 
-export function AccountsSection({ accounts, ledger, trades, onAccountsChange, onLedgerChange, fxRates, onFxRatesChange }) {
+export function AccountsSection({ accounts, ledger, trades, onAccountsChange, onMoveTrades, onLedgerChange, fxRates, onFxRatesChange }) {
   const [tab, setTab] = useState("list");
   const [viewingId, setViewingId] = useState("");
   const [editTarget, setEditTarget] = useState(null);
@@ -325,7 +363,7 @@ export function AccountsSection({ accounts, ledger, trades, onAccountsChange, on
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}>Tài khoản</button>
         <button className={`subtab ${tab === "flow" ? "subtab-active" : ""}`} onClick={() => setTab("flow")}>Nạp / Rút / Chuyển vốn</button>
       </div>
-      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} onChange={onAccountsChange} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
+      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} onChange={onAccountsChange} onMoveTrades={onMoveTrades} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
         onView={setViewingId} editTarget={editTarget} onEditConsumed={() => setEditTarget(null)} />
         : <CashFlowList accounts={accounts} ledger={ledger} onChange={onLedgerChange} />}
     </div>
