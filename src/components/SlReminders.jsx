@@ -1,7 +1,12 @@
 import { useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle } from "lucide-react";
-import { Field } from "./ui.jsx";
-import { emptyReminderSchedule, parseHoursInput, SL_REMINDER_DEFAULT_HOURS, WEEKDAY_CODES } from "../lib/helpers.js";
+import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle, Clock } from "lucide-react";
+import { ConfirmButton, Field } from "./ui.jsx";
+import {
+  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, parseHoursInput,
+  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
+} from "../lib/helpers.js";
+
+const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
 function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest }) {
   const scheduleFor = (accountId) => schedules.find((sc) => sc.accountId === accountId);
@@ -159,6 +164,8 @@ export function SetupCheckPanel({ settings, resources, onChange }) {
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc kiểm tra setup sẽ gửi vào đây.");
   const setupCheckSchedules = s.setupCheckSchedules || [];
+  const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
+  const setInc = (patch) => onChange({ ...s, incompleteReminder: { ...inc, ...patch } });
 
   const updateSchedule = (account, patch) => {
     const exists = setupCheckSchedules.find((sc) => sc.accountId === account.id);
@@ -202,6 +209,174 @@ export function SetupCheckPanel({ settings, resources, onChange }) {
         Chọn tài khoản cần nhắc, khung giờ trong ngày (HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu cần, và ngày trong tuần được phép nhắc.
       </p>
       <AccountScheduleCards schedules={setupCheckSchedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} />
+
+      <h3 className="block-title">Nhắc điền nốt lệnh chưa hoàn thành</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Mỗi tuần một lần, liệt kê các lệnh có Tiến độ dưới 100% trong Nhật ký để bạn điền cho đủ trước khi quên mất bối cảnh.
+      </p>
+      <div className="account-form">
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${inc.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => setInc({ enabled: !inc.enabled })}
+        >
+          <Bell size={15} /> {inc.enabled ? "🔔 Đang bật nhắc điền nốt lệnh" : "Bật nhắc điền nốt lệnh (tùy chọn)"}
+        </button>
+        <div className="grid-3" style={{ marginTop: 12 }}>
+          <Field label="Vào thứ">
+            <select className="input" value={inc.weekday} onChange={(e) => setInc({ weekday: e.target.value })}>
+              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
+            </select>
+          </Field>
+          <Field label="Giờ nhắc (giờ Việt Nam)">
+            <input type="time" className="input" value={inc.time || "20:00"} onChange={(e) => setInc({ time: e.target.value })} />
+          </Field>
+          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
+            <input className="input mono" defaultValue={inc.threadId || ""} placeholder="Thread ID" onBlur={(e) => setInc({ threadId: e.target.value.trim() })} />
+          </Field>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatchesChange }) {
+  const [draft, setDraft] = useState({ symbol: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+  const s = settings;
+  const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
+  const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — cảnh báo symbol theo dõi sẽ gửi vào đây.");
+
+  const updateWatch = (id, patch) => onWatchesChange(watches.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  const removeWatch = (id) => onWatchesChange(watches.filter((w) => w.id !== id));
+  const addWatch = () => {
+    const symbol = draft.symbol.trim().toUpperCase();
+    if (!symbol) return;
+    const hours = parseHoursInput(draft.hours);
+    onWatchesChange([...watches, { ...emptySymbolWatch(), symbol, note: draft.note.trim(), hours: hours.length ? hours : [...SYMBOL_WATCH_DEFAULT_HOURS] }]);
+    setDraft({ symbol: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+  };
+  const toggleDay = (w, day) => {
+    const days = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
+    updateWatch(w.id, { activeDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day] });
+  };
+
+  return (
+    <div>
+      <h3 className="block-title" style={{ marginTop: 0 }}>Symbol theo dõi</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Điền các symbol sắp có setup. Đến khung giờ đã đặt, Telegram sẽ nhắc bạn soi symbol đó, kèm sẵn các nút bấm ngay trong tin nhắn:
+        <b> Xong</b> để dừng nhắc, hoặc <b>Dời 3 tiếng / 8 tiếng / 1 ngày</b> để hoãn — hoãn xong sẽ tự nhắc lại đúng lúc đó và cộng dồn nếu bạn hoãn tiếp.
+      </p>
+      {!telegramReady ? (
+        <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
+          Chưa cấu hình Bot Token / Chat ID — điền ở tab "Nhắc dời SL" trước (dùng chung cho mọi loại nhắc nhở Telegram).
+        </p>
+      ) : null}
+      <div className="account-form">
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${s.symbolWatchEnabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => onSettingsChange({ ...s, symbolWatchEnabled: !s.symbolWatchEnabled })}
+        >
+          <Eye size={15} /> {s.symbolWatchEnabled ? "🔔 Đang bật cảnh báo symbol theo dõi" : "Bật cảnh báo symbol theo dõi (tùy chọn)"}
+        </button>
+        <div className="grid-2" style={{ marginTop: 12 }}>
+          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
+            <input className="input mono" defaultValue={s.symbolWatchThreadId || ""} placeholder="Thread ID"
+              onBlur={(e) => onSettingsChange({ ...s, symbolWatchThreadId: e.target.value.trim() })} />
+          </Field>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button type="button" className="btn btn-ghost" onClick={() => sendTest(s.symbolWatchThreadId)} disabled={testState === "sending" || !telegramReady}>
+            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử"}
+          </button>
+          {testState === "ok" ? <span className="field-hint" style={{ color: "var(--win)", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span> : null}
+          {testState === "error" ? <span className="field-hint" style={{ color: "var(--loss)", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> Gửi thất bại — kiểm tra lại Token/Chat ID</span> : null}
+        </div>
+      </div>
+
+      <h3 className="block-title">Thêm symbol cần theo dõi</h3>
+      <div className="account-form">
+        <div className="grid-3">
+          <Field label="Symbol">
+            <input className="input" value={draft.symbol} onChange={(e) => setDraft((p) => ({ ...p, symbol: e.target.value }))}
+              placeholder="VD: XAU/USD" onKeyDown={(e) => { if (e.key === "Enter") addWatch(); }} />
+          </Field>
+          <Field label="Ghi chú (tùy chọn)" hint="VD: chờ phá đỉnh, chờ về vùng cầu...">
+            <input className="input" value={draft.note} onChange={(e) => setDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Đang chờ gì ở symbol này?" />
+          </Field>
+          <Field label="Khung giờ nhắc" hint="HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy">
+            <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))} placeholder="09:00, 14:00, 20:00" />
+          </Field>
+        </div>
+        <div className="form-actions" style={{ marginTop: 4 }}>
+          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!draft.symbol.trim()}>
+            <PlusCircle size={14} /> Thêm symbol
+          </button>
+        </div>
+      </div>
+
+      <h3 className="block-title">Danh sách đang theo dõi</h3>
+      {watches.length === 0 ? (
+        <p className="empty-note">Chưa có symbol nào — thêm ở trên để bắt đầu nhận cảnh báo.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {watches.map((w) => {
+            const activeDays = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
+            const snoozed = w.snoozeUntil && new Date(w.snoozeUntil) > new Date();
+            return (
+              <div key={w.id} className={`account-form sl-reminder-card ${w.done ? "symbol-watch-done" : ""}`}>
+                <div className="sl-reminder-row">
+                  <label className={`checklist-item ${w.enabled && !w.done ? "checklist-checked" : ""}`} style={{ minWidth: 170 }}>
+                    <input type="checkbox" checked={!!w.enabled && !w.done} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked, done: false })} />
+                    <span style={{ fontWeight: 600 }}>{w.symbol}</span>
+                  </label>
+                  <input className="input input-inline" style={{ flex: 1, minWidth: 140 }} defaultValue={w.note || ""} placeholder="Ghi chú"
+                    onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
+                  <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}
+                    defaultValue={(w.hours && w.hours.length ? w.hours : SYMBOL_WATCH_DEFAULT_HOURS).join(", ")}
+                    placeholder="09:00, 14:00, 20:00"
+                    onBlur={(e) => updateWatch(w.id, { hours: parseHoursInput(e.target.value) })} />
+                  <ConfirmButton onConfirm={() => removeWatch(w.id)} />
+                </div>
+                <div className="sl-reminder-days">
+                  {WEEKDAY_CODES.map((day) => (
+                    <label key={day} className={`sl-day-chip ${activeDays.includes(day) ? "sl-day-chip-active" : ""}`}>
+                      <input type="checkbox" checked={activeDays.includes(day)} onChange={() => toggleDay(w, day)} />
+                      {day}
+                    </label>
+                  ))}
+                  {w.done ? (
+                    <span className="watch-badge watch-badge-done" style={{ marginLeft: 6 }}><CheckCircle2 size={11} /> Đã xong</span>
+                  ) : snoozed ? (
+                    <span className="watch-badge" style={{ marginLeft: 6 }}><Clock size={11} /> Hoãn tới {new Date(w.snoozeUntil).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
+                  ) : null}
+                  {w.done || snoozed ? (
+                    <button type="button" className="btn btn-ghost" style={{ padding: "3px 9px", fontSize: 11 }}
+                      onClick={() => updateWatch(w.id, { done: false, enabled: true, snoozeUntil: "" })}>
+                      Nhắc lại ngay
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <details style={{ marginTop: 18 }}>
+        <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Bật các nút bấm trong tin nhắn Telegram (làm 1 lần)</summary>
+        <ol className="field-hint" style={{ marginTop: 8, paddingLeft: 18, lineHeight: 1.7 }}>
+          <li>Deploy function xử lý nút bấm: <code>supabase functions deploy telegram-webhook --no-verify-jwt</code>.</li>
+          <li>Trỏ Telegram vào function đó bằng cách mở đường dẫn sau trên trình duyệt (thay <code>&lt;BOT_TOKEN&gt;</code> bằng token của bạn):<br />
+            <code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/setWebhook?url=https://&lt;PROJECT_REF&gt;.supabase.co/functions/v1/telegram-webhook</code>
+          </li>
+          <li>Xong — từ giờ bấm nút "Xong" hoặc "Dời lại" ngay trong Telegram sẽ tự cập nhật vào danh sách trên.</li>
+        </ol>
+        <p className="field-hint" style={{ marginTop: 8 }}>
+          Nếu chưa làm bước này thì tin nhắn vẫn gửi bình thường, chỉ là bấm nút sẽ không có tác dụng — bạn vẫn tắt/hoãn thủ công được ở danh sách trên.
+        </p>
+      </details>
     </div>
   );
 }

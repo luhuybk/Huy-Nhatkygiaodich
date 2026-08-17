@@ -87,7 +87,28 @@ export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "2
 export const WEEKDAY_CODES = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 export function emptySlReminderSettings() {
-  return { enabled: false, telegramBotToken: "", telegramChatId: "", schedules: [], setupCheckEnabled: false, setupCheckSchedules: [] };
+  return {
+    enabled: false, telegramBotToken: "", telegramChatId: "",
+    schedules: [], setupCheckEnabled: false, setupCheckSchedules: [],
+    incompleteReminder: emptyIncompleteReminder(),
+    symbolWatchEnabled: false, symbolWatchThreadId: "",
+  };
+}
+
+// Nhắc điền nốt các lệnh chưa hoàn thành 100% — mặc định tối Chủ nhật.
+export function emptyIncompleteReminder() {
+  return { enabled: false, weekday: "CN", time: "20:00", threadId: "" };
+}
+
+export const SYMBOL_WATCH_DEFAULT_HOURS = ["09:00", "14:00", "20:00"];
+
+export function emptySymbolWatch() {
+  return {
+    id: uid(), symbol: "", note: "", enabled: true, done: false,
+    hours: [...SYMBOL_WATCH_DEFAULT_HOURS], activeDays: [...WEEKDAY_CODES],
+    snoozeUntil: "", // ISO UTC — khi người dùng bấm "Dời lại" trên Telegram
+    lastNotifiedAt: "",
+  };
 }
 
 export function emptyReminderSchedule(accountId, accountName) {
@@ -637,6 +658,49 @@ export function sortTrades(trades, sort, resources) {
     if (av > bv) return 1 * mul;
     return (b.createdAt || 0) - (a.createdAt || 0); // hòa thì lệnh nhập sau lên trước
   });
+}
+
+const CSV_COLUMNS = [
+  ["Ngày entry", (t) => t.entryDate],
+  ["Giờ entry", (t) => t.entryTime],
+  ["Tài khoản", (t) => t.account],
+  ["Symbol", (t) => t.symbol],
+  ["Hướng", (t) => (t.direction === "buy" ? "Buy" : "Sell")],
+  ["Khung TG", (t) => t.timeframe],
+  ["Phiên", (t) => t.session],
+  ["Setup", (t) => t.setup],
+  ["Bonus", (t) => t.setupBonus],
+  ["Nhận xét setup", (t) => t.setupNote],
+  ["Điểm cấu trúc", (t) => t.structureScore],
+  ["Risk %", (t) => t.riskPercent],
+  ["Risk tiền", (t) => t.riskAmount],
+  ["Quản trị vốn", (t) => t.riskAction],
+  ["Ngày exit", (t) => t.exitDate],
+  ["Giờ exit", (t) => t.exitTime],
+  ["Giờ giữ lệnh", (t) => { const h = holdHours(t); return h === null ? "" : h.toFixed(2); }],
+  ["Lãi/Lỗ", (t) => t.profit],
+  ["RR", (t) => { const { rr } = computeResult(t); return rr === null ? "" : rr.toFixed(2); }],
+  ["Kết quả", (t) => { const { status, outcome } = computeResult(t); return status === "open" ? "Đang mở" : outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"; }],
+  ["Vào lệnh", (t) => t.entrySkill],
+  ["Trong lệnh", (t) => t.inTradeSkill],
+  ["Thoát lệnh", (t) => t.exitSkill],
+  ["Tâm lý", (t) => t.psychology],
+  ["Điểm TB", (t) => { const s = avgPillarScore(t); return s === null ? "" : s.toFixed(2); }],
+  ["Đánh giá", (t) => (GRADE_OPTIONS.find((g) => g.id === t.tradeGrade) || {}).label || ""],
+  ["Tiến độ %", (t) => tradeCompletion(t).percent],
+  ["Có bài học", (t) => (t.hasLesson ? "Có" : "")],
+  ["Bài học", (t) => t.lessonNote],
+  ["Lý do vào lệnh", (t) => t.entryReason],
+  ["Nhận xét/Review", (t) => t.reviewNote],
+];
+
+export function tradesToCsv(trades) {
+  // Bọc mọi ô trong dấu nháy kép và nhân đôi nháy bên trong — an toàn với dấu phẩy, xuống dòng, tiếng Việt.
+  const cell = (v) => `"${String(v === null || v === undefined ? "" : v).replace(/"/g, '""')}"`;
+  const lines = [CSV_COLUMNS.map(([label]) => cell(label)).join(",")];
+  trades.forEach((t) => lines.push(CSV_COLUMNS.map(([, get]) => cell(get(t))).join(",")));
+  // BOM để Excel nhận đúng UTF-8, nếu không tiếng Việt sẽ hiện thành ký tự lạ.
+  return "﻿" + lines.join("\r\n");
 }
 
 export function applyFilters(trades, filters, resources) {

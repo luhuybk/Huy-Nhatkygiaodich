@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search } from "lucide-react";
+import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye } from "lucide-react";
 import { ConfirmButton, Field } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { emptyReminder, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
-import { SlReminderPanel, SetupCheckPanel } from "./SlReminders.jsx";
+import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
 
 export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   const [r, setR] = useState(initial || emptyReminder());
@@ -84,13 +84,14 @@ export function ReminderBell({ reminders, onOpen }) {
   );
 }
 
-export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange }) {
+export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange }) {
   const [editing, setEditing] = useState(null);
   const [tab, setTab] = useState("today");
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
   const list = tab === "today" ? dueList : reminders;
   const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
+  const activeWatchCount = (symbolWatches || []).filter((w) => w.enabled && !w.done).length;
 
   const markDone = (r) => {
     onChange(reminders.map((x) => (x.id === r.id ? { ...x, doneDates: [...(x.doneDates || []), ts] } : x)));
@@ -134,11 +135,19 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
         <button className={`subtab ${tab === "setupcheck" ? "subtab-active" : ""}`} onClick={() => setTab("setupcheck")}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Search size={12} /> Kiểm tra setup</span>
         </button>
+        <button className={`subtab ${tab === "symbolwatch" ? "subtab-active" : ""}`} onClick={() => setTab("symbolwatch")}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Eye size={12} /> Symbol theo dõi
+            {activeWatchCount ? <span className="subtab-badge">{activeWatchCount}</span> : null}
+          </span>
+        </button>
       </div>
       {tab === "sl" ? (
         <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
       ) : tab === "setupcheck" ? (
         <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
+      ) : tab === "symbolwatch" ? (
+        <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
       ) : (
       <div className="reminder-list">
         {list.length === 0 ? (

@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown } from "lucide-react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -360,11 +360,17 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, ledger, onEdit, onDelete, onBulkDelete, onDuplicate }) {
+export function JournalSection({ trades, resources, ledger, onEdit, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
-  const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(() => new Set());
-  const [sort, setSort] = useState({ key: "entryDate", dir: "desc" });
+  // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
+  const filters = (uiSettings && uiSettings.journalFilters) || {};
+  const sort = (uiSettings && uiSettings.journalSort) || { key: "entryDate", dir: "desc" };
+  const setFilters = (updater) => {
+    const next = typeof updater === "function" ? updater(filters) : updater;
+    onUiSettingsChange({ ...uiSettings, journalFilters: next });
+  };
+  const setSort = (next) => onUiSettingsChange({ ...uiSettings, journalSort: next });
   const filtered = useMemo(
     () => sortTrades(applyFilters(trades, filters, resources), sort, resources),
     [trades, filters, resources, sort]
@@ -372,6 +378,16 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
   const riskAlerts = useMemo(() => computeRiskAlerts(resources, trades, ledger), [resources, trades, ledger]);
 
   useEffect(() => { setSelected(new Set()); }, [filters]);
+
+  const exportCsv = () => {
+    const blob = new Blob([tradesToCsv(filtered)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `nhat-ky-giao-dich-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const toggleOne = (id) => setSelected((prev) => {
     const next = new Set(prev);
@@ -404,14 +420,20 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
           <JournalFilters trades={trades} resources={resources} filters={filters} setFilters={setFilters} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
             <p className="field-hint" style={{ margin: 0 }}>{filtered.length} / {trades.length} lệnh{selected.size ? ` · Đã chọn ${selected.size}` : ""}</p>
-            {selected.size > 0 ? (
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" className="btn btn-ghost" onClick={() => { onDuplicate(Array.from(selected)); setSelected(new Set()); }}>
-                  <Copy size={13} /> Nhân bản ({selected.size})
-                </button>
-                <DangerConfirmButton label={`Xóa (${selected.size})`} confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onBulkDelete(Array.from(selected)); setSelected(new Set()); }} />
-              </div>
-            ) : null}
+            <div style={{ display: "flex", gap: 8 }}>
+              {selected.size > 0 ? (
+                <>
+                  <button type="button" className="btn btn-ghost" onClick={() => { onDuplicate(Array.from(selected)); setSelected(new Set()); }}>
+                    <Copy size={13} /> Nhân bản ({selected.size})
+                  </button>
+                  <DangerConfirmButton label={`Xóa (${selected.size})`} confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onBulkDelete(Array.from(selected)); setSelected(new Set()); }} />
+                </>
+              ) : null}
+              <button type="button" className="btn btn-ghost" onClick={exportCsv} disabled={filtered.length === 0}
+                title="Xuất đúng những lệnh đang hiển thị theo bộ lọc và thứ tự hiện tại">
+                <Download size={13} /> Xuất CSV ({filtered.length})
+              </button>
+            </div>
           </div>
           <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} />
         </div>

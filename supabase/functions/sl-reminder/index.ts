@@ -13,6 +13,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VN_TZ = "Asia/Ho_Chi_Minh"; // UTC+7, không có DST — nhưng vẫn dùng Intl để tránh tự tính offset thủ công
 const MATCH_TOLERANCE_MIN = 2; // dung sai so khớp giờ, phù hợp với cron chạy mỗi 5 phút
 const LOG_RETENTION_DAYS = 3;
+const MAX_INCOMPLETE_LINES = 15; // tránh tin nhắn dài quá giới hạn Telegram
 
 const vnFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: VN_TZ,
@@ -61,6 +62,34 @@ function minutesDiff(a: string, b: string) {
   return Math.abs(ah * 60 + am - (bh * 60 + bm));
 }
 
+async function sendTelegram(botToken: string, chatId: string, text: string, threadId?: string, replyMarkup?: unknown) {
+  const payload: Record<string, unknown> = { chat_id: chatId, text };
+  const thread = threadId ? Number(threadId) : undefined;
+  if (thread && !Number.isNaN(thread)) payload.message_thread_id = thread;
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return res.ok;
+}
+
+// Bản rút gọn của tradeCompletionFields() ở src/lib/helpers.js — giữ đúng danh sách trường
+// để % ở Telegram khớp với cột "Tiến độ" trên web.
+function completionPercent(t: Record<string, unknown>) {
+  const filled = (v: unknown) => v !== "" && v !== null && v !== undefined && v !== 0;
+  const checks = [
+    !!t.entryDate, !!t.account, !!t.timeframe, !!(t.entryImage || t.entryLink),
+    filled(t.riskPercent), filled(t.riskAmount), !!t.riskAction, !!t.ratingRisk,
+    !!t.setup, !!t.setupNote, !!t.ratingKnowledge,
+    !!t.exitDate, filled(t.profit), !!(t.exitImage || t.exitLink),
+    !!t.entrySkill, !!t.inTradeSkill, !!t.exitSkill, !!t.ratingSkill,
+    !!t.psychology, !!t.ratingPsychology, !!t.tradeGrade,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
 // Tương đương reminderDueToday() ở src/lib/helpers.js, tính theo ngày/thứ VN thay vì giờ máy chủ.
 function reminderDueOnVn(r: { frequency?: string; weekday?: number; dayOfMonth?: number; date?: string; active?: boolean; doneDates?: string[] }, vnDate: string, vnWeekdayN: number) {
   if (!r.active) return false;
@@ -97,6 +126,9 @@ Deno.serve(async () => {
       schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
       setupCheckEnabled?: boolean;
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
+      incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
+      symbolWatchEnabled?: boolean;
+      symbolWatchThreadId?: string;
     };
     // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
@@ -114,21 +146,30 @@ Deno.serve(async () => {
     const dueSchedules = schedules.filter(isDueNow);
     const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
-    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }] = await Promise.all([
+    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }] = await Promise.all([
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "resources").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "trades").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slReminderLog").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "reminders").maybeSingle(),
+      supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "symbolWatches").maybeSingle(),
     ]);
 
     const accounts = (resourcesRow?.value?.accounts || []) as { id: string; name: string }[];
-    const trades = (tradesRow?.value || []) as { account?: string; symbol?: string; entryDate?: string; entryTime?: string; exitDate?: string }[];
+    const trades = (tradesRow?.value || []) as {
+      account?: string; symbol?: string; entryDate?: string; entryTime?: string; exitDate?: string;
+      [key: string]: unknown;
+    }[];
     const log = (logRow?.value || {}) as Record<string, boolean>;
     const reminders = (remindersRow?.value || []) as {
       id?: string; title?: string; frequency?: string; weekday?: number; dayOfMonth?: number; date?: string;
       active?: boolean; doneDates?: string[]; notifyTelegram?: boolean; notifyTime?: string;
     }[];
+    const watches = (watchesRow?.value || []) as {
+      id?: string; symbol?: string; note?: string; enabled?: boolean; done?: boolean;
+      hours?: string[]; activeDays?: string[]; snoozeUntil?: string; lastNotifiedAt?: string;
+    }[];
     let logChanged = false;
+    let watchesChanged = false;
 
     for (const sched of dueSchedules) {
       const account = accounts.find((a) => a.id === sched.accountId);
@@ -149,17 +190,7 @@ Deno.serve(async () => {
         `----\n` +
         lines.join("\n");
 
-      const threadId = sched.threadId ? Number(sched.threadId) : undefined;
-      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text };
-      if (threadId && !Number.isNaN(threadId)) payload.message_thread_id = threadId;
-
-      const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (tgRes.ok) {
+      if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId)) {
         log[logKey] = true;
         logChanged = true;
         sent++;
@@ -182,17 +213,7 @@ Deno.serve(async () => {
         `----\n` +
         `. Đến giờ theo dõi, kiểm tra xem có setup nào không nhé!`;
 
-      const threadId = sched.threadId ? Number(sched.threadId) : undefined;
-      const payload: Record<string, unknown> = { chat_id: settings.telegramChatId, text };
-      if (threadId && !Number.isNaN(threadId)) payload.message_thread_id = threadId;
-
-      const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (tgRes.ok) {
+      if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId)) {
         log[logKey] = true;
         logChanged = true;
         sent++;
@@ -213,17 +234,94 @@ Deno.serve(async () => {
       if (log[logKey]) continue;
 
       const text = `🔔 Nhắc nhở\n----\n${r.title || "(không có tiêu đề)"}`;
-      const tgRes = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: settings.telegramChatId, text }),
-      });
-
-      if (tgRes.ok) {
+      if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text)) {
         log[logKey] = true;
         logChanged = true;
         sent++;
       }
+    }
+
+    // Nhắc điền nốt các lệnh chưa hoàn thành 100% — mỗi tuần 1 lần vào thứ + giờ đã chọn.
+    const inc = settings.incompleteReminder;
+    if (inc?.enabled && (inc.weekday || "CN") === todayWeekdayCode && minutesDiff(inc.time || "20:00", currentHHMM) <= MATCH_TOLERANCE_MIN) {
+      const logKey = `incomplete_${today}`;
+      if (!log[logKey]) {
+        const pending = trades
+          .map((t) => ({ t, percent: completionPercent(t) }))
+          .filter((x) => x.percent < 100)
+          .sort((a, b) => a.percent - b.percent);
+
+        if (pending.length) {
+          const shown = pending.slice(0, MAX_INCOMPLETE_LINES);
+          const lines = shown.map((x) => `. [${x.t.symbol || "?"}] ${x.t.entryDate || ""} — ${x.percent}%`);
+          if (pending.length > shown.length) lines.push(`. ...và ${pending.length - shown.length} lệnh nữa`);
+          const text =
+            `📝 Lệnh chưa điền xong\n` +
+            `Còn ${pending.length} lệnh dưới 100%\n` +
+            `----\n` +
+            lines.join("\n");
+          if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, inc.threadId)) {
+            log[logKey] = true;
+            logChanged = true;
+            sent++;
+          }
+        }
+      }
+    }
+
+    // Symbol theo dõi — nhắc theo khung giờ, hoặc nhắc lại đúng lúc hết hạn hoãn nếu bạn đã bấm "Dời lại" trên Telegram.
+    if (settings.symbolWatchEnabled && watches.length) {
+      for (const w of watches) {
+        if (!w.id || !w.enabled || w.done) continue;
+
+        const snoozeUntil = w.snoozeUntil ? Date.parse(w.snoozeUntil) : NaN;
+        const isSnoozed = !Number.isNaN(snoozeUntil) && snoozeUntil > now.getTime();
+        if (isSnoozed) continue; // đang hoãn thì bỏ qua mọi khung giờ định kỳ
+        const snoozeExpired = !Number.isNaN(snoozeUntil) && snoozeUntil <= now.getTime();
+
+        let logKey = "";
+        if (!snoozeExpired) {
+          const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
+          if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
+          const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+          if (!matchedHour) continue;
+          logKey = `watch_${today}_${w.id}_${matchedHour}`;
+          if (log[logKey]) continue;
+        }
+
+        const text =
+          `👀 Symbol theo dõi\n` +
+          `${w.symbol || "?"}\n` +
+          `----\n` +
+          `. ${w.note ? w.note : "Tới giờ soi symbol này rồi!"}`;
+
+        const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
+          inline_keyboard: [
+            [{ text: "✅ Xong", callback_data: `w:${w.id}:done` }],
+            [
+              { text: "⏰ 3 tiếng", callback_data: `w:${w.id}:s3` },
+              { text: "⏰ 8 tiếng", callback_data: `w:${w.id}:s8` },
+              { text: "⏰ 1 ngày", callback_data: `w:${w.id}:s24` },
+            ],
+          ],
+        });
+
+        if (ok) {
+          // Hoãn đã hết hạn thì phải xóa mốc, nếu không cứ 5 phút lại bắn thêm một tin.
+          if (snoozeExpired) { w.snoozeUntil = ""; watchesChanged = true; }
+          w.lastNotifiedAt = new Date().toISOString();
+          watchesChanged = true;
+          if (logKey) { log[logKey] = true; logChanged = true; }
+          sent++;
+        }
+      }
+    }
+
+    if (watchesChanged) {
+      await supabase.from("app_data").upsert(
+        { user_id: row.user_id, key: "symbolWatches", value: watches, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,key" }
+      );
     }
 
     if (logChanged) {
