@@ -133,7 +133,23 @@ export function shouldSnapshot(backups, nowMs) {
   return (nowMs - (latest.createdAt || 0)) >= BACKUP_INTERVAL_DAYS * 24 * 3600000;
 }
 
+// Ảnh dán trực tiếp được lưu thành chuỗi base64 ngay trong bản ghi (tối đa 1.5MB/ảnh).
+// Giữ nguyên chúng trong bản sao lưu thì 4 bản sẽ phình gấp 5 lần dữ liệu gốc và có thể
+// làm hỏng cả việc đọc/ghi. Bản sao lưu chỉ giữ phần chữ + link, bỏ ảnh base64.
+function stripInlineImages(value) {
+  if (Array.isArray(value)) return value.map(stripInlineImages);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = typeof v === "string" && v.startsWith("data:image") ? "" : stripInlineImages(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function makeSnapshot(data, nowMs) {
+  const slim = stripInlineImages(data);
   return {
     id: uid(),
     createdAt: nowMs,
@@ -143,7 +159,8 @@ export function makeSnapshot(data, nowMs) {
       missedSetups: (data.missedSetups || []).length,
       skippedSetups: (data.skippedSetups || []).length,
     },
-    data,
+    sizeKB: Math.round(JSON.stringify(slim).length / 1024),
+    data: slim,
   };
 }
 

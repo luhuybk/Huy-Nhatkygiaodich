@@ -74,7 +74,7 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
       <h3 className="block-title">Sao lưu tự động</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Cứ 7 ngày mở web một lần, hệ thống tự chụp lại toàn bộ dữ liệu và giữ {BACKUP_KEEP} bản gần nhất.
-        Một bản cũng được chụp ngay trước khi bạn bấm "Xóa toàn bộ dữ liệu". Khôi phục sẽ ghi đè dữ liệu hiện tại bằng bản đã chọn.
+        Một bản cũng được chụp ngay trước khi bạn bấm "Xóa toàn bộ dữ liệu". Khôi phục sẽ ghi đè dữ liệu hiện tại bằng bản đã chọn. Bản sao lưu giữ toàn bộ chữ và link, nhưng bỏ ảnh dán trực tiếp để không phình dung lượng — dùng "Xuất JSON" nếu muốn sao lưu kèm ảnh.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <button type="button" className="btn btn-ghost" onClick={onBackupNow}><Save size={14} /> Sao lưu ngay</button>
@@ -88,6 +88,7 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
               <span className="mono">{new Date(b.createdAt).toLocaleString("vi-VN")}</span>
               <span className="field-hint" style={{ flex: 1 }}>
                 {b.counts ? `${b.counts.trades} lệnh · ${b.counts.lessons} bài học · ${b.counts.missedSetups + b.counts.skippedSetups} setup miss/skip` : ""}
+                {b.sizeKB ? ` · ${b.sizeKB} KB` : ""}
               </span>
               <DangerConfirmButton label="Khôi phục" confirmLabel="Bấm lần nữa để ghi đè" onConfirm={() => { onRestoreBackup(b.id); setMsg("Đã khôi phục bản sao lưu."); }} />
             </div>
