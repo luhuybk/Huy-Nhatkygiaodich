@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react"
 import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
-  Wallet, Hash, Grid3x3, Target, TrendingUp, EyeOff, AlertTriangle, Ruler, PiggyBank,
-  SkipForward, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks,
+  Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
+  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -31,8 +31,7 @@ const CapitalTrackerPage = lazy(() => import("./components/CapitalTracker.jsx").
 const JournalSection = lazy(() => import("./components/Journal.jsx").then((m) => ({ default: m.JournalSection })));
 const TradeDetailModal = lazy(() => import("./components/Journal.jsx").then((m) => ({ default: m.TradeDetailModal })));
 const TradeForm = lazy(() => import("./components/TradeForm.jsx").then((m) => ({ default: m.TradeForm })));
-const MissedSetupsSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.MissedSetupsSection })));
-const SkippedSetupsSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SkippedSetupsSection })));
+const SetupHubSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupHubSection })));
 const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.JourneySection })));
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
 
@@ -54,6 +53,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
   const [skippedSetups, setSkippedSetups] = useState([]);
+  const [setupVariants, setSetupVariants] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [capitalAccounts, setCapitalAccounts] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
@@ -73,7 +73,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, rm, ca, ce, cf, sr, sw, bk] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -87,6 +87,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("uiSettings", DEFAULT_UI_SETTINGS),
         safeGet("missedSetups", []),
         safeGet("skippedSetups", []),
+        safeGet("setupVariants", []),
         safeGet("reminders", []),
         safeGet("capitalAccounts", []),
         safeGet("capitalEntries", []),
@@ -107,6 +108,7 @@ function AppShell({ onSignOut, userEmail }) {
       setSetupLibrary(sl);
       setMissedSetups(ms);
       setSkippedSetups(ss);
+      setSetupVariants(sv);
       setCapitalAccounts(ca);
       setCapitalEntries(ce);
       setCapitalFlows(cf);
@@ -142,7 +144,7 @@ function AppShell({ onSignOut, userEmail }) {
         const snap = makeSnapshot({
           trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
           processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr,
-          setupLibrary: sl, missedSetups: ms, skippedSetups: ss, reminders: rm,
+          setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw,
         }, Date.now());
@@ -174,6 +176,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); flashSaved(await safeSet("missedSetups", next)); }, []);
   const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); flashSaved(await safeSet("skippedSetups", next)); }, []);
+  const persistSetupVariants = useCallback(async (next) => { setSetupVariants(next); flashSaved(await safeSet("setupVariants", next)); }, []);
   const persistReminders = useCallback(async (next) => { setReminders(next); flashSaved(await safeSet("reminders", next)); }, []);
   const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); flashSaved(await safeSet("capitalAccounts", next)); }, []);
   const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); flashSaved(await safeSet("capitalEntries", next)); }, []);
@@ -260,11 +263,15 @@ function AppShell({ onSignOut, userEmail }) {
       const r = renameInList(skippedSetups, map.skipped, from, to);
       if (r.changed) await persistSkippedSetups(r.items);
     }
+    if (map.variant) {
+      const r = renameInList(setupVariants, map.variant, from, to);
+      if (r.changed) await persistSetupVariants(r.items);
+    }
     if (map.lessonArray) {
       const r = renameInArrayField(lessons, map.lessonArray, from, to);
       if (r.changed) await persistLessons(r.items);
     }
-  }, [trades, missedSetups, skippedSetups, lessons, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistLessons]);
+  }, [trades, missedSetups, skippedSetups, setupVariants, lessons, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons]);
 
   // Chuyển toàn bộ lệnh của một tài khoản sang tài khoản khác (hoặc bỏ trống) trước khi xóa tài khoản đó.
   const handleMoveTrades = useCallback(async (fromName, toName) => {
@@ -333,6 +340,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
     if (data.missedSetups) persistMissedSetups(data.missedSetups);
     if (data.skippedSetups) persistSkippedSetups(data.skippedSetups);
+    if (data.setupVariants) persistSetupVariants(data.setupVariants);
     if (data.reminders) persistReminders(data.reminders);
     if (data.capitalAccounts) persistCapitalAccounts(data.capitalAccounts);
     if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
@@ -347,7 +355,7 @@ function AppShell({ onSignOut, userEmail }) {
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs,
-      principles, setupLibrary, missedSetups, skippedSetups, reminders,
+      principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches,
     }, Date.now());
     const next = pruneBackups([snap, ...backups]);
@@ -368,6 +376,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistSetupLibrary([]);
     persistMissedSetups([]);
     persistSkippedSetups([]);
+    persistSetupVariants([]);
     persistReminders([]);
     persistCapitalAccounts([]);
     persistCapitalEntries([]);
@@ -382,8 +391,7 @@ function AppShell({ onSignOut, userEmail }) {
         { key: "journal", label: "Nhật ký", icon: BookOpen },
         { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
         { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
-        { key: "missed", label: "Setup bị miss", icon: EyeOff },
-        { key: "skipped", label: "Setup bị skip", icon: SkipForward },
+        { key: "setuphub", label: "Setup tổng hợp", icon: Shapes },
       ]
     },
     {
@@ -497,8 +505,10 @@ function AppShell({ onSignOut, userEmail }) {
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
-              view === "missed" ? <MissedSetupsSection items={missedSetups} resources={resources} onChange={persistMissedSetups} /> :
-              view === "skipped" ? <SkippedSetupsSection items={skippedSetups} resources={resources} onChange={persistSkippedSetups} /> :
+              view === "setuphub" ? (
+                <SetupHubSection missedSetups={missedSetups} skippedSetups={skippedSetups} setupVariants={setupVariants} resources={resources}
+                  onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
+              ) :
               view === "form" ? (
                 <TradeForm initial={editing} resources={resources} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
               ) :
@@ -529,7 +539,7 @@ function AppShell({ onSignOut, userEmail }) {
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
               <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
-                skippedSetups={skippedSetups} reminders={reminders}
+                skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
                 slReminderSettings={slReminderSettings} symbolWatches={symbolWatches}

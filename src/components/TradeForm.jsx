@@ -30,7 +30,7 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
   return (
     <div className="trade-form">
       <RiskAlertBanner alerts={riskAlerts} />
-      <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} />
+      <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky />
       <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required>

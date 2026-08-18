@@ -377,10 +377,10 @@ export function DetailGroup({ title, children, className }) {
   );
 }
 
-export function CompletionBar({ done, total, percent, label = "Tiến độ hoàn thành", missing }) {
+export function CompletionBar({ done, total, percent, label = "Tiến độ hoàn thành", missing, sticky }) {
   const tone = percent >= 80 ? "high" : percent >= 40 ? "mid" : "low";
   return (
-    <div className={`completion-bar completion-${tone}`}>
+    <div className={`completion-bar completion-${tone} ${sticky ? "completion-bar-sticky" : ""}`}>
       <div className="completion-bar-head">
         <span className="completion-bar-label">{label}</span>
         <span className="completion-bar-value mono">{percent}%{typeof total === "number" ? ` · ${done}/${total} mục` : ""}</span>

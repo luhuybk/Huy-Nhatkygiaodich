@@ -327,10 +327,20 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
             return (
               <div key={w.id} className={`account-form sl-reminder-card ${w.done ? "symbol-watch-done" : ""}`}>
                 <div className="sl-reminder-row">
-                  <label className={`checklist-item ${w.enabled && !w.done ? "checklist-checked" : ""}`} style={{ minWidth: 170 }}>
+                  <label className={`checklist-item ${w.enabled && !w.done ? "checklist-checked" : ""}`} style={{ flex: "0 0 auto" }}
+                    title={w.enabled && !w.done ? "Đang bật cảnh báo" : "Đang tắt cảnh báo"}>
                     <input type="checkbox" checked={!!w.enabled && !w.done} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked, done: false })} />
-                    <span style={{ fontWeight: 600 }}>{w.symbol}</span>
                   </label>
+                  {/* Symbol sửa được ngay tại chỗ — id mới là thứ Telegram dùng để nhận nút bấm,
+                      nên đổi tên symbol không làm hỏng lịch nhắc hay trạng thái hoãn đang có. */}
+                  <input className="input input-inline" style={{ width: 132, fontWeight: 600 }} defaultValue={w.symbol}
+                    placeholder="Symbol" title="Bấm để sửa symbol"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim().toUpperCase();
+                      if (!v) { e.target.value = w.symbol; return; }
+                      e.target.value = v;
+                      if (v !== w.symbol) updateWatch(w.id, { symbol: v });
+                    }} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 140 }} defaultValue={w.note || ""} placeholder="Ghi chú"
                     onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}

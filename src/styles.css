@@ -52,6 +52,7 @@
         .reminders-page .reminder-item { padding:12px 14px; }
         .subtab-badge { display:inline-block; min-width:16px; padding:0 5px; margin-left:5px; border-radius:8px; background:var(--loss);
           color:#fff; font-size:10.5px; font-weight:700; line-height:16px; text-align:center; }
+        .subtab-badge-muted { background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); line-height:14px; }
         .nav { display:flex; flex-direction:column; gap:14px; flex:1; overflow-y:auto; }
         .nav-group { display:flex; flex-direction:column; gap:2px; }
         .nav-group-label { font-size:9.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.8px;
@@ -168,6 +169,10 @@
         .checklist-progress-full { color:var(--win); border-color:rgba(76,175,125,0.4); background:rgba(76,175,125,0.1); }
         .checklist-progress-empty { color:var(--loss); border-color:rgba(224,97,90,0.35); background:rgba(224,97,90,0.08); }
         .completion-bar { margin-bottom:18px; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:var(--surface); }
+        /* Form nhập lệnh rất dài — ghim thanh tiến độ lại để không phải cuộn ngược lên xem còn thiếu bao nhiêu.
+           ::before phủ nền --bg ra hai bên và phía trên, che phần nội dung cuộn qua bên dưới thanh. */
+        .completion-bar-sticky { position:sticky; top:0; z-index:6; box-shadow:0 4px 14px rgba(0,0,0,0.28); }
+        .completion-bar-sticky::before { content:""; position:absolute; inset:-26px -40px 0; background:var(--bg); z-index:-1; }
         .completion-bar-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
         .completion-bar-label { font-size:12px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.4px; }
         .completion-bar-value { font-size:12.5px; font-weight:700; color:var(--text); }

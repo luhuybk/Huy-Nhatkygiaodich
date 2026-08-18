@@ -81,6 +81,14 @@ export function emptySkipped() {
   };
 }
 
+export const VARIANT_MAX_IMAGES = 4;
+
+// Setup biến thể: vẫn là setup quen thuộc nhưng nến chạy khác đi nên lúc đang giao dịch
+// không nhận ra, xong lệnh nhìn lại mới thấy. Lưu ảnh lại để lần sau nhận diện sớm hơn.
+export function emptyVariant() {
+  return { id: null, symbol: "", variantDate: "", timeframe: "", setup: "", images: [{ link: "", image: "" }], note: "" };
+}
+
 export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "21:00"];
 
 // Thứ 2 → Chủ nhật — dùng trực tiếp làm value lưu trong activeDays, khớp với nhãn hiển thị trên UI
@@ -158,6 +166,7 @@ export function makeSnapshot(data, nowMs) {
       lessons: (data.lessons || []).length,
       missedSetups: (data.missedSetups || []).length,
       skippedSetups: (data.skippedSetups || []).length,
+      setupVariants: (data.setupVariants || []).length,
     },
     sizeKB: Math.round(JSON.stringify(slim).length / 1024),
     data: slim,
@@ -330,8 +339,8 @@ export function tradeCurrency(t, resources) {
 // Với mỗi loại tài nguyên: đổi tên nó thì phải đổi theo ở những trường nào của lệnh / setup miss / skip.
 // Thiếu bảng này là đổi tên xong toàn bộ dữ liệu cũ rơi ra khỏi thống kê và bộ lọc.
 export const RESOURCE_TRADE_FIELDS = {
-  symbols: { trade: ["symbol"], missed: ["symbol"], skipped: ["symbol"] },
-  setups: { trade: ["setup"], missed: ["setup"], skipped: ["setup"] },
+  symbols: { trade: ["symbol"], missed: ["symbol"], skipped: ["symbol"], variant: ["symbol"] },
+  setups: { trade: ["setup"], missed: ["setup"], skipped: ["setup"], variant: ["setup"] },
   setupBonus: { trade: ["setupBonus"] },
   setupNotes: { trade: ["setupNote"] },
   entrySkills: { trade: ["entrySkill"] },
@@ -339,7 +348,7 @@ export const RESOURCE_TRADE_FIELDS = {
   exitSkills: { trade: ["exitSkill"] },
   psychologies: { trade: ["psychology"] },
   riskActions: { trade: ["riskAction"] },
-  timeframes: { trade: ["timeframe"], missed: ["timeframe"], skipped: ["timeframe"] },
+  timeframes: { trade: ["timeframe"], missed: ["timeframe"], skipped: ["timeframe"], variant: ["timeframe"] },
   sessions: { trade: ["session"] },
   missReasons: { missed: ["reason"] },
   skipReasons: { skipped: ["reason"] },

@@ -1,8 +1,8 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes } from "lucide-react";
 import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 
@@ -15,7 +15,7 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
         <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
-        <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" />
+        {reasonOptions ? <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" /> : null}
         <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
         <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
       </div>
@@ -301,6 +301,139 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+export function SetupVariantsSection({ items, resources, onChange }) {
+  const [form, setForm] = useState(emptyVariant());
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const openNew = () => { setForm(emptyVariant()); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setForm(emptyVariant()); setError(""); };
+  const save = () => {
+    if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
+    setError("");
+    const payload = { ...form, id: form.id || uid() };
+    const exists = items.some((n) => n.id === payload.id);
+    onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    setModalOpen(false);
+    setForm(emptyVariant());
+  };
+  const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
+  const sorted = useMemo(
+    () => applyMissSkipFilters(items, filters, "variantDate").sort((a, b) => (b.variantDate || "").localeCompare(a.variantDate || "")),
+    [items, filters]
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+        <p className="field-hint" style={{ margin: 0 }}>Cùng một setup nhưng nến chạy khác đi nên lúc giao dịch không nhận ra, xong lệnh nhìn lại mới thấy. Lưu ảnh lại để lần sau nhận diện được sớm hơn.</p>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm biến thể</button>
+      </div>
+      {modalOpen ? (
+        <FormModal title={form.id ? "Sửa setup biến thể" : "Thêm setup biến thể"} onClose={closeModal}>
+          <div className="grid-3">
+            <Field label="Symbol">
+              <input className="input" list="symbol-suggestions-variant" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <datalist id="symbol-suggestions-variant">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+            </Field>
+            <Field label="Ngày">
+              <input type="date" className="input" value={form.variantDate} onChange={(e) => setF("variantDate")(e.target.value)} />
+            </Field>
+            <Field label="Khung thời gian">
+              <ResourceSelect value={form.timeframe} onChange={setF("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
+            </Field>
+          </div>
+          <Field label="Setup">
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+          </Field>
+          <Field label="Link / hình ảnh TradingView" hint={`Tối đa ${VARIANT_MAX_IMAGES} ảnh/link`}>
+            <MultiImageOrLink items={form.images} onChange={setF("images")} label="variant" max={VARIANT_MAX_IMAGES} />
+          </Field>
+          <Field label="Ghi chú (tùy chọn)" hint="Biến thể này khác chỗ nào, dấu hiệu gì giúp nhận ra sớm hơn lần sau?">
+            <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="VD: nến rút chân dài hơn thường lệ, vào chậm 1 nến..." />
+          </Field>
+          {error ? <p className="error-text">{error}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {form.id ? <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => remove(form.id)} /> : null}
+            <button type="button" className="btn btn-ghost" onClick={closeModal}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={save}>{form.id ? "Cập nhật" : "Lưu biến thể"}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} dateKeyLabel="Ngày" />
+      <div className="table-wrap" style={{ marginTop: 16 }}>
+        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có biến thể nào khớp bộ lọc.</p> : (
+          <table className="table">
+            <thead>
+              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Ghi chú</th><th></th></tr>
+            </thead>
+            <tbody>
+              {sorted.map((n) => (
+                <tr key={n.id} onClick={() => openEdit(n)}>
+                  <td className="mono">{n.variantDate || "—"}</td>
+                  <td style={{ fontWeight: 600 }}>{n.symbol}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
+                    </div>
+                  </td>
+                  <td>{n.setup || "—"}</td>
+                  <td className="mono">{n.timeframe || "—"}</td>
+                  <td style={{ maxWidth: 260, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
+                      <ConfirmButton onConfirm={() => remove(n.id)} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Ba mục này cùng trả lời một câu hỏi ("setup nào mình đã bỏ lỡ hoặc chưa nhận ra?"),
+// nên gộp về một trang thay vì ba mục rời rạc ngoài menu.
+export function SetupHubSection({ missedSetups, skippedSetups, setupVariants, resources, onChangeMissed, onChangeSkipped, onChangeVariants }) {
+  const [tab, setTab] = useState("missed");
+  const tabs = [
+    { key: "missed", label: "Bị miss", icon: EyeOff, count: missedSetups.length },
+    { key: "skipped", label: "Bị skip", icon: SkipForward, count: skippedSetups.length },
+    { key: "variants", label: "Biến thể", icon: Shapes, count: setupVariants.length },
+  ];
+  return (
+    <div>
+      <h2 style={{ fontSize: 19, marginBottom: 12 }}>Setup tổng hợp</h2>
+      <div className="subtabs">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button key={t.key} className={`subtab ${tab === t.key ? "subtab-active" : ""}`} onClick={() => setTab(t.key)}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <Icon size={13} /> {t.label}
+                {t.count ? <span className="subtab-badge subtab-badge-muted">{t.count}</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {tab === "missed" ? (
+        <MissedSetupsSection items={missedSetups} resources={resources} onChange={onChangeMissed} />
+      ) : tab === "skipped" ? (
+        <SkippedSetupsSection items={skippedSetups} resources={resources} onChange={onChangeSkipped} />
+      ) : (
+        <SetupVariantsSection items={setupVariants} resources={resources} onChange={onChangeVariants} />
+      )}
     </div>
   );
 }
