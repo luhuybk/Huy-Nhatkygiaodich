@@ -84,7 +84,7 @@ export function ReminderBell({ reminders, onOpen }) {
   );
 }
 
-export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange }) {
+export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, slMutedTrades, onSlMutedTradesChange }) {
   const [editing, setEditing] = useState(null);
   const [tab, setTab] = useState("today");
   const ts = todayStr();
@@ -143,9 +143,10 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
         </button>
       </div>
       {tab === "sl" ? (
-        <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
+        <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange}
+          trades={trades} mutedTrades={slMutedTrades} onMutedTradesChange={onSlMutedTradesChange} />
       ) : tab === "setupcheck" ? (
-        <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} />
+        <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} checkLog={setupCheckLog} />
       ) : tab === "symbolwatch" ? (
         <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
       ) : (

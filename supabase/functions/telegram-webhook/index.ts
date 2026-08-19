@@ -1,5 +1,10 @@
-// Supabase Edge Function: nhận các cú bấm nút trên tin nhắn "Symbol theo dõi" gửi từ Telegram.
-// Nút "Xong" tắt theo dõi symbol đó; nút "Dời lại" đẩy mốc nhắc tiếp theo ra 3/8/24 giờ (cộng dồn nếu bấm nhiều lần).
+// Supabase Edge Function: nhận các cú bấm nút trên tin nhắn nhắc nhở gửi từ Telegram.
+//
+//   Symbol theo dõi   w|<watchId>|keep      giữ nguyên lịch, tiếp tục nhắc ở khung giờ kế tiếp
+//                     w|<watchId>|stop      đánh dấu xong, ngừng nhắc symbol này
+//   Kiểm tra setup    sc|<accountId>|<date>|<hour>   ghi nhận đã kiểm tra, dùng để tính % hoàn thành tuần
+//   Dời SL            sl|<tradeId>|moved    đã dời, tiếp tục nhắc ở khung giờ kế tiếp
+//                     sl|<tradeId>|closed   lệnh đã kết thúc thật, ngừng nhắc (không đụng vào bản ghi lệnh)
 //
 // Deploy: supabase functions deploy telegram-webhook --no-verify-jwt
 //   (bắt buộc có --no-verify-jwt vì Telegram gọi vào đây mà không mang JWT của Supabase)
@@ -11,17 +16,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SNOOZE_HOURS: Record<string, number> = { s3: 3, s8: 8, s24: 24 };
-
 type Watch = {
   id?: string; symbol?: string; note?: string; enabled?: boolean; done?: boolean;
-  hours?: string[]; activeDays?: string[]; snoozeUntil?: string; lastNotifiedAt?: string;
+  hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
 };
 
-function vnTimeLabel(iso: string) {
-  return new Date(iso).toLocaleString("vi-VN", {
-    timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit",
-  });
+type CheckLogEntry = { accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string };
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
 async function answerCallback(botToken: string, callbackId: string, text: string) {
@@ -41,6 +44,30 @@ async function clearButtons(botToken: string, chatId: number, messageId: number,
   });
 }
 
+async function readValue(supabase: ReturnType<typeof createClient>, userId: string, key: string) {
+  const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", key).maybeSingle();
+  return data?.value ?? null;
+}
+
+async function writeValue(supabase: ReturnType<typeof createClient>, userId: string, key: string, value: unknown) {
+  return await supabase.from("app_data").upsert(
+    { user_id: userId, key, value, updated_at: new Date().toISOString() },
+    { onConflict: "user_id,key" }
+  );
+}
+
+// Các tin nhắn cũ (trước khi đổi sang 2 nút) vẫn còn nằm trong lịch sử chat — chuyển về hành động
+// tương đương thay vì báo lỗi khó hiểu khi người dùng bấm nhầm vào chúng.
+function parseCallback(raw: string) {
+  if (raw.includes("|")) {
+    const [kind, ...rest] = raw.split("|");
+    return { kind, rest };
+  }
+  const [kind, id, action] = raw.split(":");
+  if (kind === "w" && id) return { kind: "w", rest: [id, action === "done" ? "stop" : "keep"] };
+  return { kind: "", rest: [] };
+}
+
 Deno.serve(async (req) => {
   // Telegram luôn POST. Trả 200 cho mọi thứ khác để nó không thử lại vô tận.
   if (req.method !== "POST") return new Response("ok");
@@ -53,71 +80,103 @@ Deno.serve(async (req) => {
   }
 
   const cb = update.callback_query;
-  if (!cb?.data) return new Response(JSON.stringify({ ok: true, skipped: "not a callback" }), { headers: { "content-type": "application/json" } });
+  if (!cb?.data) return json({ ok: true, skipped: "not a callback" });
 
-  const [prefix, watchId, action] = String(cb.data).split(":");
-  if (prefix !== "w" || !watchId || !action) return new Response(JSON.stringify({ ok: true, skipped: "unknown data" }), { headers: { "content-type": "application/json" } });
+  const { kind, rest } = parseCallback(String(cb.data));
+  if (!kind || !rest.length) return json({ ok: true, skipped: "unknown data" });
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-  // Tìm chủ sở hữu của symbol này. App chỉ có một người dùng nên quét toàn bộ là đủ nhanh.
-  const { data: rows, error } = await supabase.from("app_data").select("user_id, value").eq("key", "symbolWatches");
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-
-  const owner = (rows || []).find((r) => Array.isArray(r.value) && (r.value as Watch[]).some((w) => w.id === watchId));
-  if (!owner) return new Response(JSON.stringify({ ok: true, skipped: "watch not found" }), { headers: { "content-type": "application/json" } });
-
-  const { data: settingsRow } = await supabase
-    .from("app_data").select("value").eq("user_id", owner.user_id).eq("key", "slReminderSettings").maybeSingle();
-  const settings = (settingsRow?.value || {}) as { telegramBotToken?: string; telegramChatId?: string };
-  if (!settings.telegramBotToken) return new Response(JSON.stringify({ ok: true, skipped: "no bot token" }), { headers: { "content-type": "application/json" } });
-
-  // Chỉ chấp nhận cú bấm đến từ đúng nhóm chat đã cấu hình — chặn người lạ đoán được callback_data.
   const fromChatId = cb.message?.chat?.id;
-  if (settings.telegramChatId && String(fromChatId) !== String(settings.telegramChatId)) {
-    await answerCallback(settings.telegramBotToken, cb.id, "Không có quyền.");
-    return new Response(JSON.stringify({ ok: true, skipped: "chat mismatch" }), { headers: { "content-type": "application/json" } });
-  }
 
-  const watches = owner.value as Watch[];
-  const watch = watches.find((w) => w.id === watchId)!;
+  // Xác định chủ sở hữu bằng chính Chat ID đã cấu hình — vừa tìm đúng người, vừa chặn
+  // người lạ đoán được callback_data từ nhóm khác.
+  const { data: settingsRows, error } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
+  if (error) return json({ error: error.message }, 500);
+
+  const ownerRow = (settingsRows || []).find((r) => {
+    const chatId = (r.value as { telegramChatId?: string })?.telegramChatId;
+    return chatId && String(chatId) === String(fromChatId);
+  });
+  if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
+
+  const userId = ownerRow.user_id as string;
+  const botToken = (ownerRow.value as { telegramBotToken?: string })?.telegramBotToken;
+  if (!botToken) return json({ ok: true, skipped: "no bot token" });
+
   let notice = "";
   let messageSuffix = "";
 
-  if (action === "done") {
-    watch.done = true;
-    watch.enabled = false;
-    watch.snoozeUntil = "";
-    notice = `✅ Đã đánh dấu xong ${watch.symbol || ""}`.trim();
-    messageSuffix = "\n\n✅ Đã xong — dừng nhắc symbol này.";
-  } else if (SNOOZE_HOURS[action]) {
-    const hours = SNOOZE_HOURS[action];
-    // Cộng dồn: nếu đang hoãn thì cộng tiếp vào mốc hiện tại, chưa hoãn thì tính từ bây giờ.
-    const base = watch.snoozeUntil && new Date(watch.snoozeUntil) > new Date() ? new Date(watch.snoozeUntil) : new Date();
-    const next = new Date(base.getTime() + hours * 3600000).toISOString();
-    watch.snoozeUntil = next;
-    watch.done = false;
-    watch.enabled = true;
-    notice = `⏰ Sẽ nhắc lại lúc ${vnTimeLabel(next)}`;
-    messageSuffix = `\n\n⏰ Đã dời ${hours === 24 ? "1 ngày" : `${hours} tiếng`} — nhắc lại lúc ${vnTimeLabel(next)}.`;
+  if (kind === "w") {
+    const [watchId, action] = rest;
+    const watches = (await readValue(supabase, userId, "symbolWatches")) as Watch[] | null;
+    const watch = Array.isArray(watches) ? watches.find((w) => w.id === watchId) : undefined;
+    if (!watch) {
+      await answerCallback(botToken, cb.id, "Không tìm thấy symbol này nữa.");
+      return json({ ok: true, skipped: "watch not found" });
+    }
+
+    if (action === "stop") {
+      watch.done = true;
+      watch.enabled = false;
+      const { error: saveErr } = await writeValue(supabase, userId, "symbolWatches", watches);
+      if (saveErr) {
+        await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+        return json({ error: saveErr.message }, 500);
+      }
+      notice = `🛑 Ngừng theo dõi ${watch.symbol || ""}`.trim();
+      messageSuffix = "\n\n🛑 Đã ngừng theo dõi symbol này.";
+    } else {
+      // "Tiếp tục theo dõi" không đổi dữ liệu gì — lịch nhắc vốn đã tự chạy tiếp ở khung giờ sau.
+      notice = "👀 Tiếp tục theo dõi, sẽ nhắc lại ở khung giờ kế tiếp.";
+      messageSuffix = "\n\n👀 Tiếp tục theo dõi — nhắc lại ở khung giờ kế tiếp.";
+    }
+  } else if (kind === "sc") {
+    const [accountId, date, hour] = rest;
+    const logs = ((await readValue(supabase, userId, "setupCheckLog")) || []) as CheckLogEntry[];
+    const entry = logs.find((e) => e.accountId === accountId && e.date === date && e.hour === hour);
+    if (!entry) {
+      await answerCallback(botToken, cb.id, "Lần nhắc này đã quá cũ, không ghi nhận được.");
+      return json({ ok: true, skipped: "check entry not found" });
+    }
+    if (entry.checkedAt) {
+      await answerCallback(botToken, cb.id, "Lần này đã ghi nhận rồi.");
+      return json({ ok: true, skipped: "already checked" });
+    }
+    entry.checkedAt = new Date().toISOString();
+    const { error: saveErr } = await writeValue(supabase, userId, "setupCheckLog", logs);
+    if (saveErr) {
+      await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+      return json({ error: saveErr.message }, 500);
+    }
+    const doneCount = logs.filter((e) => e.checkedAt).length;
+    notice = `✅ Đã ghi nhận (${doneCount}/${logs.length} lần gần đây)`;
+    messageSuffix = "\n\n✅ Đã kiểm tra.";
+  } else if (kind === "sl") {
+    const [tradeId, action] = rest;
+    if (action === "closed") {
+      const muted = ((await readValue(supabase, userId, "slMutedTrades")) || []) as { tradeId?: string; mutedAt?: string }[];
+      if (!muted.some((m) => m.tradeId === tradeId)) muted.push({ tradeId, mutedAt: new Date().toISOString() });
+      const { error: saveErr } = await writeValue(supabase, userId, "slMutedTrades", muted);
+      if (saveErr) {
+        await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+        return json({ error: saveErr.message }, 500);
+      }
+      notice = "🏁 Đã ngừng nhắc lệnh này. Nhớ điền ngày thoát vào nhật ký nhé.";
+      messageSuffix = "\n\n🏁 Lệnh đã kết thúc — ngừng nhắc. Nhớ điền ngày thoát vào nhật ký.";
+    } else {
+      // "Đã dời" chỉ để xác nhận — lệnh vẫn mở nên khung giờ sau vẫn nhắc tiếp như thường.
+      notice = "✅ Đã ghi nhận, sẽ nhắc lại ở khung giờ kế tiếp.";
+      messageSuffix = "\n\n✅ Đã dời SL — nhắc lại ở khung giờ kế tiếp.";
+    }
   } else {
-    await answerCallback(settings.telegramBotToken, cb.id, "Lệnh không hợp lệ.");
-    return new Response(JSON.stringify({ ok: true, skipped: "unknown action" }), { headers: { "content-type": "application/json" } });
+    await answerCallback(botToken, cb.id, "Lệnh không hợp lệ.");
+    return json({ ok: true, skipped: "unknown kind" });
   }
 
-  const { error: saveErr } = await supabase.from("app_data").upsert(
-    { user_id: owner.user_id, key: "symbolWatches", value: watches, updated_at: new Date().toISOString() },
-    { onConflict: "user_id,key" }
-  );
-  if (saveErr) {
-    await answerCallback(settings.telegramBotToken, cb.id, "Lưu thất bại, thử lại nhé.");
-    return new Response(JSON.stringify({ error: saveErr.message }), { status: 500 });
-  }
-
-  await answerCallback(settings.telegramBotToken, cb.id, notice);
+  await answerCallback(botToken, cb.id, notice);
   if (cb.message?.message_id && fromChatId) {
-    await clearButtons(settings.telegramBotToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
+    await clearButtons(botToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
   }
 
-  return new Response(JSON.stringify({ ok: true, action, watchId }), { headers: { "content-type": "application/json" } });
+  return json({ ok: true, kind, rest });
 });

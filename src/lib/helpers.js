@@ -114,7 +114,6 @@ export function emptySymbolWatch() {
   return {
     id: uid(), symbol: "", note: "", enabled: true, done: false,
     hours: [...SYMBOL_WATCH_DEFAULT_HOURS], activeDays: [...WEEKDAY_CODES],
-    snoozeUntil: "", // ISO UTC — khi người dùng bấm "Dời lại" trên Telegram
     lastNotifiedAt: "",
   };
 }
@@ -215,6 +214,37 @@ export function emptyReminder() {
 export function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function shiftDate(dateStr, days) {
+  const d = new Date((dateStr || todayStr()) + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Tỷ lệ hoàn thành nhắc kiểm tra setup: đã bấm "Đã kiểm tra" trên Telegram bao nhiêu lần
+// trên tổng số lần được nhắc. setupCheckLog do Edge Function ghi, web chỉ đọc.
+export function setupCheckStats(log, days = 7, fromToday) {
+  const list = Array.isArray(log) ? log : [];
+  const from = shiftDate(fromToday || todayStr(), -(days - 1));
+  const inRange = list.filter((e) => (e.date || "") >= from);
+  const byAccount = new Map();
+  inRange.forEach((e) => {
+    const name = e.accountName || e.accountId || "?";
+    const cur = byAccount.get(name) || { name, total: 0, done: 0 };
+    cur.total += 1;
+    if (e.checkedAt) cur.done += 1;
+    byAccount.set(name, cur);
+  });
+  const done = inRange.filter((e) => e.checkedAt).length;
+  return {
+    from,
+    days,
+    total: inRange.length,
+    done,
+    percent: inRange.length ? Math.round((done / inRange.length) * 100) : null,
+    accounts: [...byAccount.values()].sort((a, b) => b.total - a.total),
+  };
 }
 
 export function reminderDueToday(r, ts) {

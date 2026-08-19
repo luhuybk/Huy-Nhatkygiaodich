@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle, Clock } from "lucide-react";
-import { ConfirmButton, Field } from "./ui.jsx";
+import { useMemo, useState } from "react";
+import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
+import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, parseHoursInput,
+  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, parseHoursInput, setupCheckStats,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
@@ -90,7 +90,7 @@ function useTelegramTest(settings, defaultText) {
   return { testState, sendTest };
 }
 
-export function SlReminderPanel({ settings, resources, onChange }) {
+export function SlReminderPanel({ settings, resources, onChange, trades, mutedTrades, onMutedTradesChange }) {
   const s = settings;
   const set = (k) => (v) => onChange({ ...s, [k]: v });
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây.");
@@ -103,11 +103,19 @@ export function SlReminderPanel({ settings, resources, onChange }) {
     onChange({ ...s, schedules: next });
   };
 
+  const muted = mutedTrades || [];
+  const mutedList = useMemo(
+    () => muted.map((m) => ({ ...m, trade: (trades || []).find((t) => t.id === m.tradeId) })),
+    [muted, trades]
+  );
+  const unmute = (tradeId) => onMutedTradesChange(muted.filter((m) => m.tradeId !== tradeId));
+
   return (
     <div>
       <h3 className="block-title" style={{ marginTop: 0 }}>Nhắc dời SL qua Telegram</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Khi tài khoản đang có lệnh mở, hệ thống sẽ tự bắn tin nhắn Telegram vào đúng khung giờ bạn đặt bên dưới để nhắc kiểm tra dời SL.
+        <b> Mỗi symbol một tin riêng</b>, kèm 2 nút: <b>Đã dời</b> (vẫn nhắc tiếp ở khung giờ sau) và <b>Kết thúc lệnh</b> (ngừng nhắc lệnh đó — dùng khi lệnh đã chạm SL/TP mà bạn chưa kịp ghi nhật ký).
         Việc gửi tin chạy nền trên server (Supabase Edge Function + Cron) nên hoạt động dù bạn không mở web — cần cài đặt 1 lần, xem hướng dẫn cuối trang.
       </p>
       <div className="account-form">
@@ -142,6 +150,30 @@ export function SlReminderPanel({ settings, resources, onChange }) {
       </p>
       <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} />
 
+      <h3 className="block-title">Lệnh đang tắt nhắc</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Các lệnh bạn đã bấm "Kết thúc lệnh" trên Telegram. Lệnh vẫn nguyên trong Nhật ký, chỉ là không nhắc dời SL nữa —
+        bấm "Nhắc lại" nếu lỡ tay. Khi bạn điền ngày thoát cho lệnh, nó tự rời khỏi danh sách này.
+      </p>
+      {mutedList.length === 0 ? (
+        <p className="empty-note">Không có lệnh nào đang tắt nhắc.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {mutedList.map((m) => (
+            <div key={m.tradeId} className="backup-row">
+              <span style={{ fontWeight: 600 }}>{m.trade ? (m.trade.symbol || "?") : "(lệnh không còn)"}</span>
+              <span className="field-hint" style={{ flex: 1 }}>
+                {m.trade ? `${m.trade.account || ""} · vào lệnh ${m.trade.entryDate || "—"}` : "Lệnh đã bị xóa hoặc đã đóng"}
+                {m.mutedAt ? ` · tắt lúc ${new Date(m.mutedAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}
+              </span>
+              <button type="button" className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => unmute(m.tradeId)}>
+                <Bell size={13} /> Nhắc lại
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <details style={{ marginTop: 18 }}>
         <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Hướng dẫn kích hoạt gửi nền (làm 1 lần trong Supabase Dashboard)</summary>
         <ol className="field-hint" style={{ marginTop: 8, paddingLeft: 18, lineHeight: 1.7 }}>
@@ -158,7 +190,7 @@ export function SlReminderPanel({ settings, resources, onChange }) {
   );
 }
 
-export function SetupCheckPanel({ settings, resources, onChange }) {
+export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
   const s = settings;
   const set = (k) => (v) => onChange({ ...s, [k]: v });
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
@@ -166,6 +198,9 @@ export function SetupCheckPanel({ settings, resources, onChange }) {
   const setupCheckSchedules = s.setupCheckSchedules || [];
   const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
   const setInc = (patch) => onChange({ ...s, incompleteReminder: { ...inc, ...patch } });
+
+  const week = useMemo(() => setupCheckStats(checkLog, 7), [checkLog]);
+  const month = useMemo(() => setupCheckStats(checkLog, 30), [checkLog]);
 
   const updateSchedule = (account, patch) => {
     const exists = setupCheckSchedules.find((sc) => sc.accountId === account.id);
@@ -209,6 +244,39 @@ export function SetupCheckPanel({ settings, resources, onChange }) {
         Chọn tài khoản cần nhắc, khung giờ trong ngày (HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu cần, và ngày trong tuần được phép nhắc.
       </p>
       <AccountScheduleCards schedules={setupCheckSchedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} />
+
+      <h3 className="block-title">Tỷ lệ hoàn thành</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Mỗi tin nhắc kiểm tra setup có nút <b>Đã kiểm tra</b>. Bấm nút đó là một lần hoàn thành —
+        phần trăm bên dưới cho biết bạn thực sự ngồi soi bảng giá được bao nhiêu trên tổng số lần được nhắc.
+      </p>
+      {week.total === 0 && month.total === 0 ? (
+        <p className="empty-note">Chưa có lần nhắc nào được ghi nhận — số liệu sẽ xuất hiện sau lần nhắc đầu tiên.</p>
+      ) : (
+        <>
+          <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+            <StatCard label="7 ngày qua" value={week.percent === null ? "—" : `${week.percent}%`} sub={`${week.done}/${week.total} lần`} />
+            <StatCard label="30 ngày qua" value={month.percent === null ? "—" : `${month.percent}%`} sub={`${month.done}/${month.total} lần`} />
+            <StatCard label="Bỏ lỡ 7 ngày" value={week.total - week.done} sub="lần chưa bấm" />
+          </div>
+          {week.accounts.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+              {week.accounts.map((a) => {
+                const pct = a.total ? Math.round((a.done / a.total) * 100) : 0;
+                return (
+                  <div key={a.name} className="backup-row">
+                    <span style={{ fontWeight: 600, minWidth: 120 }}>{a.name}</span>
+                    <div className="completion-bar-track" style={{ flex: 1 }}>
+                      <div className="completion-bar-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="mono field-hint">{a.done}/{a.total} · {pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </>
+      )}
 
       <h3 className="block-title">Nhắc điền nốt lệnh chưa hoàn thành</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
@@ -264,8 +332,8 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
     <div>
       <h3 className="block-title" style={{ marginTop: 0 }}>Symbol theo dõi</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Điền các symbol sắp có setup. Đến khung giờ đã đặt, Telegram sẽ nhắc bạn soi symbol đó, kèm sẵn các nút bấm ngay trong tin nhắn:
-        <b> Xong</b> để dừng nhắc, hoặc <b>Dời 3 tiếng / 8 tiếng / 1 ngày</b> để hoãn — hoãn xong sẽ tự nhắc lại đúng lúc đó và cộng dồn nếu bạn hoãn tiếp.
+        Điền các symbol sắp có setup. Đến khung giờ đã đặt, Telegram sẽ nhắc bạn soi symbol đó, kèm 2 nút ngay trong tin nhắn:
+        <b> Tiếp tục theo dõi</b> — vẫn nhắc lại ở khung giờ kế tiếp bạn đặt bên dưới, và <b>Ngừng theo dõi</b> — coi như xong, không nhắc symbol này nữa.
       </p>
       {!telegramReady ? (
         <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
@@ -323,7 +391,6 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {watches.map((w) => {
             const activeDays = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
-            const snoozed = w.snoozeUntil && new Date(w.snoozeUntil) > new Date();
             return (
               <div key={w.id} className={`account-form sl-reminder-card ${w.done ? "symbol-watch-done" : ""}`}>
                 <div className="sl-reminder-row">
@@ -357,15 +424,13 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
                     </label>
                   ))}
                   {w.done ? (
-                    <span className="watch-badge watch-badge-done" style={{ marginLeft: 6 }}><CheckCircle2 size={11} /> Đã xong</span>
-                  ) : snoozed ? (
-                    <span className="watch-badge" style={{ marginLeft: 6 }}><Clock size={11} /> Hoãn tới {new Date(w.snoozeUntil).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
-                  ) : null}
-                  {w.done || snoozed ? (
-                    <button type="button" className="btn btn-ghost" style={{ padding: "3px 9px", fontSize: 11 }}
-                      onClick={() => updateWatch(w.id, { done: false, enabled: true, snoozeUntil: "" })}>
-                      Nhắc lại ngay
-                    </button>
+                    <>
+                      <span className="watch-badge watch-badge-done" style={{ marginLeft: 6 }}><CheckCircle2 size={11} /> Đã ngừng theo dõi</span>
+                      <button type="button" className="btn btn-ghost" style={{ padding: "3px 9px", fontSize: 11 }}
+                        onClick={() => updateWatch(w.id, { done: false, enabled: true })}>
+                        Theo dõi lại
+                      </button>
+                    </>
                   ) : null}
                 </div>
               </div>
@@ -381,10 +446,10 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
           <li>Trỏ Telegram vào function đó bằng cách mở đường dẫn sau trên trình duyệt (thay <code>&lt;BOT_TOKEN&gt;</code> bằng token của bạn):<br />
             <code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/setWebhook?url=https://&lt;PROJECT_REF&gt;.supabase.co/functions/v1/telegram-webhook</code>
           </li>
-          <li>Xong — từ giờ bấm nút "Xong" hoặc "Dời lại" ngay trong Telegram sẽ tự cập nhật vào danh sách trên.</li>
+          <li>Xong — từ giờ mọi nút bấm trong Telegram (Tiếp tục / Ngừng theo dõi, Đã kiểm tra, Đã dời / Kết thúc lệnh) sẽ tự cập nhật vào ứng dụng.</li>
         </ol>
         <p className="field-hint" style={{ marginTop: 8 }}>
-          Nếu chưa làm bước này thì tin nhắn vẫn gửi bình thường, chỉ là bấm nút sẽ không có tác dụng — bạn vẫn tắt/hoãn thủ công được ở danh sách trên.
+          Nếu chưa làm bước này thì tin nhắn vẫn gửi bình thường, chỉ là bấm nút sẽ không có tác dụng — bạn vẫn bật/tắt thủ công được ở danh sách trên.
         </p>
       </details>
     </div>

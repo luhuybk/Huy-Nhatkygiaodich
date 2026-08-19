@@ -324,11 +324,12 @@ export function Section({ num, title, subtitle, children, optional }) {
   );
 }
 
-export function StatCard({ label, value, tone }) {
+export function StatCard({ label, value, tone, sub }) {
   return (
     <div className="stat-card">
       <span className="stat-label">{label}</span>
       <span className={`stat-value ${tone || ""}`}>{value}</span>
+      {sub ? <span className="stat-sub">{sub}</span> : null}
     </div>
   );
 }

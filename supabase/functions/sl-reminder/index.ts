@@ -1,10 +1,11 @@
 // Supabase Edge Function: kiểm tra định kỳ tài khoản nào đang có lệnh mở đúng vào khung giờ
-// người dùng đã đặt (Thông báo → Nhắc dời SL), và bắn tin nhắn Telegram nhắc dời SL.
+// người dùng đã đặt (Thông báo → Nhắc dời SL), và bắn tin nhắn Telegram nhắc dời SL cho TỪNG lệnh.
 // Đồng thời kiểm tra các nhắc nhở chung (tab "Hôm nay"/"Tất cả") có bật "Nhắc qua Telegram" và đến hạn hôm nay,
 // và lịch nhắc kiểm tra setup theo tài khoản (Thông báo → Kiểm tra setup) để tránh miss setup vì không theo dõi kịp.
 // Deploy: supabase functions deploy sl-reminder
 // Cần biến môi trường SUPABASE_URL và SUPABASE_SERVICE_ROLE_KEY — Supabase tự cấp sẵn cho mọi Edge Function.
 // Kích hoạt gọi định kỳ bằng file supabase-sl-reminder-cron.sql (pg_cron + pg_net) ở thư mục gốc repo.
+// Các nút bấm trong tin nhắn do function telegram-webhook xử lý.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -13,7 +14,13 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VN_TZ = "Asia/Ho_Chi_Minh"; // UTC+7, không có DST — nhưng vẫn dùng Intl để tránh tự tính offset thủ công
 const MATCH_TOLERANCE_MIN = 2; // dung sai so khớp giờ, phù hợp với cron chạy mỗi 5 phút
 const LOG_RETENTION_DAYS = 3;
+const CHECK_LOG_RETENTION_DAYS = 90; // đủ dài để xem tỷ lệ hoàn thành nhiều tuần liền
 const MAX_INCOMPLETE_LINES = 15; // tránh tin nhắn dài quá giới hạn Telegram
+const MAX_SL_MESSAGES_PER_RUN = 20; // chặn trường hợp mở quá nhiều lệnh làm spam Telegram
+
+// Ký tự Braille rỗng (U+2800). Telegram cắt khoảng trắng ở đầu tin nhắn nhưng giữ ký tự này,
+// nhờ đó dòng tiêu đề nằm riêng một dòng thay vì dính vào tên bot ở phần xem trước thông báo.
+const LEAD = "⠀";
 
 const vnFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: VN_TZ,
@@ -60,6 +67,13 @@ function minutesDiff(a: string, b: string) {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
   return Math.abs(ah * 60 + am - (bh * 60 + bm));
+}
+
+// Khuôn tin nhắn chung: dòng trống → tiêu đề → chủ thể được làm nổi bật.
+function buildMessage(titleIcon: string, title: string, mark: string, subject: string, extra?: string) {
+  const lines = [LEAD, `${titleIcon} ${title}`, `${mark} ${subject} ${mark}`];
+  if (extra) lines.push(extra);
+  return lines.join("\n");
 }
 
 async function sendTelegram(botToken: string, chatId: string, text: string, threadId?: string, replyMarkup?: unknown) {
@@ -146,17 +160,19 @@ Deno.serve(async () => {
     const dueSchedules = schedules.filter(isDueNow);
     const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
-    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }] = await Promise.all([
+    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }, { data: mutedRow }, { data: checkLogRow }] = await Promise.all([
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "resources").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "trades").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slReminderLog").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "reminders").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "symbolWatches").maybeSingle(),
+      supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slMutedTrades").maybeSingle(),
+      supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "setupCheckLog").maybeSingle(),
     ]);
 
     const accounts = (resourcesRow?.value?.accounts || []) as { id: string; name: string }[];
     const trades = (tradesRow?.value || []) as {
-      account?: string; symbol?: string; entryDate?: string; entryTime?: string; exitDate?: string;
+      id?: string; account?: string; symbol?: string; entryDate?: string; entryTime?: string; exitDate?: string;
       [key: string]: unknown;
     }[];
     const log = (logRow?.value || {}) as Record<string, boolean>;
@@ -166,34 +182,57 @@ Deno.serve(async () => {
     }[];
     const watches = (watchesRow?.value || []) as {
       id?: string; symbol?: string; note?: string; enabled?: boolean; done?: boolean;
-      hours?: string[]; activeDays?: string[]; snoozeUntil?: string; lastNotifiedAt?: string;
+      hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
+    }[];
+    // Lệnh người dùng đã bấm "Kết thúc lệnh" trên Telegram — thật sự đã chạm SL/TP nhưng
+    // chưa kịp điền ngày thoát vào nhật ký, nên ngừng nhắc mà không đụng vào bản ghi lệnh.
+    let muted = (mutedRow?.value || []) as { tradeId?: string; mutedAt?: string }[];
+    const checkLog = (checkLogRow?.value || []) as {
+      accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string;
     }[];
     let logChanged = false;
     let watchesChanged = false;
+    let mutedChanged = false;
+    let checkLogChanged = false;
 
+    // Lệnh đã đóng hoặc đã bị xóa thì không cần giữ trong danh sách tắt nhắc nữa.
+    const openTradeIds = new Set(trades.filter((t) => t.entryDate && !t.exitDate && t.id).map((t) => t.id as string));
+    const prunedMuted = muted.filter((m) => m.tradeId && openTradeIds.has(m.tradeId));
+    if (prunedMuted.length !== muted.length) { muted = prunedMuted; mutedChanged = true; }
+    const mutedIds = new Set(muted.map((m) => m.tradeId));
+
+    let slMessages = 0;
     for (const sched of dueSchedules) {
       const account = accounts.find((a) => a.id === sched.accountId);
       const accountName = account ? account.name : sched.accountName;
       if (!accountName) continue;
 
-      const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate);
+      const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id));
       if (!openTrades.length) continue;
 
       const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
-      const logKey = `${sched.accountId}_${today}_${matchedHour}`;
-      if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-      const lines = openTrades.map((t) => `. [${t.symbol}] - Dời SL`);
-      const text =
-        `⏰ Nhắc dời SL\n` +
-        `Tài khoản: [${accountName}]\n` +
-        `----\n` +
-        lines.join("\n");
+      // Mỗi lệnh một tin riêng để nút bấm gắn đúng lệnh — gộp chung thì không biết bấm cho symbol nào.
+      for (const t of openTrades) {
+        if (slMessages >= MAX_SL_MESSAGES_PER_RUN) break;
+        // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
+        const logKey = `${sched.accountId}_${today}_${matchedHour}_${t.id}`;
+        if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-      if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId)) {
-        log[logKey] = true;
-        logChanged = true;
-        sent++;
+        const text = buildMessage("⏰", "DỜI SL", "🔴", t.symbol || "?");
+        const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
+          inline_keyboard: [[
+            { text: "✅ Đã dời", callback_data: `sl|${t.id}|moved` },
+            { text: "🏁 Kết thúc lệnh", callback_data: `sl|${t.id}|closed` },
+          ]],
+        });
+
+        if (ok) {
+          log[logKey] = true;
+          logChanged = true;
+          slMessages++;
+          sent++;
+        }
       }
     }
 
@@ -207,15 +246,20 @@ Deno.serve(async () => {
       const logKey = `setup_${today}_${sched.accountId}_${matchedHour}`;
       if (log[logKey]) continue;
 
-      const text =
-        `🔍 Nhắc kiểm tra setup\n` +
-        `Tài khoản: [${accountName}]\n` +
-        `----\n` +
-        `. Đến giờ theo dõi, kiểm tra xem có setup nào không nhé!`;
+      const text = buildMessage("🔍", "KIỂM TRA SETUP", "⚡", accountName);
+      const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
+        inline_keyboard: [[
+          { text: "✅ Đã kiểm tra", callback_data: `sc|${sched.accountId}|${today}|${matchedHour}` },
+        ]],
+      });
 
-      if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId)) {
+      if (ok) {
         log[logKey] = true;
         logChanged = true;
+        // Ghi lại lần nhắc này để tính tỷ lệ hoàn thành theo tuần trên web.
+        // checkedAt để trống, telegram-webhook sẽ điền khi bấm "Đã kiểm tra".
+        checkLog.push({ accountId: sched.accountId, accountName, date: today, hour: matchedHour, checkedAt: "" });
+        checkLogChanged = true;
         sent++;
       }
     }
@@ -233,7 +277,7 @@ Deno.serve(async () => {
       const logKey = `reminder_${today}_${r.id}`;
       if (log[logKey]) continue;
 
-      const text = `🔔 Nhắc nhở\n----\n${r.title || "(không có tiêu đề)"}`;
+      const text = buildMessage("🔔", "NHẮC NHỞ", "📌", r.title || "(không có tiêu đề)");
       if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text)) {
         log[logKey] = true;
         logChanged = true;
@@ -255,11 +299,7 @@ Deno.serve(async () => {
           const shown = pending.slice(0, MAX_INCOMPLETE_LINES);
           const lines = shown.map((x) => `. [${x.t.symbol || "?"}] ${x.t.entryDate || ""} — ${x.percent}%`);
           if (pending.length > shown.length) lines.push(`. ...và ${pending.length - shown.length} lệnh nữa`);
-          const text =
-            `📝 Lệnh chưa điền xong\n` +
-            `Còn ${pending.length} lệnh dưới 100%\n` +
-            `----\n` +
-            lines.join("\n");
+          const text = buildMessage("📝", "LỆNH CHƯA ĐIỀN XONG", "📌", `${pending.length} lệnh dưới 100%`, lines.join("\n"));
           if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, inc.threadId)) {
             log[logKey] = true;
             logChanged = true;
@@ -269,49 +309,31 @@ Deno.serve(async () => {
       }
     }
 
-    // Symbol theo dõi — nhắc theo khung giờ, hoặc nhắc lại đúng lúc hết hạn hoãn nếu bạn đã bấm "Dời lại" trên Telegram.
+    // Symbol theo dõi — nhắc đều đặn theo khung giờ cho tới khi bấm "Ngừng theo dõi".
     if (settings.symbolWatchEnabled && watches.length) {
       for (const w of watches) {
         if (!w.id || !w.enabled || w.done) continue;
 
-        const snoozeUntil = w.snoozeUntil ? Date.parse(w.snoozeUntil) : NaN;
-        const isSnoozed = !Number.isNaN(snoozeUntil) && snoozeUntil > now.getTime();
-        if (isSnoozed) continue; // đang hoãn thì bỏ qua mọi khung giờ định kỳ
-        const snoozeExpired = !Number.isNaN(snoozeUntil) && snoozeUntil <= now.getTime();
+        const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
+        if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
+        const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+        if (!matchedHour) continue;
+        const logKey = `watch_${today}_${w.id}_${matchedHour}`;
+        if (log[logKey]) continue;
 
-        let logKey = "";
-        if (!snoozeExpired) {
-          const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
-          if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
-          const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
-          if (!matchedHour) continue;
-          logKey = `watch_${today}_${w.id}_${matchedHour}`;
-          if (log[logKey]) continue;
-        }
-
-        const text =
-          `👀 Symbol theo dõi\n` +
-          `${w.symbol || "?"}\n` +
-          `----\n` +
-          `. ${w.note ? w.note : "Tới giờ soi symbol này rồi!"}`;
-
+        const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", w.symbol || "?", w.note || undefined);
         const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
-          inline_keyboard: [
-            [{ text: "✅ Xong", callback_data: `w:${w.id}:done` }],
-            [
-              { text: "⏰ 3 tiếng", callback_data: `w:${w.id}:s3` },
-              { text: "⏰ 8 tiếng", callback_data: `w:${w.id}:s8` },
-              { text: "⏰ 1 ngày", callback_data: `w:${w.id}:s24` },
-            ],
-          ],
+          inline_keyboard: [[
+            { text: "👀 Tiếp tục theo dõi", callback_data: `w|${w.id}|keep` },
+            { text: "🛑 Ngừng theo dõi", callback_data: `w|${w.id}|stop` },
+          ]],
         });
 
         if (ok) {
-          // Hoãn đã hết hạn thì phải xóa mốc, nếu không cứ 5 phút lại bắn thêm một tin.
-          if (snoozeExpired) { w.snoozeUntil = ""; watchesChanged = true; }
           w.lastNotifiedAt = new Date().toISOString();
           watchesChanged = true;
-          if (logKey) { log[logKey] = true; logChanged = true; }
+          log[logKey] = true;
+          logChanged = true;
           sent++;
         }
       }
@@ -320,6 +342,22 @@ Deno.serve(async () => {
     if (watchesChanged) {
       await supabase.from("app_data").upsert(
         { user_id: row.user_id, key: "symbolWatches", value: watches, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,key" }
+      );
+    }
+
+    if (mutedChanged) {
+      await supabase.from("app_data").upsert(
+        { user_id: row.user_id, key: "slMutedTrades", value: muted, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,key" }
+      );
+    }
+
+    if (checkLogChanged) {
+      const checkCutoff = vnNowParts(new Date(now.getTime() - CHECK_LOG_RETENTION_DAYS * 24 * 60 * 60000)).date;
+      const kept = checkLog.filter((e) => (e.date || "") >= checkCutoff);
+      await supabase.from("app_data").upsert(
+        { user_id: row.user_id, key: "setupCheckLog", value: kept, updated_at: new Date().toISOString() },
         { onConflict: "user_id,key" }
       );
     }

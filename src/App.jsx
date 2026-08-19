@@ -61,6 +61,8 @@ function AppShell({ onSignOut, userEmail }) {
   const [uiSettings, setUiSettings] = useState(DEFAULT_UI_SETTINGS);
   const [slReminderSettings, setSlReminderSettings] = useState(emptySlReminderSettings());
   const [symbolWatches, setSymbolWatches] = useState([]);
+  const [setupCheckLog, setSetupCheckLog] = useState([]);
+  const [slMutedTrades, setSlMutedTrades] = useState([]);
   const [view, setView] = useState("dashboard");
   const [activeAccount, setActiveAccount] = useState("");
   const [viewingTrade, setViewingTrade] = useState(null);
@@ -73,7 +75,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -95,6 +97,8 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("slReminderSettings", emptySlReminderSettings()),
         safeGet("symbolWatches", []),
         safeGet("backups", []),
+        safeGet("setupCheckLog", []),
+        safeGet("slMutedTrades", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -115,6 +119,8 @@ function AppShell({ onSignOut, userEmail }) {
       setSlReminderSettings({ ...emptySlReminderSettings(), ...sr });
       setSymbolWatches(Array.isArray(sw) ? sw : []);
       setBackups(Array.isArray(bk) ? bk : []);
+      setSetupCheckLog(Array.isArray(scl) ? scl : []);
+      setSlMutedTrades(Array.isArray(smt) ? smt : []);
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
       if (!mergedUi.defaultRemindersSeeded) {
@@ -146,7 +152,7 @@ function AppShell({ onSignOut, userEmail }) {
           processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr,
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
-          slReminderSettings: sr, symbolWatches: sw,
+          slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
         }, Date.now());
         const nextBackups = pruneBackups([snap, ...currentBackups]);
         setBackups(nextBackups);
@@ -205,6 +211,20 @@ function AppShell({ onSignOut, userEmail }) {
     setSymbolWatches(merged);
     flashSaved(await safeSet("symbolWatches", merged));
   }, []);
+
+  // slMutedTrades cũng bị cả hai phía ghi: webhook Telegram THÊM khi bấm "Kết thúc lệnh",
+  // web chỉ BỎ khi bật nhắc lại. Ghi đè thẳng sẽ nuốt mất lệnh vừa tắt trên điện thoại,
+  // nên đọc lại bản server rồi chỉ gỡ đúng những id người dùng vừa bỏ.
+  const persistSlMutedTrades = useCallback(async (next) => {
+    const removed = new Set(
+      slMutedTrades.filter((m) => !next.some((n) => n.tradeId === m.tradeId)).map((m) => m.tradeId)
+    );
+    const server = await safeGet("slMutedTrades", null);
+    const merged = Array.isArray(server) ? server.filter((m) => !removed.has(m.tradeId)) : next;
+    setSlMutedTrades(merged);
+    flashSaved(await safeSet("slMutedTrades", merged));
+  }, [slMutedTrades]);
+  const persistSetupCheckLog = useCallback(async (next) => { setSetupCheckLog(next); flashSaved(await safeSet("setupCheckLog", next)); }, []);
 
   // Giao dịch (và setup miss/skip) tham chiếu tài khoản bằng TÊN, không phải id.
   // Nên khi đổi tên tài khoản phải đổi luôn tên trong mọi bản ghi cũ, nếu không toàn bộ
@@ -347,6 +367,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
     if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
+    if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
   };
   const handleRestoreBackup = (id) => {
     const snap = backups.find((b) => b.id === id);
@@ -356,7 +377,7 @@ function AppShell({ onSignOut, userEmail }) {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs,
       principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders,
-      capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches,
+      capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
     const next = pruneBackups([snap, ...backups]);
     setBackups(next);
@@ -377,6 +398,8 @@ function AppShell({ onSignOut, userEmail }) {
     persistMissedSetups([]);
     persistSkippedSetups([]);
     persistSetupVariants([]);
+    persistSetupCheckLog([]);
+    persistSlMutedTrades([]);
     persistReminders([]);
     persistCapitalAccounts([]);
     persistCapitalEntries([]);
@@ -502,7 +525,8 @@ function AppShell({ onSignOut, userEmail }) {
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} ledger={ledger} onEdit={startEdit} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
-              view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)} /> :
+              view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
+                  trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "setuphub" ? (
@@ -542,7 +566,7 @@ function AppShell({ onSignOut, userEmail }) {
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
-                slReminderSettings={slReminderSettings} symbolWatches={symbolWatches}
+                slReminderSettings={slReminderSettings} symbolWatches={symbolWatches} setupCheckLog={setupCheckLog}
                 backups={backups} onRestoreBackup={handleRestoreBackup} onBackupNow={handleBackupNow}
                 onImportAll={handleImportAll} onReset={handleResetAll} />
               }
