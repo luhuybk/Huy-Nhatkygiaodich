@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
 import { formatVN, readLocalUi, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
@@ -36,6 +36,23 @@ export function CellImagePreview({ image, link, title }) {
         </div>
       ) : null}
     </a>
+  );
+}
+
+// Nhiều ảnh trên một dòng, ngăn nhau bằng dấu "|" để nhìn ra ngay có mấy tấm.
+// `empty` = false khi ô trống thì không cần hiện dấu "—" (các thẻ ghi chú).
+export function ImagePreviewStrip({ items, empty = true }) {
+  const shots = (items || []).filter((s) => s && (s.image || s.link));
+  if (!shots.length) return empty ? <span style={{ color: "var(--text-dim)" }}>—</span> : null;
+  return (
+    <div className="cell-img-row">
+      {shots.map((s, i) => (
+        <Fragment key={s.key || i}>
+          {i > 0 ? <span className="cell-img-sep">|</span> : null}
+          <CellImagePreview image={s.image} link={s.link} title={s.label || `Ảnh ${i + 1}`} />
+        </Fragment>
+      ))}
+    </div>
   );
 }
 

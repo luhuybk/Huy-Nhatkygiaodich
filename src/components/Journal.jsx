@@ -1,6 +1,6 @@
-import { Fragment, useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
-import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
@@ -309,16 +309,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <td>{t.account || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  {shots.length === 0 ? <span style={{ color: "var(--text-dim)" }}>—</span> : (
-                    <div className="cell-img-row">
-                      {shots.map((s, i) => (
-                        <Fragment key={s.key}>
-                          {i > 0 ? <span className="cell-img-sep">|</span> : null}
-                          <CellImagePreview image={s.image} link={s.link} title={s.label} />
-                        </Fragment>
-                      ))}
-                    </div>
-                  )}
+                  <Strip items={shots} />
                 </td>
                 <td><span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span></td>
                 <td>{t.setup || "—"}</td>

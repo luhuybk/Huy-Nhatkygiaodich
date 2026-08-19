@@ -1,6 +1,6 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes } from "lucide-react";
-import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect, useStickyTab } from "./ui.jsx";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
@@ -136,9 +136,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
                     <td className="mono">{n.missDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
-                      </div>
+                      <Strip items={lessonAttachments(n)} />
                     </td>
                     <td>{n.setup || "—"}</td>
                     <td className="mono">{n.timeframe || "—"}</td>
@@ -277,9 +275,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
                     <td className="mono">{n.skipDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
-                      </div>
+                      <Strip items={lessonAttachments(n)} />
                     </td>
                     <td>{n.setup || "—"}</td>
                     <td className="mono">{n.timeframe || "—"}</td>
@@ -379,9 +375,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
                   <td className="mono">{n.variantDate || "—"}</td>
                   <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {lessonAttachments(n).length ? lessonAttachments(n).map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />) : <CellImagePreview image="" link="" />}
-                    </div>
+                    <Strip items={lessonAttachments(n)} />
                   </td>
                   <td>{n.setup || "—"}</td>
                   <td className="mono">{n.timeframe || "—"}</td>
@@ -551,8 +545,8 @@ export function LessonsSection({ items, resources, trades, onChange }) {
                 ) : null}
                 <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
                 {attachments.length ? (
-                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Strip items={attachments} empty={false} />
                   </span>
                 ) : null}
               </div>
@@ -677,8 +671,8 @@ export function ProblemLogSection({ items, onChange }) {
                 <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
                 {n.resolved ? <span className="note-type" style={{ color: "var(--win)" }}>Đã xử lý</span> : <span className="note-type" style={{ color: "var(--loss)" }}>Chưa xử lý</span>}
                 {attachments.length ? (
-                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Strip items={attachments} empty={false} />
                   </span>
                 ) : null}
               </div>
@@ -963,8 +957,8 @@ export function NewsLogSection({ items, onChange }) {
                 {(n.currencies || []).map((c) => <span key={c} className="note-type">{c}</span>)}
                 <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
                 {attachments.length ? (
-                  <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {attachments.map((att, i) => <CellImagePreview key={i} image={att.image} link={att.link} />)}
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Strip items={attachments} empty={false} />
                   </span>
                 ) : null}
               </div>
