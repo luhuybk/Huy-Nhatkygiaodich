@@ -53,6 +53,12 @@
         .subtab-badge { display:inline-block; min-width:16px; padding:0 5px; margin-left:5px; border-radius:8px; background:var(--loss);
           color:#fff; font-size:10.5px; font-weight:700; line-height:16px; text-align:center; }
         .subtab-badge-muted { background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); line-height:14px; }
+        .watch-symbol-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+        .watch-symbol-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; cursor:pointer;
+          font-size:12px; font-weight:600; background:rgba(212,162,78,0.12); border:1px solid rgba(212,162,78,0.4); color:var(--accent); }
+        .watch-symbol-chip:hover { background:rgba(212,162,78,0.2); }
+        .watch-symbol-chip-done { background:var(--surface-2); border-color:var(--border); color:var(--text-dim);
+          text-decoration:line-through; text-decoration-thickness:1px; }
         .nav { display:flex; flex-direction:column; gap:14px; flex:1; overflow-y:auto; }
         .nav-group { display:flex; flex-direction:column; gap:2px; }
         .nav-group-label { font-size:9.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.8px;

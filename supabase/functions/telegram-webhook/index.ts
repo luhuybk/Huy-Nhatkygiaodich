@@ -1,7 +1,7 @@
 // Supabase Edge Function: nhận các cú bấm nút trên tin nhắn nhắc nhở gửi từ Telegram.
 //
-//   Symbol theo dõi   w|<watchId>|keep      giữ nguyên lịch, tiếp tục nhắc ở khung giờ kế tiếp
-//                     w|<watchId>|stop      đánh dấu xong, ngừng nhắc symbol này
+//   Symbol theo dõi   w|<groupId>|<symId>|keep   tiếp tục nhắc symbol đó ở khung giờ kế tiếp
+//                     w|<groupId>|<symId>|stop   ngừng nhắc riêng symbol đó, các symbol khác giữ nguyên
 //   Kiểm tra setup    sc|<accountId>|<date>|<hour>   ghi nhận đã kiểm tra, dùng để tính % hoàn thành tuần
 //   Dời SL            sl|<tradeId>|moved    đã dời, tiếp tục nhắc ở khung giờ kế tiếp
 //                     sl|<tradeId>|closed   lệnh đã kết thúc thật, ngừng nhắc (không đụng vào bản ghi lệnh)
@@ -16,9 +16,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type Watch = {
-  id?: string; symbol?: string; note?: string; enabled?: boolean; done?: boolean;
+  id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
   hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
+  symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
 };
 
 type CheckLogEntry = { accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string };
@@ -65,6 +67,7 @@ function parseCallback(raw: string) {
   }
   const [kind, id, action] = raw.split(":");
   if (kind === "w" && id) return { kind: "w", rest: [id, action === "done" ? "stop" : "keep"] };
+  // (tin cũ hơn nữa: w:<id>:s3/s8/s24 là các nút hoãn đã bỏ — coi như "tiếp tục theo dõi")
   return { kind: "", rest: [] };
 }
 
@@ -107,24 +110,37 @@ Deno.serve(async (req) => {
   let messageSuffix = "";
 
   if (kind === "w") {
-    const [watchId, action] = rest;
+    // Tin cũ chỉ có 2 phần (w|<id>|action) — khi đó tác động lên cả nhóm.
+    const watchId = rest[0];
+    const symId = rest.length >= 3 ? rest[1] : "";
+    const action = rest[rest.length - 1];
     const watches = (await readValue(supabase, userId, "symbolWatches")) as Watch[] | null;
     const watch = Array.isArray(watches) ? watches.find((w) => w.id === watchId) : undefined;
     if (!watch) {
-      await answerCallback(botToken, cb.id, "Không tìm thấy symbol này nữa.");
+      await answerCallback(botToken, cb.id, "Không tìm thấy nhóm theo dõi này nữa.");
       return json({ ok: true, skipped: "watch not found" });
     }
 
+    // Bản ghi cũ vẫn có thể chưa được web chuyển sang dạng nhóm — khi đó khớp theo tên symbol.
+    const list = Array.isArray(watch.symbols) ? watch.symbols : [];
+    const target = symId ? list.find((x) => x && (x.id === symId || x.name === symId)) : undefined;
+    if (symId && !target && list.length) {
+      await answerCallback(botToken, cb.id, "Symbol này không còn trong nhóm.");
+      return json({ ok: true, skipped: "symbol not found" });
+    }
+    const label = target?.name || watch.symbol || watch.label || "";
+
     if (action === "stop") {
-      watch.done = true;
-      watch.enabled = false;
+      if (target) target.done = true;
+      else if (list.length) list.forEach((x) => { if (x) x.done = true; });
+      else { watch.done = true; watch.enabled = false; } // bản ghi dạng cũ
       const { error: saveErr } = await writeValue(supabase, userId, "symbolWatches", watches);
       if (saveErr) {
         await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
         return json({ error: saveErr.message }, 500);
       }
-      notice = `🛑 Ngừng theo dõi ${watch.symbol || ""}`.trim();
-      messageSuffix = "\n\n🛑 Đã ngừng theo dõi symbol này.";
+      notice = `🛑 Ngừng theo dõi ${label}`.trim();
+      messageSuffix = `\n\n🛑 Đã ngừng theo dõi ${label}.`.trimEnd();
     } else {
       // "Tiếp tục theo dõi" không đổi dữ liệu gì — lịch nhắc vốn đã tự chạy tiếp ở khung giờ sau.
       notice = "👀 Tiếp tục theo dõi, sẽ nhắc lại ở khung giờ kế tiếp.";

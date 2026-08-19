@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye } from "lucide-react";
 import { ConfirmButton, Field } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
-import { emptyReminder, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
+import { emptyReminder, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
 import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
 
 export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
@@ -91,7 +91,7 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
   const list = tab === "today" ? dueList : reminders;
   const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
-  const activeWatchCount = (symbolWatches || []).filter((w) => w.enabled && !w.done).length;
+  const activeWatchCount = symbolWatchActiveCount(symbolWatches);
 
   const markDone = (r) => {
     onChange(reminders.map((x) => (x.id === r.id ? { ...x, doneDates: [...(x.doneDates || []), ts] } : x)));

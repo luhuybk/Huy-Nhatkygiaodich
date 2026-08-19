@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, parseHoursInput, setupCheckStats,
+  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, mergeSymbolList, parseHoursInput,
+  parseSymbolList, setupCheckStats, setupCheckStreak, symbolWatchText,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
@@ -201,6 +202,7 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
 
   const week = useMemo(() => setupCheckStats(checkLog, 7), [checkLog]);
   const month = useMemo(() => setupCheckStats(checkLog, 30), [checkLog]);
+  const streak = useMemo(() => setupCheckStreak(checkLog), [checkLog]);
 
   const updateSchedule = (account, patch) => {
     const exists = setupCheckSchedules.find((sc) => sc.accountId === account.id);
@@ -249,15 +251,24 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Mỗi tin nhắc kiểm tra setup có nút <b>Đã kiểm tra</b>. Bấm nút đó là một lần hoàn thành —
         phần trăm bên dưới cho biết bạn thực sự ngồi soi bảng giá được bao nhiêu trên tổng số lần được nhắc.
+        <b> Chuỗi</b> chỉ cộng thêm khi một ngày bấm đủ mọi lần nhắc, và chỉ đếm những ngày có lịch nhắc —
+        nên cuối tuần tắt lịch không làm đứt chuỗi.
       </p>
       {week.total === 0 && month.total === 0 ? (
         <p className="empty-note">Chưa có lần nhắc nào được ghi nhận — số liệu sẽ xuất hiện sau lần nhắc đầu tiên.</p>
       ) : (
         <>
           <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+            <StatCard
+              label="Chuỗi hiện tại"
+              value={`${streak.current} ngày`}
+              tone={streak.current > 0 ? "win" : ""}
+              sub={streak.todayDone === false ? "hôm nay còn lần chưa bấm" : streak.todayDone ? "hôm nay đã đủ" : "hôm nay chưa có lịch nhắc"}
+            />
+            <StatCard label="Kỷ lục" value={`${streak.best} ngày`} sub="chuỗi dài nhất từ trước tới nay" />
+            <StatCard label="Bỏ lỡ 7 ngày" value={week.total - week.done} sub="lần chưa bấm" />
             <StatCard label="7 ngày qua" value={week.percent === null ? "—" : `${week.percent}%`} sub={`${week.done}/${week.total} lần`} />
             <StatCard label="30 ngày qua" value={month.percent === null ? "—" : `${month.percent}%`} sub={`${month.done}/${month.total} lần`} />
-            <StatCard label="Bỏ lỡ 7 ngày" value={week.total - week.done} sub="lần chưa bấm" />
           </div>
           {week.accounts.length ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
@@ -309,7 +320,7 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
 }
 
 export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatchesChange }) {
-  const [draft, setDraft] = useState({ symbol: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+  const [draft, setDraft] = useState({ label: "", symbols: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
   const s = settings;
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — cảnh báo symbol theo dõi sẽ gửi vào đây.");
@@ -317,23 +328,34 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
   const updateWatch = (id, patch) => onWatchesChange(watches.map((w) => (w.id === id ? { ...w, ...patch } : w)));
   const removeWatch = (id) => onWatchesChange(watches.filter((w) => w.id !== id));
   const addWatch = () => {
-    const symbol = draft.symbol.trim().toUpperCase();
-    if (!symbol) return;
+    const symbols = mergeSymbolList(draft.symbols, []);
+    if (!symbols.length) return;
     const hours = parseHoursInput(draft.hours);
-    onWatchesChange([...watches, { ...emptySymbolWatch(), symbol, note: draft.note.trim(), hours: hours.length ? hours : [...SYMBOL_WATCH_DEFAULT_HOURS] }]);
-    setDraft({ symbol: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+    onWatchesChange([...watches, {
+      ...emptySymbolWatch(),
+      label: draft.label.trim(),
+      note: draft.note.trim(),
+      symbols,
+      hours: hours.length ? hours : [...SYMBOL_WATCH_DEFAULT_HOURS],
+    }]);
+    setDraft({ label: "", symbols: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
   };
   const toggleDay = (w, day) => {
     const days = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
     updateWatch(w.id, { activeDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day] });
+  };
+  const toggleSymbol = (w, symId) => {
+    updateWatch(w.id, { symbols: (w.symbols || []).map((x) => (x.id === symId ? { ...x, done: !x.done } : x)) });
   };
 
   return (
     <div>
       <h3 className="block-title" style={{ marginTop: 0 }}>Symbol theo dõi</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Điền các symbol sắp có setup. Đến khung giờ đã đặt, Telegram sẽ nhắc bạn soi symbol đó, kèm 2 nút ngay trong tin nhắn:
-        <b> Tiếp tục theo dõi</b> — vẫn nhắc lại ở khung giờ kế tiếp bạn đặt bên dưới, và <b>Ngừng theo dõi</b> — coi như xong, không nhắc symbol này nữa.
+        Mỗi nhóm là <b>một khung giờ nhắc dùng chung cho nhiều symbol</b> — thường đặt theo timeframe (H4, khung ngày),
+        nhưng dùng cho watchlist hay phiên giao dịch đều được. Đến giờ, mỗi symbol trong nhóm được gửi thành
+        <b> một tin Telegram riêng</b> kèm 2 nút: <b>Tiếp tục theo dõi</b> (nhắc lại ở khung giờ kế tiếp) và
+        <b> Ngừng theo dõi</b> (chỉ tắt riêng symbol đó, các symbol còn lại vẫn nhắc bình thường).
       </p>
       {!telegramReady ? (
         <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
@@ -363,51 +385,49 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
         </div>
       </div>
 
-      <h3 className="block-title">Thêm symbol cần theo dõi</h3>
+      <h3 className="block-title">Thêm nhóm theo dõi</h3>
       <div className="account-form">
-        <div className="grid-3">
-          <Field label="Symbol">
-            <input className="input" value={draft.symbol} onChange={(e) => setDraft((p) => ({ ...p, symbol: e.target.value }))}
-              placeholder="VD: XAU/USD" onKeyDown={(e) => { if (e.key === "Enter") addWatch(); }} />
-          </Field>
-          <Field label="Ghi chú (tùy chọn)" hint="VD: chờ phá đỉnh, chờ về vùng cầu...">
-            <input className="input" value={draft.note} onChange={(e) => setDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Đang chờ gì ở symbol này?" />
+        <div className="grid-2">
+          <Field label="Tên nhóm" hint="VD: H4, Khung ngày, Watchlist sáng">
+            <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))} placeholder="H4" />
           </Field>
           <Field label="Khung giờ nhắc" hint="HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy">
             <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))} placeholder="09:00, 14:00, 20:00" />
           </Field>
         </div>
+        <Field label="Các symbol" hint="Cách nhau bằng dấu phẩy — mỗi symbol sẽ là một tin nhắn riêng khi tới giờ">
+          <input className="input" value={draft.symbols} onChange={(e) => setDraft((p) => ({ ...p, symbols: e.target.value }))}
+            placeholder="XAUUSD, EURUSD, GBPJPY" onKeyDown={(e) => { if (e.key === "Enter") addWatch(); }} />
+        </Field>
+        <Field label="Ghi chú (tùy chọn)" hint="Gửi kèm trong mọi tin của nhóm này">
+          <input className="input" value={draft.note} onChange={(e) => setDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Đang chờ gì ở nhóm này?" />
+        </Field>
         <div className="form-actions" style={{ marginTop: 4 }}>
-          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!draft.symbol.trim()}>
-            <PlusCircle size={14} /> Thêm symbol
+          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!parseSymbolList(draft.symbols).length}>
+            <PlusCircle size={14} /> Thêm nhóm
           </button>
         </div>
       </div>
 
-      <h3 className="block-title">Danh sách đang theo dõi</h3>
+      <h3 className="block-title">Các nhóm đang theo dõi</h3>
       {watches.length === 0 ? (
-        <p className="empty-note">Chưa có symbol nào — thêm ở trên để bắt đầu nhận cảnh báo.</p>
+        <p className="empty-note">Chưa có nhóm nào — thêm ở trên để bắt đầu nhận cảnh báo.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {watches.map((w) => {
             const activeDays = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
+            const symbols = w.symbols || [];
+            const remaining = symbols.filter((x) => !x.done).length;
             return (
-              <div key={w.id} className={`account-form sl-reminder-card ${w.done ? "symbol-watch-done" : ""}`}>
+              <div key={w.id} className={`account-form sl-reminder-card ${remaining === 0 ? "symbol-watch-done" : ""}`}>
                 <div className="sl-reminder-row">
-                  <label className={`checklist-item ${w.enabled && !w.done ? "checklist-checked" : ""}`} style={{ flex: "0 0 auto" }}
-                    title={w.enabled && !w.done ? "Đang bật cảnh báo" : "Đang tắt cảnh báo"}>
-                    <input type="checkbox" checked={!!w.enabled && !w.done} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked, done: false })} />
+                  <label className={`checklist-item ${w.enabled ? "checklist-checked" : ""}`} style={{ flex: "0 0 auto" }}
+                    title={w.enabled ? "Đang bật cảnh báo" : "Đang tắt cảnh báo"}>
+                    <input type="checkbox" checked={!!w.enabled} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked })} />
                   </label>
-                  {/* Symbol sửa được ngay tại chỗ — id mới là thứ Telegram dùng để nhận nút bấm,
-                      nên đổi tên symbol không làm hỏng lịch nhắc hay trạng thái hoãn đang có. */}
-                  <input className="input input-inline" style={{ width: 132, fontWeight: 600 }} defaultValue={w.symbol}
-                    placeholder="Symbol" title="Bấm để sửa symbol"
-                    onBlur={(e) => {
-                      const v = e.target.value.trim().toUpperCase();
-                      if (!v) { e.target.value = w.symbol; return; }
-                      e.target.value = v;
-                      if (v !== w.symbol) updateWatch(w.id, { symbol: v });
-                    }} />
+                  <input className="input input-inline" style={{ width: 132, fontWeight: 600 }} defaultValue={w.label || ""}
+                    placeholder="Tên nhóm" title="Bấm để sửa tên nhóm"
+                    onBlur={(e) => updateWatch(w.id, { label: e.target.value.trim() })} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 140 }} defaultValue={w.note || ""} placeholder="Ghi chú"
                     onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}
@@ -416,6 +436,33 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
                     onBlur={(e) => updateWatch(w.id, { hours: parseHoursInput(e.target.value) })} />
                   <ConfirmButton onConfirm={() => removeWatch(w.id)} />
                 </div>
+
+                {/* Sửa cả danh sách bằng một ô chữ; bấm từng chip để bật/tắt riêng một symbol. */}
+                <input className="input input-inline" style={{ width: "100%", marginTop: 8 }}
+                  defaultValue={symbolWatchText(w)} placeholder="XAUUSD, EURUSD, GBPJPY"
+                  title="Danh sách symbol, cách nhau bằng dấu phẩy"
+                  onBlur={(e) => {
+                    const next = mergeSymbolList(e.target.value, symbols);
+                    if (!next.length) { e.target.value = symbolWatchText(w); return; }
+                    e.target.value = next.map((x) => x.name).join(", ");
+                    updateWatch(w.id, { symbols: next });
+                  }} />
+                {symbols.length ? (
+                  <div className="watch-symbol-chips">
+                    {symbols.map((x) => (
+                      <button key={x.id} type="button"
+                        className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""}`}
+                        title={x.done ? "Đã ngừng theo dõi — bấm để theo dõi lại" : "Đang theo dõi — bấm để ngừng"}
+                        onClick={() => toggleSymbol(w, x.id)}>
+                        {x.done ? <CheckCircle2 size={11} /> : <Eye size={11} />} {x.name}
+                      </button>
+                    ))}
+                    <span className="field-hint" style={{ marginLeft: 4 }}>
+                      {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="sl-reminder-days">
                   {WEEKDAY_CODES.map((day) => (
                     <label key={day} className={`sl-day-chip ${activeDays.includes(day) ? "sl-day-chip-active" : ""}`}>
@@ -423,15 +470,6 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
                       {day}
                     </label>
                   ))}
-                  {w.done ? (
-                    <>
-                      <span className="watch-badge watch-badge-done" style={{ marginLeft: 6 }}><CheckCircle2 size={11} /> Đã ngừng theo dõi</span>
-                      <button type="button" className="btn btn-ghost" style={{ padding: "3px 9px", fontSize: 11 }}
-                        onClick={() => updateWatch(w.id, { done: false, enabled: true })}>
-                        Theo dõi lại
-                      </button>
-                    </>
-                  ) : null}
                 </div>
               </div>
             );

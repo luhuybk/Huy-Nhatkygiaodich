@@ -110,12 +110,56 @@ export function emptyIncompleteReminder() {
 
 export const SYMBOL_WATCH_DEFAULT_HOURS = ["09:00", "14:00", "20:00"];
 
+// Một nhóm theo dõi = một khung giờ nhắc + nhiều symbol. Thường đặt theo timeframe
+// ("H4", "Khung ngày") nhưng dùng cho watchlist hay phiên giao dịch đều được.
+// Mỗi symbol có trạng thái done riêng để bấm "Ngừng theo dõi" cho từng symbol trên Telegram.
 export function emptySymbolWatch() {
   return {
-    id: uid(), symbol: "", note: "", enabled: true, done: false,
+    id: uid(), label: "", symbols: [], note: "", enabled: true,
     hours: [...SYMBOL_WATCH_DEFAULT_HOURS], activeDays: [...WEEKDAY_CODES],
     lastNotifiedAt: "",
   };
+}
+
+export function parseSymbolList(text) {
+  // Bỏ ký tự "|" vì nó là dấu phân cách trong callback_data của nút bấm Telegram.
+  return [...new Set(
+    (text || "").split(",").map((x) => x.replace(/\|/g, "").trim().toUpperCase()).filter(Boolean)
+  )];
+}
+
+// Giữ nguyên id và trạng thái done của những symbol không đổi tên, để lần sửa danh sách
+// không làm mất trạng thái đã bấm trên Telegram và không làm hỏng nút của tin nhắn cũ.
+export function mergeSymbolList(text, existing) {
+  const current = existing || [];
+  return parseSymbolList(text).map((name) => {
+    const old = current.find((x) => x.name === name);
+    return old || { id: uid(), name, done: false };
+  });
+}
+
+export function symbolWatchText(w) {
+  return (w.symbols || []).map((x) => x.name).join(", ");
+}
+
+// Dữ liệu cũ: mỗi bản ghi là một symbol duy nhất ở trường `symbol`, done nằm ở cấp bản ghi.
+// Chuyển sang dạng nhóm, tách luôn chuỗi "A, B, C" nếu người dùng đã gõ nhiều symbol vào một ô.
+export function normalizeSymbolWatch(w) {
+  const base = { ...emptySymbolWatch(), ...w };
+  if (Array.isArray(w.symbols)) return { ...base, symbols: w.symbols };
+  const names = parseSymbolList(w.symbol);
+  return {
+    ...base,
+    label: w.label || "",
+    symbols: names.map((name) => ({ id: uid(), name, done: !!w.done })),
+  };
+}
+
+export function symbolWatchActiveCount(watches) {
+  return (watches || []).reduce(
+    (n, w) => n + (w.enabled ? (w.symbols || []).filter((x) => !x.done).length : 0),
+    0
+  );
 }
 
 export function emptyReminderSchedule(accountId, accountName) {
@@ -220,6 +264,42 @@ export function shiftDate(dateStr, days) {
   const d = new Date((dateStr || todayStr()) + "T00:00:00");
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Chuỗi ngày hoàn thành đủ: một ngày chỉ tính là xong khi MỌI lần nhắc hôm đó đều đã bấm.
+// Chuỗi đếm theo những ngày CÓ nhắc, nên cuối tuần tắt lịch không làm đứt chuỗi.
+// Hôm nay đang dở thì chưa cộng vào chuỗi nhưng cũng không làm đứt.
+export function setupCheckStreak(log, fromToday) {
+  const list = Array.isArray(log) ? log : [];
+  const byDate = new Map();
+  list.forEach((e) => {
+    if (!e.date) return;
+    const cur = byDate.get(e.date) || { total: 0, done: 0 };
+    cur.total += 1;
+    if (e.checkedAt) cur.done += 1;
+    byDate.set(e.date, cur);
+  });
+
+  const today = fromToday || todayStr();
+  const full = (d) => { const x = byDate.get(d); return !!x && x.total > 0 && x.done === x.total; };
+  const asc = [...byDate.keys()].sort();
+  const desc = [...asc].reverse();
+
+  let i = 0;
+  if (desc[0] === today && !full(today)) i = 1;
+  let current = 0;
+  for (; i < desc.length; i += 1) {
+    if (!full(desc[i])) break;
+    current += 1;
+  }
+
+  let best = 0;
+  let run = 0;
+  asc.forEach((d) => {
+    if (full(d)) { run += 1; if (run > best) best = run; } else { run = 0; }
+  });
+
+  return { current, best, todayDone: byDate.has(today) ? full(today) : null };
 }
 
 // Tỷ lệ hoàn thành nhắc kiểm tra setup: đã bấm "Đã kiểm tra" trên Telegram bao nhiêu lần

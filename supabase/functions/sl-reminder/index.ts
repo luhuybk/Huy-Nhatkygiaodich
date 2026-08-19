@@ -17,6 +17,7 @@ const LOG_RETENTION_DAYS = 3;
 const CHECK_LOG_RETENTION_DAYS = 90; // đủ dài để xem tỷ lệ hoàn thành nhiều tuần liền
 const MAX_INCOMPLETE_LINES = 15; // tránh tin nhắn dài quá giới hạn Telegram
 const MAX_SL_MESSAGES_PER_RUN = 20; // chặn trường hợp mở quá nhiều lệnh làm spam Telegram
+const MAX_WATCH_MESSAGES_PER_RUN = 20; // tương tự cho nhóm symbol theo dõi
 
 // Ký tự Braille rỗng (U+2800). Telegram cắt khoảng trắng ở đầu tin nhắn nhưng giữ ký tự này,
 // nhờ đó dòng tiêu đề nằm riêng một dòng thay vì dính vào tên bot ở phần xem trước thông báo.
@@ -67,6 +68,28 @@ function minutesDiff(a: string, b: string) {
   const [ah, am] = a.split(":").map(Number);
   const [bh, bm] = b.split(":").map(Number);
   return Math.abs(ah * 60 + am - (bh * 60 + bm));
+}
+
+type WatchSymbol = { id?: string; name?: string; done?: boolean };
+type WatchGroup = {
+  id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
+  hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
+  symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
+};
+
+// Bản ghi cũ (một symbol/bản ghi) vẫn có thể còn trong DB nếu cron chạy trước khi người dùng
+// mở web để chuyển đổi. Dùng chính tên symbol làm id để nút bấm vẫn khớp được ở webhook.
+function watchSymbols(w: WatchGroup): { id: string; name: string; done: boolean }[] {
+  if (Array.isArray(w.symbols)) {
+    return w.symbols
+      .filter((x) => x && x.name)
+      .map((x) => ({ id: String(x!.id || x!.name), name: String(x!.name), done: !!x!.done }));
+  }
+  return String(w.symbol || "")
+    .split(",")
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean)
+    .map((name) => ({ id: name, name, done: !!w.done }));
 }
 
 // Khuôn tin nhắn chung: dòng trống → tiêu đề → chủ thể được làm nổi bật.
@@ -180,10 +203,7 @@ Deno.serve(async () => {
       id?: string; title?: string; frequency?: string; weekday?: number; dayOfMonth?: number; date?: string;
       active?: boolean; doneDates?: string[]; notifyTelegram?: boolean; notifyTime?: string;
     }[];
-    const watches = (watchesRow?.value || []) as {
-      id?: string; symbol?: string; note?: string; enabled?: boolean; done?: boolean;
-      hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
-    }[];
+    const watches = (watchesRow?.value || []) as WatchGroup[];
     // Lệnh người dùng đã bấm "Kết thúc lệnh" trên Telegram — thật sự đã chạm SL/TP nhưng
     // chưa kịp điền ngày thoát vào nhật ký, nên ngừng nhắc mà không đụng vào bản ghi lệnh.
     let muted = (mutedRow?.value || []) as { tradeId?: string; mutedAt?: string }[];
@@ -309,32 +329,41 @@ Deno.serve(async () => {
       }
     }
 
-    // Symbol theo dõi — nhắc đều đặn theo khung giờ cho tới khi bấm "Ngừng theo dõi".
+    // Symbol theo dõi — mỗi nhóm là một khung giờ nhắc, mỗi symbol trong nhóm là một tin riêng
+    // để bấm "Tiếp tục / Ngừng theo dõi" cho từng symbol độc lập.
     if (settings.symbolWatchEnabled && watches.length) {
+      let watchMessages = 0;
       for (const w of watches) {
-        if (!w.id || !w.enabled || w.done) continue;
+        if (!w.id || !w.enabled) continue;
 
         const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
         if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
         const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
         if (!matchedHour) continue;
-        const logKey = `watch_${today}_${w.id}_${matchedHour}`;
-        if (log[logKey]) continue;
 
-        const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", w.symbol || "?", w.note || undefined);
-        const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
-          inline_keyboard: [[
-            { text: "👀 Tiếp tục theo dõi", callback_data: `w|${w.id}|keep` },
-            { text: "🛑 Ngừng theo dõi", callback_data: `w|${w.id}|stop` },
-          ]],
-        });
+        const subtitle = [w.label, w.note].filter(Boolean).join(" · ");
+        for (const sym of watchSymbols(w)) {
+          if (sym.done) continue;
+          if (watchMessages >= MAX_WATCH_MESSAGES_PER_RUN) break;
+          const logKey = `watch_${today}_${w.id}_${matchedHour}_${sym.id}`;
+          if (log[logKey]) continue;
 
-        if (ok) {
-          w.lastNotifiedAt = new Date().toISOString();
-          watchesChanged = true;
-          log[logKey] = true;
-          logChanged = true;
-          sent++;
+          const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", sym.name, subtitle || undefined);
+          const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
+            inline_keyboard: [[
+              { text: "👀 Tiếp tục theo dõi", callback_data: `w|${w.id}|${sym.id}|keep` },
+              { text: "🛑 Ngừng theo dõi", callback_data: `w|${w.id}|${sym.id}|stop` },
+            ]],
+          });
+
+          if (ok) {
+            w.lastNotifiedAt = new Date().toISOString();
+            watchesChanged = true;
+            log[logKey] = true;
+            logChanged = true;
+            watchMessages++;
+            sent++;
+          }
         }
       }
     }

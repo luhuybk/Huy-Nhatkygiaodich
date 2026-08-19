@@ -10,7 +10,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField,
-  shouldSnapshot, makeSnapshot, pruneBackups,
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch,
 } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
@@ -117,10 +117,15 @@ function AppShell({ onSignOut, userEmail }) {
       setCapitalEntries(ce);
       setCapitalFlows(cf);
       setSlReminderSettings({ ...emptySlReminderSettings(), ...sr });
-      setSymbolWatches(Array.isArray(sw) ? sw : []);
+      // Bản ghi cũ là 1 symbol/bản ghi; chuyển sang dạng nhóm nhiều symbol ngay lần mở đầu tiên
+      // để nút bấm trên Telegram khớp đúng từng symbol.
+      const rawWatches = Array.isArray(sw) ? sw : [];
+      const normalizedWatches = rawWatches.map(normalizeSymbolWatch);
+      setSymbolWatches(normalizedWatches);
       setBackups(Array.isArray(bk) ? bk : []);
       setSetupCheckLog(Array.isArray(scl) ? scl : []);
       setSlMutedTrades(Array.isArray(smt) ? smt : []);
+      if (rawWatches.some((w) => !Array.isArray(w.symbols))) await safeSet("symbolWatches", normalizedWatches);
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
       if (!mergedUi.defaultRemindersSeeded) {
