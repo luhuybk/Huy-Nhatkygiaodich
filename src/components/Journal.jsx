@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { Fragment, useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
@@ -58,6 +58,18 @@ export function JournalFilters({ trades, resources, filters, setFilters }) {
   );
 }
 
+// Gom mọi ảnh của một lệnh theo đúng thứ tự diễn biến: vào lệnh → trong lệnh → thoát lệnh.
+// Ảnh "trong lệnh" trước đây chỉ nằm trong form, ngoài bảng và ô chi tiết đều không thấy.
+function tradeImageShots(t) {
+  const shots = [];
+  if (t.entryImage || t.entryLink) shots.push({ key: "entry", label: "Vào lệnh", image: t.entryImage, link: t.entryLink });
+  (t.inTradeImages || []).forEach((img, i) => {
+    if (img && (img.image || img.link)) shots.push({ key: `in-${i}`, label: `Trong lệnh ${i + 1}`, image: img.image, link: img.link });
+  });
+  if (t.exitImage || t.exitLink) shots.push({ key: "exit", label: "Thoát lệnh", image: t.exitImage, link: t.exitLink });
+  return shots;
+}
+
 export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   if (!trade) return null;
   const t = trade;
@@ -66,6 +78,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
   const checklistEntries = Object.entries(t.checklist || {});
   const completion = tradeCompletion(t);
+  const shots = tradeImageShots(t);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -107,12 +120,14 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Vào lệnh" value={t.entrySkill} />
               <DetailRow label="Trong lệnh" value={t.inTradeSkill} />
               <DetailRow label="Thoát lệnh" value={t.exitSkill} />
+              <DetailRow label="Cảm nhận kỹ năng" value={t.skillNote} />
               <DetailRow label="Tâm lý" value={t.psychology} />
             </DetailGroup>
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
               <DetailRow label="Nhận xét / Review" value={t.reviewNote} />
               <DetailRow label="Lý do vào lệnh" value={t.entryReason} />
+              <DetailRow label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
             </DetailGroup>
           </div>
 
@@ -141,21 +156,15 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
             </DetailGroup>
           ) : null}
 
-          {(t.entryImage || t.entryLink || t.exitImage || t.exitLink) ? (
+          {shots.length > 0 ? (
             <DetailGroup title="Hình ảnh">
-              <div style={{ display: "flex", gap: 16 }}>
-                {(t.entryImage || t.entryLink) ? (
-                  <div>
-                    <span className="field-hint">Vào lệnh</span><br />
-                    <CellImagePreview image={t.entryImage} link={t.entryLink} />
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {shots.map((s) => (
+                  <div key={s.key}>
+                    <span className="field-hint">{s.label}</span><br />
+                    <CellImagePreview image={s.image} link={s.link} title={s.label} />
                   </div>
-                ) : null}
-                {(t.exitImage || t.exitLink) ? (
-                  <div>
-                    <span className="field-hint">Thoát lệnh</span><br />
-                    <CellImagePreview image={t.exitImage} link={t.exitLink} />
-                  </div>
-                ) : null}
+                ))}
               </div>
             </DetailGroup>
           ) : null}
@@ -288,6 +297,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
             const { rr, outcome, status } = computeResult(t);
             const cp = checklistProgress(t, res);
             const completion = tradeCompletion(t);
+            const shots = tradeImageShots(t);
             return (
               <tr key={t.id} onClick={() => onEdit(t)} className={t.hasLesson ? "row-has-lesson" : ""}>
                 {selectable ? (
@@ -299,10 +309,16 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <td>{t.account || "—"}</td>
                 <td style={{ fontWeight: 600 }}>{t.symbol}</td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    <CellImagePreview image={t.entryImage} link={t.entryLink} />
-                    {t.exitImage || t.exitLink ? <CellImagePreview image={t.exitImage} link={t.exitLink} /> : null}
-                  </div>
+                  {shots.length === 0 ? <span style={{ color: "var(--text-dim)" }}>—</span> : (
+                    <div className="cell-img-row">
+                      {shots.map((s, i) => (
+                        <Fragment key={s.key}>
+                          {i > 0 ? <span className="cell-img-sep">|</span> : null}
+                          <CellImagePreview image={s.image} link={s.link} title={s.label} />
+                        </Fragment>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td><span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span></td>
                 <td>{t.setup || "—"}</td>

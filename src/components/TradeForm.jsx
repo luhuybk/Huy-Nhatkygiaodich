@@ -204,6 +204,9 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         <Field label="Tự đánh giá kỹ năng" incomplete={missing("ratingSkill")}>
           <StarRating value={t.ratingSkill} onChange={set("ratingSkill")} />
         </Field>
+        <Field label="Cảm nhận về kỹ năng" hint="Tùy chọn — viết thêm cảm nhận về cách bạn vào/giữ/thoát lệnh này">
+          <textarea className="input textarea" value={t.skillNote || ""} onChange={(e) => set("skillNote")(e.target.value)} placeholder="Vào sớm hay trễ, có dời SL đúng lúc không, thoát lệnh vì lý do gì..." />
+        </Field>
       </Section>
 
       <Section num="5" title="Tâm lý" subtitle="Trạng thái tâm lý khi giao dịch">

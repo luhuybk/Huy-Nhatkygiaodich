@@ -14,20 +14,20 @@ export function useStickyTab(key, fallback, allowed) {
   return [value, setValue];
 }
 
-export function CellImagePreview({ image, link }) {
+export function CellImagePreview({ image, link, title }) {
   const [hover, setHover] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [link]);
   if (!image && !link) return <span style={{ color: "var(--text-dim)" }}>—</span>;
   if (image) {
     return (
-      <a href={image} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-        <img src={image} alt="" className="thumb-mini" />
+      <a href={image} target="_blank" rel="noopener noreferrer" title={title} onClick={(e) => e.stopPropagation()}>
+        <img src={image} alt={title || ""} className="thumb-mini" />
       </a>
     );
   }
   return (
-    <a className="link-preview-anchor" href={link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+    <a className="link-preview-anchor" href={link} target="_blank" rel="noopener noreferrer" title={title} onClick={(e) => e.stopPropagation()}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <ImageIcon size={15} color="var(--accent)" />
       {hover ? (

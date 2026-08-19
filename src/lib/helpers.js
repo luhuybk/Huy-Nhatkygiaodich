@@ -37,7 +37,7 @@ export function emptyTrade() {
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",
-    entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0,
+    entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
     psychology: "", ratingPsychology: 0,
     tradeGrade: "", reviewNote: "", checklist: {},
     hasLesson: false, lessonNote: "",
@@ -979,6 +979,8 @@ const CSV_COLUMNS = [
   ["Có bài học", (t) => (t.hasLesson ? "Có" : "")],
   ["Bài học", (t) => t.lessonNote],
   ["Lý do vào lệnh", (t) => t.entryReason],
+  ["Cảm nghĩ trong lệnh", (t) => t.inTradeNote],
+  ["Cảm nhận kỹ năng", (t) => t.skillNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
 ];
 
