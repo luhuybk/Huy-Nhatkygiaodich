@@ -92,9 +92,10 @@ function watchSymbols(w: WatchGroup): { id: string; name: string; done: boolean 
     .map((name) => ({ id: name, name, done: !!w.done }));
 }
 
-// Khuôn tin nhắn chung: dòng trống → tiêu đề → chủ thể được làm nổi bật.
-function buildMessage(titleIcon: string, title: string, mark: string, subject: string, extra?: string) {
-  const lines = [LEAD, `${titleIcon} ${title}`, `${mark} ${subject} ${mark}`];
+// Khuôn tin nhắn chung: dòng trống → tiêu đề (kèm bối cảnh) → chủ thể được làm nổi bật.
+function buildMessage(titleIcon: string, title: string, mark: string, subject: string, titleSuffix?: string, extra?: string) {
+  const head = titleSuffix ? `${titleIcon} ${title} | ${titleSuffix}` : `${titleIcon} ${title}`;
+  const lines = [LEAD, head, `${mark} ${subject} ${mark}`];
   if (extra) lines.push(extra);
   return lines.join("\n");
 }
@@ -239,7 +240,7 @@ Deno.serve(async () => {
         const logKey = `${sched.accountId}_${today}_${matchedHour}_${t.id}`;
         if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-        const text = buildMessage("⏰", "DỜI SL", "🔴", t.symbol || "?");
+        const text = buildMessage("⏰", "DỜI SL", "🔴", t.symbol || "?", accountName);
         const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
           inline_keyboard: [[
             { text: "✅ Đã dời", callback_data: `sl|${t.id}|moved` },
@@ -319,7 +320,7 @@ Deno.serve(async () => {
           const shown = pending.slice(0, MAX_INCOMPLETE_LINES);
           const lines = shown.map((x) => `. [${x.t.symbol || "?"}] ${x.t.entryDate || ""} — ${x.percent}%`);
           if (pending.length > shown.length) lines.push(`. ...và ${pending.length - shown.length} lệnh nữa`);
-          const text = buildMessage("📝", "LỆNH CHƯA ĐIỀN XONG", "📌", `${pending.length} lệnh dưới 100%`, lines.join("\n"));
+          const text = buildMessage("📝", "LỆNH CHƯA ĐIỀN XONG", "📌", `${pending.length} lệnh dưới 100%`, undefined, lines.join("\n"));
           if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, inc.threadId)) {
             log[logKey] = true;
             logChanged = true;
@@ -341,14 +342,14 @@ Deno.serve(async () => {
         const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
         if (!matchedHour) continue;
 
-        const subtitle = [w.label, w.note].filter(Boolean).join(" · ");
+        const groupName = (w.label || "").trim();
         for (const sym of watchSymbols(w)) {
           if (sym.done) continue;
           if (watchMessages >= MAX_WATCH_MESSAGES_PER_RUN) break;
           const logKey = `watch_${today}_${w.id}_${matchedHour}_${sym.id}`;
           if (log[logKey]) continue;
 
-          const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", sym.name, subtitle || undefined);
+          const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", sym.name, groupName || undefined, w.note || undefined);
           const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
             inline_keyboard: [[
               { text: "👀 Tiếp tục theo dõi", callback_data: `w|${w.id}|${sym.id}|keep` },
