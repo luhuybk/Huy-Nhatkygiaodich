@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
 import { formatVN, readLocalUi, writeLocalUi } from "../lib/helpers.js";
+import { uploadImageFile } from "../lib/storage.js";
 
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
 // không làm màn hình trắng — rơi về fallback.
@@ -192,23 +193,23 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
   const [linkPreviewFailed, setLinkPreviewFailed] = useState(false);
   const [hoverPreview, setHoverPreview] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [uploading, setUploading] = useState(false);
   useEffect(() => setLinkPreviewFailed(false), [link]);
   useEffect(() => {
     if (!confirmDelete) return;
     const t = setTimeout(() => setConfirmDelete(false), 2000);
     return () => clearTimeout(t);
   }, [confirmDelete]);
-  const handleFile = (e) => {
+  const handleFile = async (e) => {
     const file = e.target.files && e.target.files[0];
+    e.target.value = "";
     if (!file) return;
-    if (file.size > 1.5 * 1024 * 1024) {
-      setErr("Ảnh quá lớn (>1.5MB). Dùng link TradingView hoặc chọn ảnh nhỏ hơn.");
-      e.target.value = ""; return;
-    }
     setErr("");
-    const reader = new FileReader();
-    reader.onload = () => onImageChange(reader.result);
-    reader.readAsDataURL(file);
+    setUploading(true);
+    const res = await uploadImageFile(file);
+    setUploading(false);
+    if (res.error) { setErr(res.error); return; }
+    onImageChange(res.url);
   };
   const isUrl = link && /^https?:\/\//i.test(link.trim());
   return (
@@ -234,9 +235,9 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
         ) : null}
       </div>
       <div className="imglink-row">
-        <label className="upload-btn">
-          <ImagePlus size={14} /><span>{image ? "Đổi ảnh" : "Tải ảnh lên"}</span>
-          <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+        <label className={`upload-btn ${uploading ? "upload-btn-busy" : ""}`}>
+          <ImagePlus size={14} /><span>{uploading ? "Đang tải lên..." : image ? "Đổi ảnh" : "Tải ảnh lên"}</span>
+          <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={handleFile} />
         </label>
         {image ? (
           <div className="thumb-wrap">

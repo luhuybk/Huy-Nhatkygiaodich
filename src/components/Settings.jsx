@@ -4,7 +4,7 @@ import { ACCENT_PRESETS } from "../lib/constants.js";
 import { BACKUP_KEEP } from "../lib/helpers.js";
 import { DangerConfirmButton, Field, StatCard } from "./ui.jsx";
 
-export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, symbolWatches, setupCheckLog, backups, onRestoreBackup, onBackupNow, onImportAll, onReset }) {
+export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, symbolWatches, setupCheckLog, backups, onRestoreBackup, onBackupNow, inlineImageCount, imageMigration, onMigrateImages, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
@@ -71,10 +71,33 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
       </div>
       {msg ? <p className="field-hint" style={{ color: "var(--accent)" }}>{msg}</p> : null}
 
+      <h3 className="block-title">Kho ảnh</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Ảnh tải lên giờ được đẩy sang Supabase Storage, trong dữ liệu chỉ lưu đường dẫn — nhẹ hơn nhiều và không còn giới hạn 1.5MB.
+        Cần chạy file <code>supabase-storage-setup.sql</code> một lần trong Supabase → SQL Editor để tạo kho ảnh.
+      </p>
+      {inlineImageCount > 0 ? (
+        <>
+          <p className="field-hint" style={{ marginBottom: 10, color: "var(--accent)" }}>
+            Còn {inlineImageCount} ảnh cũ đang nhúng thẳng trong dữ liệu. Chuyển sang kho ảnh để dữ liệu nhẹ lại và bản sao lưu giữ được ảnh.
+          </p>
+          <button type="button" className="btn btn-primary" disabled={imageMigration?.running} onClick={onMigrateImages}>
+            <Upload size={14} /> {imageMigration?.running ? "Đang chuyển..." : `Chuyển ${inlineImageCount} ảnh lên kho ảnh`}
+          </button>
+        </>
+      ) : (
+        <p className="empty-note">Không còn ảnh nào nhúng thẳng trong dữ liệu.</p>
+      )}
+      {imageMigration && !imageMigration.running ? (
+        <p className="field-hint" style={{ marginTop: 10, color: imageMigration.failed ? "var(--loss)" : "var(--win)" }}>
+          {imageMigration.message}
+        </p>
+      ) : null}
+
       <h3 className="block-title">Sao lưu tự động</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Cứ 7 ngày mở web một lần, hệ thống tự chụp lại toàn bộ dữ liệu và giữ {BACKUP_KEEP} bản gần nhất.
-        Một bản cũng được chụp ngay trước khi bạn bấm "Xóa toàn bộ dữ liệu". Khôi phục sẽ ghi đè dữ liệu hiện tại bằng bản đã chọn. Bản sao lưu giữ toàn bộ chữ và link, nhưng bỏ ảnh dán trực tiếp để không phình dung lượng — dùng "Xuất JSON" nếu muốn sao lưu kèm ảnh.
+        Một bản cũng được chụp ngay trước khi bạn bấm "Xóa toàn bộ dữ liệu". Khôi phục sẽ ghi đè dữ liệu hiện tại bằng bản đã chọn. Bản sao lưu giữ toàn bộ chữ và đường dẫn ảnh, nhưng bỏ ảnh base64 còn sót lại để không phình dung lượng — chuyển chúng lên kho ảnh ở trên thì bản sao lưu sẽ giữ được đầy đủ.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <button type="button" className="btn btn-ghost" onClick={onBackupNow}><Save size={14} /> Sao lưu ngay</button>

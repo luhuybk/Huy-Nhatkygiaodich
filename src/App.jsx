@@ -18,6 +18,7 @@ import { ResourceManager } from "./components/Resources.jsx";
 import { NotesSection } from "./components/Notes.jsx";
 import { SettingsSection } from "./components/Settings.jsx";
 import { SloganBar, useStickyTab } from "./components/ui.jsx";
+import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
 const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.DimensionPerformance })));
@@ -110,6 +111,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [backups, setBackups] = useState([]);
   const [undo, setUndo] = useState(null);
+  const [imageMigration, setImageMigration] = useState(null);
   const undoTimerRef = useRef(null);
 
   useEffect(() => {
@@ -418,6 +420,45 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
     if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
   };
+  // Ảnh cũ vẫn nằm dạng base64 trong dữ liệu. Đẩy hết lên Storage rồi thay bằng đường dẫn,
+  // nếu không thì phần phình cũ còn nguyên, chỉ là không phình thêm.
+  const imageSources = [
+    ["trades", trades, persistTrades],
+    ["lessons", lessons, persistLessons],
+    ["setupLibrary", setupLibrary, persistSetupLibrary],
+    ["problemLogs", problemLogs, persistProblemLogs],
+    ["newsLogs", newsLogs, persistNewsLogs],
+    ["missedSetups", missedSetups, persistMissedSetups],
+    ["skippedSetups", skippedSetups, persistSkippedSetups],
+    ["setupVariants", setupVariants, persistSetupVariants],
+  ];
+  const inlineImageCount = imageSources.reduce((n, [, list]) => n + countInlineImages(list), 0);
+
+  const handleMigrateImages = async () => {
+    setImageMigration({ running: true, done: 0, failed: 0, message: "Đang chuyển ảnh..." });
+    let done = 0;
+    let failed = 0;
+    let lastError = "";
+    const upload = async (dataUrl) => {
+      const res = await uploadInlineImage(dataUrl);
+      if (res.url) { done += 1; return res.url; }
+      failed += 1;
+      lastError = res.error || "";
+      return dataUrl; // giữ ảnh cũ, thà phình còn hơn mất
+    };
+    for (const [, list, persist] of imageSources) {
+      if (!countInlineImages(list)) continue;
+      const next = await replaceInlineImages(list, upload);
+      await persist(next);
+    }
+    setImageMigration({
+      running: false, done, failed,
+      message: failed
+        ? `Đã chuyển ${done} ảnh, ${failed} ảnh lỗi. ${lastError}`
+        : done ? `Đã chuyển ${done} ảnh lên kho ảnh.` : "Không có ảnh nào cần chuyển.",
+    });
+  };
+
   const handleRestoreBackup = (id) => {
     const snap = backups.find((b) => b.id === id);
     if (snap && snap.data) handleImportAll(snap.data);
@@ -581,6 +622,7 @@ function AppShell({ onSignOut, userEmail }) {
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
                 slReminderSettings={slReminderSettings} symbolWatches={symbolWatches} setupCheckLog={setupCheckLog}
                 backups={backups} onRestoreBackup={handleRestoreBackup} onBackupNow={handleBackupNow}
+                inlineImageCount={inlineImageCount} imageMigration={imageMigration} onMigrateImages={handleMigrateImages}
                 onImportAll={handleImportAll} onReset={handleResetAll} />
               }
             </Suspense>

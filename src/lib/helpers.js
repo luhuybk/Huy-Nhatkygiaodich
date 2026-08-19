@@ -119,6 +119,7 @@ export function emptySlReminderSettings() {
     enabled: false, telegramBotToken: "", telegramChatId: "",
     schedules: [], setupCheckEnabled: false, setupCheckSchedules: [],
     incompleteReminder: emptyIncompleteReminder(),
+    weeklySummary: emptyWeeklySummary(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
   };
 }
@@ -126,6 +127,11 @@ export function emptySlReminderSettings() {
 // Nhắc điền nốt các lệnh chưa hoàn thành 100% — mặc định tối Chủ nhật.
 export function emptyIncompleteReminder() {
   return { enabled: false, weekday: "CN", time: "20:00", threadId: "" };
+}
+
+// Tổng kết 7 ngày gần nhất gửi qua Telegram — mặc định tối Chủ nhật.
+export function emptyWeeklySummary() {
+  return { enabled: false, weekday: "CN", time: "19:00", threadId: "" };
 }
 
 export const SYMBOL_WATCH_DEFAULT_HOURS = ["09:00", "14:00", "20:00"];

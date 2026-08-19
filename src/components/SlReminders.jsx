@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, mergeSymbolList, parseHoursInput,
+  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary, mergeSymbolList, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
 } from "../lib/helpers.js";
@@ -199,6 +199,8 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
   const setupCheckSchedules = s.setupCheckSchedules || [];
   const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
   const setInc = (patch) => onChange({ ...s, incompleteReminder: { ...inc, ...patch } });
+  const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
+  const setWs = (patch) => onChange({ ...s, weeklySummary: { ...ws, ...patch } });
 
   const week = useMemo(() => setupCheckStats(checkLog, 7), [checkLog]);
   const month = useMemo(() => setupCheckStats(checkLog, 30), [checkLog]);
@@ -312,6 +314,34 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
           </Field>
           <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
             <input className="input mono" defaultValue={inc.threadId || ""} placeholder="Thread ID" onBlur={(e) => setInc({ threadId: e.target.value.trim() })} />
+          </Field>
+        </div>
+      </div>
+
+      <h3 className="block-title">Tổng kết tuần</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Mỗi tuần một lần, gom số liệu 7 ngày gần nhất thành một tin Telegram: số lệnh đã đóng, tỷ lệ thắng, tổng R,
+        lãi/lỗ quy ra USD, số setup miss/skip/biến thể mới, chuỗi kiểm tra setup và số lệnh còn chưa điền xong.
+      </p>
+      <div className="account-form">
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${ws.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => setWs({ enabled: !ws.enabled })}
+        >
+          <Bell size={15} /> {ws.enabled ? "🔔 Đang bật tổng kết tuần" : "Bật tổng kết tuần (tùy chọn)"}
+        </button>
+        <div className="grid-3" style={{ marginTop: 12 }}>
+          <Field label="Vào thứ">
+            <select className="input" value={ws.weekday} onChange={(e) => setWs({ weekday: e.target.value })}>
+              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
+            </select>
+          </Field>
+          <Field label="Giờ gửi (giờ Việt Nam)">
+            <input type="time" className="input" value={ws.time || "19:00"} onChange={(e) => setWs({ time: e.target.value })} />
+          </Field>
+          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
+            <input className="input mono" defaultValue={ws.threadId || ""} placeholder="Thread ID" onBlur={(e) => setWs({ threadId: e.target.value.trim() })} />
           </Field>
         </div>
       </div>

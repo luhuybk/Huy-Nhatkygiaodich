@@ -95,6 +95,31 @@ function watchSymbols(w: WatchGroup): { id: string; name: string; done: boolean 
     .map((name) => ({ id: name, name, done: !!w.done }));
 }
 
+// Cộng/trừ ngày trên chuỗi "YYYY-MM-DD". Dùng UTC vì đây chỉ là phép tính lịch trên
+// chuỗi ngày đã ở giờ Việt Nam, không phải quy đổi múi giờ.
+function shiftDateStr(dateStr: string, days: number) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function ddmm(dateStr: string) {
+  const [, m, d] = dateStr.split("-");
+  return `${d}/${m}`;
+}
+
+function signed(n: number, digits: number) {
+  return `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
+}
+
+// Mỗi tài khoản một loại tiền — cộng thẳng sẽ ra số vô nghĩa, phải quy về USD trước.
+// Khớp với toUSD() ở src/lib/helpers.js: fxRates lưu "bao nhiêu đơn vị cho 1 USD".
+function toUSD(amount: number, currency: string | undefined, fxRates: Record<string, number> | undefined) {
+  if (!currency || currency === "USD") return amount;
+  const rate = (fxRates && fxRates[currency]) || 1;
+  return amount / rate;
+}
+
 // Khuôn tin nhắn chung: dòng trống → tiêu đề (kèm bối cảnh) → chủ thể được làm nổi bật.
 function buildMessage(titleIcon: string, title: string, mark: string, subject: string, titleSuffix?: string, extra?: string) {
   const head = titleSuffix ? `${titleIcon} ${title} | ${titleSuffix}` : `${titleIcon} ${title}`;
@@ -168,6 +193,7 @@ Deno.serve(async () => {
       setupCheckEnabled?: boolean;
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
+      weeklySummary?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
     };
@@ -328,6 +354,87 @@ Deno.serve(async () => {
             logChanged = true;
             sent++;
           }
+        }
+      }
+    }
+
+    // Tổng kết 7 ngày gần nhất — gom số liệu rải rác trên web thành một nhịp tuần.
+    const ws = settings.weeklySummary;
+    if (ws?.enabled && (ws.weekday || "CN") === todayWeekdayCode && minutesDiff(ws.time || "19:00", currentHHMM) <= MATCH_TOLERANCE_MIN) {
+      const logKey = `weekly_${today}`;
+      if (!log[logKey]) {
+        const from = shiftDateStr(today, -6);
+        const inRange = (d?: string) => !!d && d >= from && d <= today;
+        const fxRates = (resourcesRow?.value?.fxRates || {}) as Record<string, number>;
+        const currencyOf = (accName?: string) =>
+          (accounts.find((a) => a.name === accName) as { currency?: string } | undefined)?.currency;
+
+        const closed = trades.filter((t) => inRange(t.exitDate as string | undefined));
+        let win = 0, loss = 0, be = 0, totalR = 0, rCount = 0, usd = 0, usdCount = 0;
+        for (const t of closed) {
+          const profit = t.profit === "" || t.profit === null || t.profit === undefined ? null : Number(t.profit);
+          if (profit === null || Number.isNaN(profit)) continue;
+          if (profit > 0) win++; else if (profit < 0) loss++; else be++;
+          const risk = Number(t.riskAmount);
+          if (t.riskAmount !== "" && t.riskAmount !== null && t.riskAmount !== undefined && risk && !Number.isNaN(risk)) {
+            totalR += profit / risk;
+            rCount++;
+          }
+          const converted = toUSD(profit, currencyOf(t.account as string | undefined), fxRates);
+          if (!Number.isNaN(converted)) { usd += converted; usdCount++; }
+        }
+        const graded = win + loss + be;
+        const opened = trades.filter((t) => inRange(t.entryDate as string | undefined)).length;
+        const stillOpen = trades.filter((t) => t.entryDate && !t.exitDate).length;
+        const incompleteCount = trades.filter((t) => completionPercent(t) < 100).length;
+
+        // Ba mục setup chỉ cần cho tin này nên đọc tại chỗ, khỏi tải mỗi 5 phút.
+        const [{ data: missRow }, { data: skipRow }, { data: variantRow }] = await Promise.all([
+          supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "missedSetups").maybeSingle(),
+          supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "skippedSetups").maybeSingle(),
+          supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "setupVariants").maybeSingle(),
+        ]);
+        const missCount = ((missRow?.value || []) as { missDate?: string }[]).filter((x) => inRange(x.missDate)).length;
+        const skipCount = ((skipRow?.value || []) as { skipDate?: string }[]).filter((x) => inRange(x.skipDate)).length;
+        const variantCount = ((variantRow?.value || []) as { variantDate?: string }[]).filter((x) => inRange(x.variantDate)).length;
+
+        // Chuỗi kiểm tra setup: một ngày chỉ tính khi bấm đủ mọi lần nhắc hôm đó,
+        // và chỉ đếm những ngày có lịch nhắc (khớp setupCheckStreak ở src/lib/helpers.js).
+        const byDate = new Map<string, { total: number; done: number }>();
+        for (const e of checkLog) {
+          if (!e.date) continue;
+          const cur = byDate.get(e.date) || { total: 0, done: 0 };
+          cur.total++;
+          if (e.checkedAt) cur.done++;
+          byDate.set(e.date, cur);
+        }
+        const fullDay = (d: string) => { const x = byDate.get(d); return !!x && x.total > 0 && x.done === x.total; };
+        const datesDesc = [...byDate.keys()].sort().reverse();
+        let streak = 0;
+        for (let i = datesDesc[0] === today && !fullDay(today) ? 1 : 0; i < datesDesc.length; i++) {
+          if (!fullDay(datesDesc[i])) break;
+          streak++;
+        }
+        const weekChecks = checkLog.filter((e) => inRange(e.date));
+        const weekChecked = weekChecks.filter((e) => e.checkedAt).length;
+
+        const lines = [
+          `Lệnh đóng: ${graded}${graded ? ` (${win}T / ${loss}B${be ? ` / ${be}H` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
+          rCount ? `Tổng R: ${signed(totalR, 2)}R (${rCount} lệnh có risk)` : "Tổng R: — (chưa lệnh nào điền risk)",
+          usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",
+          `Lệnh mới mở: ${opened} · đang mở: ${stillOpen}`,
+          `Setup: ${missCount} miss · ${skipCount} skip · ${variantCount} biến thể`,
+          weekChecks.length
+            ? `Kiểm tra setup: ${weekChecked}/${weekChecks.length} (${Math.round((weekChecked / weekChecks.length) * 100)}%) · chuỗi ${streak} ngày`
+            : "",
+          incompleteCount ? `Còn ${incompleteCount} lệnh chưa điền xong` : "Mọi lệnh đã điền đủ 100% 🎯",
+        ].filter(Boolean);
+
+        const text = buildMessage("📊", "TỔNG KẾT TUẦN", "⭐", `${ddmm(from)} – ${ddmm(today)}`, undefined, lines.join("\n"));
+        if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, ws.threadId)) {
+          log[logKey] = true;
+          logChanged = true;
+          sent++;
         }
       }
     }
