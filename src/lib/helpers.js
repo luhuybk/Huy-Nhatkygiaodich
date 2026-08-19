@@ -1,6 +1,26 @@
 import { supabase } from "../supabaseClient.js";
 import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, WEEKDAY_LABEL } from "./constants.js";
 
+// Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
+// để ở localStorage cho tức thì thay vì chờ ghi lên máy chủ mỗi lần đổi trang.
+// Bọc try/catch vì trình duyệt ở chế độ ẩn danh có thể chặn localStorage.
+export function readLocalUi(key, fallback) {
+  try {
+    const v = window.localStorage.getItem(`tj:${key}`);
+    return v === null ? fallback : v;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+export function writeLocalUi(key, value) {
+  try {
+    window.localStorage.setItem(`tj:${key}`, value);
+  } catch (e) {
+    /* bỏ qua — chỉ là tiện ích, không phải dữ liệu quan trọng */
+  }
+}
+
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }

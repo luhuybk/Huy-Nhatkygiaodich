@@ -1,6 +1,6 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes } from "lucide-react";
-import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect } from "./ui.jsx";
+import { CellImagePreview, ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
@@ -405,7 +405,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
 // Ba mục này cùng trả lời một câu hỏi ("setup nào mình đã bỏ lỡ hoặc chưa nhận ra?"),
 // nên gộp về một trang thay vì ba mục rời rạc ngoài menu.
 export function SetupHubSection({ missedSetups, skippedSetups, setupVariants, resources, onChangeMissed, onChangeSkipped, onChangeVariants }) {
-  const [tab, setTab] = useState("missed");
+  const [tab, setTab] = useStickyTab("setupHubTab", "missed", ["missed", "skipped", "variants"]);
   const tabs = [
     { key: "missed", label: "Bị miss", icon: EyeOff, count: missedSetups.length },
     { key: "skipped", label: "Bị skip", icon: SkipForward, count: skippedSetups.length },
@@ -980,7 +980,7 @@ export function NewsLogSection({ items, onChange }) {
 }
 
 export function JourneySection({ lessons, resources, trades, onChangeLessons, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples }) {
-  const [tab, setTab] = useState("lessons");
+  const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["lessons", "process", "problems", "news"]);
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
     const thisMonday = startOfWeek(todayStr());

@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
-import { formatVN } from "../lib/helpers.js";
+import { formatVN, readLocalUi, writeLocalUi } from "../lib/helpers.js";
+
+// Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
+// không làm màn hình trắng — rơi về fallback.
+export function useStickyTab(key, fallback, allowed) {
+  const [value, setValue] = useState(() => {
+    const saved = readLocalUi(key, fallback);
+    return allowed && !allowed.includes(saved) ? fallback : saved;
+  });
+  useEffect(() => { writeLocalUi(key, value); }, [key, value]);
+  return [value, setValue];
+}
 
 export function CellImagePreview({ image, link }) {
   const [hover, setHover] = useState(false);

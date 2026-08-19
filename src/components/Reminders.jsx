@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye } from "lucide-react";
-import { ConfirmButton, Field } from "./ui.jsx";
+import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { emptyReminder, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
 import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
@@ -86,7 +86,7 @@ export function ReminderBell({ reminders, onOpen }) {
 
 export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, slMutedTrades, onSlMutedTradesChange }) {
   const [editing, setEditing] = useState(null);
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useStickyTab("remindersTab", "today", ["today", "all", "sl", "setupcheck", "symbolwatch"]);
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
   const list = tab === "today" ? dueList : reminders;

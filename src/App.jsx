@@ -17,7 +17,7 @@ import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
 import { NotesSection } from "./components/Notes.jsx";
 import { SettingsSection } from "./components/Settings.jsx";
-import { SloganBar } from "./components/ui.jsx";
+import { SloganBar, useStickyTab } from "./components/ui.jsx";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
 const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.DimensionPerformance })));
@@ -34,6 +34,45 @@ const TradeForm = lazy(() => import("./components/TradeForm.jsx").then((m) => ({
 const SetupHubSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupHubSection })));
 const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.JourneySection })));
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
+
+const NAV_GROUPS = [
+  {
+    label: "Theo dõi", items: [
+      { key: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
+      { key: "journal", label: "Nhật ký", icon: BookOpen },
+      { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
+      { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
+      { key: "setuphub", label: "Setup tổng hợp", icon: Shapes },
+    ]
+  },
+  {
+    label: "Phân tích", items: [
+      { key: "analysis", label: "Phân tích", icon: LineChartIcon },
+      { key: "tradeanalysis", label: "Phân tích lệnh", icon: Target },
+      { key: "symbolperf", label: "Hiệu suất Symbol", icon: Hash },
+      { key: "setupperf", label: "Hiệu suất Setup", icon: Star },
+      { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
+      { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
+      { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
+      { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
+    ]
+  },
+  {
+    label: "Quản lý", items: [
+      { key: "reminders", label: "Thông báo", icon: Bell },
+      { key: "accounts", label: "Tài khoản", icon: Wallet },
+      { key: "setuplib", label: "Setup mẫu", icon: Layers },
+      { key: "notes", label: "Ghi chú", icon: StickyNote },
+      { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
+      { key: "principles", label: "Nguyên tắc", icon: ListChecks },
+      { key: "resources", label: "Tài nguyên", icon: Database },
+    ]
+  },
+  { label: "Hệ thống", items: [{ key: "settings", label: "Cài đặt", icon: Settings }] },
+];
+
+// Trang không có trong danh sách này (VD "form") sẽ không được khôi phục sau khi tải lại.
+const NAV_KEYS = NAV_GROUPS.flatMap((g) => g.items).map((i) => i.key);
 
 function LazyFallback() {
   return <p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>;
@@ -63,7 +102,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [symbolWatches, setSymbolWatches] = useState([]);
   const [setupCheckLog, setSetupCheckLog] = useState([]);
   const [slMutedTrades, setSlMutedTrades] = useState([]);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useStickyTab("view", "dashboard", NAV_KEYS);
   const [activeAccount, setActiveAccount] = useState("");
   const [viewingTrade, setViewingTrade] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -417,42 +456,6 @@ function AppShell({ onSignOut, userEmail }) {
     setView("dashboard");
   };
 
-  const navGroups = [
-    {
-      label: "Theo dõi", items: [
-        { key: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
-        { key: "journal", label: "Nhật ký", icon: BookOpen },
-        { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
-        { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
-        { key: "setuphub", label: "Setup tổng hợp", icon: Shapes },
-      ]
-    },
-    {
-      label: "Phân tích", items: [
-        { key: "analysis", label: "Phân tích", icon: LineChartIcon },
-        { key: "tradeanalysis", label: "Phân tích lệnh", icon: Target },
-        { key: "symbolperf", label: "Hiệu suất Symbol", icon: Hash },
-        { key: "setupperf", label: "Hiệu suất Setup", icon: Star },
-        { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
-        { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
-        { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
-        { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
-      ]
-    },
-    {
-      label: "Quản lý", items: [
-        { key: "reminders", label: "Thông báo", icon: Bell },
-        { key: "accounts", label: "Tài khoản", icon: Wallet },
-        { key: "setuplib", label: "Setup mẫu", icon: Layers },
-        { key: "notes", label: "Ghi chú", icon: StickyNote },
-        { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
-        { key: "principles", label: "Nguyên tắc", icon: ListChecks },
-        { key: "resources", label: "Tài nguyên", icon: Database },
-      ]
-    },
-    { label: "Hệ thống", items: [{ key: "settings", label: "Cài đặt", icon: Settings }] },
-  ];
-  const nav = navGroups.flatMap((g) => g.items);
   const goTo = (key) => { setView(key); setMobileNavOpen(false); };
 
   const openRiskBadges = resources.accounts
@@ -493,7 +496,7 @@ function AppShell({ onSignOut, userEmail }) {
             <button type="button" className="quickadd-btn" title="Thêm tài khoản" onClick={() => goTo("accounts")}><PlusCircle size={16} /></button>
           </div>
           <div className="nav">
-            {navGroups.map((g) => (
+            {NAV_GROUPS.map((g) => (
               <div className="nav-group" key={g.label}>
                 <span className="nav-group-label">{g.label}</span>
                 {g.items.map((n) => {
