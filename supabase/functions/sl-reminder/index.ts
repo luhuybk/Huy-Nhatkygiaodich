@@ -73,9 +73,12 @@ function minutesDiff(a: string, b: string) {
 type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type WatchGroup = {
   id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
-  hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
+  hours?: string[]; activeDays?: string[];
   symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
 };
+
+// Function này CHỈ ĐỌC symbolWatches. Chống gửi trùng đã có slReminderLog lo, nên không cần
+// ghi lại gì — tránh luôn việc ghi đè mất thay đổi người dùng vừa thực hiện trên web.
 
 // Bản ghi cũ (một symbol/bản ghi) vẫn có thể còn trong DB nếu cron chạy trước khi người dùng
 // mở web để chuyển đổi. Dùng chính tên symbol làm id để nút bấm vẫn khớp được ở webhook.
@@ -87,7 +90,7 @@ function watchSymbols(w: WatchGroup): { id: string; name: string; done: boolean 
   }
   return String(w.symbol || "")
     .split(",")
-    .map((x) => x.trim().toUpperCase())
+    .map((x) => x.replace(/\|/g, "").trim().toUpperCase()) // "|" là dấu phân cách của callback_data
     .filter(Boolean)
     .map((name) => ({ id: name, name, done: !!w.done }));
 }
@@ -212,7 +215,6 @@ Deno.serve(async () => {
       accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string;
     }[];
     let logChanged = false;
-    let watchesChanged = false;
     let mutedChanged = false;
     let checkLogChanged = false;
 
@@ -358,8 +360,6 @@ Deno.serve(async () => {
           });
 
           if (ok) {
-            w.lastNotifiedAt = new Date().toISOString();
-            watchesChanged = true;
             log[logKey] = true;
             logChanged = true;
             watchMessages++;
@@ -367,13 +367,6 @@ Deno.serve(async () => {
           }
         }
       }
-    }
-
-    if (watchesChanged) {
-      await supabase.from("app_data").upsert(
-        { user_id: row.user_id, key: "symbolWatches", value: watches, updated_at: new Date().toISOString() },
-        { onConflict: "user_id,key" }
-      );
     }
 
     if (mutedChanged) {

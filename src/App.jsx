@@ -204,13 +204,18 @@ function AppShell({ onSignOut, userEmail }) {
         const remote = server.find((x) => x.id === w.id);
         const before = (prev || []).find((x) => x.id === w.id);
         if (!remote || !before) return w;
-        // Chỉ lấy giá trị từ server cho những trường mà lần sửa này người dùng KHÔNG đụng tới.
-        // Nếu người dùng vừa bấm "Nhắc lại ngay" thì ý muốn của họ phải thắng.
-        const keep = {};
-        ["snoozeUntil", "done", "lastNotifiedAt"].forEach((k) => {
-          if (w[k] === before[k] && remote[k] !== undefined) keep[k] = remote[k];
-        });
-        return { ...w, ...keep };
+        // Trạng thái "đã ngừng theo dõi" nằm ở TỪNG SYMBOL, do nút bấm trên Telegram ghi.
+        // Chỉ lấy giá trị server cho những symbol mà lần sửa này người dùng không đụng tới —
+        // nếu họ vừa bật lại một symbol trên web thì ý muốn đó phải thắng.
+        return {
+          ...w,
+          symbols: (w.symbols || []).map((sym) => {
+            const remoteSym = (remote.symbols || []).find((x) => x.id === sym.id);
+            const beforeSym = (before.symbols || []).find((x) => x.id === sym.id);
+            if (!remoteSym || !beforeSym) return sym;
+            return sym.done === beforeSym.done ? { ...sym, done: !!remoteSym.done } : sym;
+          }),
+        };
       });
     }
     setSymbolWatches(merged);

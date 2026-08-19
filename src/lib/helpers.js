@@ -117,7 +117,6 @@ export function emptySymbolWatch() {
   return {
     id: uid(), label: "", symbols: [], note: "", enabled: true,
     hours: [...SYMBOL_WATCH_DEFAULT_HOURS], activeDays: [...WEEKDAY_CODES],
-    lastNotifiedAt: "",
   };
 }
 

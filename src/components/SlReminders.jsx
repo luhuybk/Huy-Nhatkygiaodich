@@ -3,7 +3,7 @@ import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
   emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, mergeSymbolList, parseHoursInput,
-  parseSymbolList, setupCheckStats, setupCheckStreak, symbolWatchText,
+  parseSymbolList, setupCheckStats, setupCheckStreak,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
@@ -439,15 +439,18 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
 
                 {/* Sửa cả danh sách bằng một ô chữ; bấm từng chip để bật/tắt riêng một symbol. */}
                 <input className="input input-inline" style={{ width: "100%", marginTop: 8 }}
-                  defaultValue={symbolWatchText(w)} placeholder="XAUUSD, EURUSD, GBPJPY"
+                  defaultValue={symbols.map((x) => x.name).join(", ")} placeholder="XAUUSD, EURUSD, GBPJPY"
                   title="Danh sách symbol, cách nhau bằng dấu phẩy"
                   onBlur={(e) => {
                     const next = mergeSymbolList(e.target.value, symbols);
-                    if (!next.length) { e.target.value = symbolWatchText(w); return; }
                     e.target.value = next.map((x) => x.name).join(", ");
                     updateWatch(w.id, { symbols: next });
                   }} />
-                {symbols.length ? (
+                {symbols.length === 0 ? (
+                  <p className="field-hint" style={{ marginTop: 6, color: "var(--loss)" }}>
+                    Nhóm chưa có symbol nào — sẽ không gửi thông báo. Điền vào ô trên, hoặc xóa nhóm nếu không dùng nữa.
+                  </p>
+                ) : (
                   <div className="watch-symbol-chips">
                     {symbols.map((x) => (
                       <button key={x.id} type="button"
@@ -461,7 +464,7 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
                       {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
                     </span>
                   </div>
-                ) : null}
+                )}
 
                 <div className="sl-reminder-days">
                   {WEEKDAY_CODES.map((day) => (

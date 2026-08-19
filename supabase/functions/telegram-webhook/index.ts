@@ -19,7 +19,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type Watch = {
   id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
-  hours?: string[]; activeDays?: string[]; lastNotifiedAt?: string;
+  hours?: string[]; activeDays?: string[];
   symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
 };
 
