@@ -54,6 +54,19 @@
           color:#fff; font-size:10.5px; font-weight:700; line-height:16px; text-align:center; }
         .subtab-badge-muted { background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); line-height:14px; }
         .upload-btn-busy { opacity:0.6; cursor:progress; }
+        .sort-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; }
+        .sort-chip { display:inline-flex; align-items:center; gap:2px; border-radius:20px; overflow:hidden;
+          border:1px solid rgba(212,162,78,0.4); background:rgba(212,162,78,0.12); }
+        .sort-chip button { background:none; border:none; cursor:pointer; color:var(--accent);
+          font-size:12px; font-weight:600; padding:4px 9px; display:inline-flex; align-items:center; gap:4px; }
+        .sort-chip button:hover { background:rgba(212,162,78,0.18); }
+        .sort-chip-order { font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; color:#1a1206;
+          background:var(--accent); padding:2px 6px; align-self:stretch; display:flex; align-items:center; }
+        .sort-chip-x { color:var(--text-dim) !important; padding:4px 7px 4px 2px !important; }
+        .sort-chip-x:hover { color:var(--loss) !important; }
+        .sort-bar .sort-add { flex:0 0 auto; width:auto; min-width:118px; padding:5px 8px; font-size:12px; }
+        .th-sort-order { display:inline-block; margin-left:3px; font-size:9.5px; font-weight:700; color:var(--accent);
+          vertical-align:2px; }
         .watch-symbol-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
         .watch-symbol-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; cursor:pointer;
           font-size:12px; font-weight:600; background:rgba(212,162,78,0.12); border:1px solid rgba(212,162,78,0.4); color:var(--accent); }

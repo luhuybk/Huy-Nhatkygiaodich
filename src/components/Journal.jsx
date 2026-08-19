@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -198,17 +198,60 @@ const JOURNAL_COLUMNS = [
   { key: "hasLesson", label: "Bài học" },
 ];
 
+// Hiện rõ đang sắp xếp theo những cấp nào — vừa để biết, vừa là cách thêm/bớt cấp
+// trên điện thoại (không giữ Shift được).
+function SortBar({ sort, onChange }) {
+  const cols = JOURNAL_COLUMNS.filter((c) => c.key);
+  const labelOf = (key) => (cols.find((c) => c.key === key) || {}).label || key;
+  const used = new Set(sort.map((l) => l.key));
+  const flip = (i) => onChange(sort.map((l, x) => (x === i ? { ...l, dir: l.dir === "desc" ? "asc" : "desc" } : l)));
+  const remove = (i) => onChange(sort.filter((_, x) => x !== i));
+  const add = (key) => { if (key) onChange([...sort, { key, dir: "desc" }]); };
+  const available = cols.filter((c) => !used.has(c.key));
+
+  return (
+    <div className="sort-bar">
+      <span className="field-hint" style={{ margin: 0 }}>Sắp xếp:</span>
+      {sort.map((l, i) => (
+        <span key={l.key} className="sort-chip">
+          {sort.length > 1 ? <span className="sort-chip-order">{i + 1}</span> : null}
+          <button type="button" onClick={() => flip(i)} title="Đổi chiều tăng/giảm">
+            {labelOf(l.key)} {l.dir === "asc" ? "↑" : "↓"}
+          </button>
+          {sort.length > 1 ? (
+            <button type="button" className="sort-chip-x" onClick={() => remove(i)} title="Bỏ cấp này"><X size={11} /></button>
+          ) : null}
+        </span>
+      ))}
+      {available.length ? (
+        <select className="input input-inline sort-add" value="" onChange={(e) => add(e.target.value)}>
+          <option value="">+ thêm cấp</option>
+          {available.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+        </select>
+      ) : null}
+      <span className="field-hint" style={{ margin: 0 }}>Hoặc giữ Shift khi bấm tiêu đề cột.</span>
+    </div>
+  );
+}
+
 export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange }) {
   const res = resources || { checklistItems: [] };
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   const selectable = !!selected && !!onToggleOne;
   const allSelected = selectable && trades.length > 0 && trades.every((t) => selected.has(t.id));
   const sortable = !!onSortChange;
-  // Bấm cột đang sắp xếp thì đảo chiều, bấm cột khác thì bắt đầu ở chiều giảm dần
-  // (ngày mới nhất / lãi lớn nhất lên đầu — hợp với thói quen soi nhật ký).
-  const clickHeader = (key) => {
+  const levels = sort || [];
+  // Bấm thường: chỉ sắp xếp theo cột đó (bấm lại để đảo chiều).
+  // Giữ Shift: thêm cột đó thành cấp phụ, để vừa gom theo tài khoản vừa xếp theo ngày.
+  const clickHeader = (key, shiftKey) => {
     if (!sortable || !key) return;
-    onSortChange(sort && sort.key === key ? { key, dir: sort.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" });
+    const at = levels.findIndex((l) => l.key === key);
+    const flipped = at >= 0 ? { key, dir: levels[at].dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" };
+    if (!shiftKey) {
+      onSortChange([at === 0 && levels.length === 1 ? flipped : { key, dir: at >= 0 ? levels[at].dir : "desc" }]);
+      return;
+    }
+    onSortChange(at >= 0 ? levels.map((l, i) => (i === at ? flipped : l)) : [...levels, { key, dir: "desc" }]);
   };
   return (
     <div className="table-wrap">
@@ -221,14 +264,19 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
               </th>
             ) : null}
             {JOURNAL_COLUMNS.map((col, i) => {
-              const active = sortable && col.key && sort && sort.key === col.key;
+              const at = sortable && col.key ? levels.findIndex((l) => l.key === col.key) : -1;
               return (
                 <th key={col.key || `col-${i}`}
-                  className={sortable && col.key ? `th-sortable ${active ? "th-sorted" : ""}` : ""}
-                  onClick={() => clickHeader(col.key)}
-                  title={sortable && col.key ? `Sắp xếp theo ${col.label}` : undefined}>
+                  className={sortable && col.key ? `th-sortable ${at >= 0 ? "th-sorted" : ""}` : ""}
+                  onClick={(e) => clickHeader(col.key, e.shiftKey)}
+                  title={sortable && col.key ? `Sắp xếp theo ${col.label} — giữ Shift để thêm làm cấp phụ` : undefined}>
                   {col.label}
-                  {active ? <ArrowUpDown size={11} className={sort.dir === "asc" ? "th-sort-asc" : ""} style={{ marginLeft: 4, verticalAlign: -1 }} /> : null}
+                  {at >= 0 ? (
+                    <>
+                      <ArrowUpDown size={11} className={levels[at].dir === "asc" ? "th-sort-asc" : ""} style={{ marginLeft: 4, verticalAlign: -1 }} />
+                      {levels.length > 1 ? <span className="th-sort-order">{at + 1}</span> : null}
+                    </>
+                  ) : null}
                 </th>
               );
             })}
@@ -379,7 +427,10 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
   const filters = (uiSettings && uiSettings.journalFilters) || {};
-  const sort = (uiSettings && uiSettings.journalSort) || { key: "entryDate", dir: "desc" };
+  const sort = useMemo(() => {
+    const levels = normalizeSort(uiSettings && uiSettings.journalSort);
+    return levels.length ? levels : [{ key: "entryDate", dir: "desc" }];
+  }, [uiSettings]);
   const setFilters = (updater) => {
     const next = typeof updater === "function" ? updater(filters) : updater;
     onUiSettingsChange({ ...uiSettings, journalFilters: next });
@@ -449,6 +500,7 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
               </button>
             </div>
           </div>
+          <SortBar sort={sort} onChange={setSort} />
           <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} />
         </div>
       ) : (

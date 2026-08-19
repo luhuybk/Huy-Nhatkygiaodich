@@ -119,7 +119,7 @@ export const ACCENT_PRESETS = { gold: "#d4a24e", green: "#2fae66", blue: "#4a90e
 export const DEFAULT_UI_SETTINGS = {
   mode: "dark", accent: "gold", journeySlogan: "Kỷ luật hôm nay, thành quả ngày mai.", defaultRemindersSeeded: false,
   // Ghi nhớ bộ lọc + kiểu sắp xếp của Nhật ký để rời trang quay lại không phải chọn lại
-  journalFilters: {}, journalSort: { key: "entryDate", dir: "desc" },
+  journalFilters: {}, journalSort: [{ key: "entryDate", dir: "desc" }],
 };
 
 export const DEFAULT_PRINCIPLES = { follow: [], avoid: [] };

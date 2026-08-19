@@ -919,19 +919,32 @@ export function tradeSortValue(t, key, resources) {
   }
 }
 
+// Kiểu sắp xếp là một DANH SÁCH cấp: cấp 1 quyết định trước, hòa mới xét cấp 2...
+// Dữ liệu cũ lưu một object {key, dir} nên bọc lại thành mảng cho tương thích.
+export function normalizeSort(sort) {
+  if (!sort) return [];
+  const list = Array.isArray(sort) ? sort : [sort];
+  const seen = new Set();
+  return list
+    .filter((s) => s && s.key && !seen.has(s.key) && seen.add(s.key) !== false)
+    .map((s) => ({ key: s.key, dir: s.dir === "asc" ? "asc" : "desc" }));
+}
+
 export function sortTrades(trades, sort, resources) {
-  const { key, dir } = sort || {};
-  if (!key) return trades;
-  const mul = dir === "asc" ? 1 : -1;
+  const levels = normalizeSort(sort);
+  if (!levels.length) return trades;
   return [...trades].sort((a, b) => {
-    const av = tradeSortValue(a, key, resources);
-    const bv = tradeSortValue(b, key, resources);
-    if (av === null && bv === null) return (b.createdAt || 0) - (a.createdAt || 0);
-    if (av === null) return 1; // ô trống luôn xuống cuối
-    if (bv === null) return -1;
-    if (av < bv) return -1 * mul;
-    if (av > bv) return 1 * mul;
-    return (b.createdAt || 0) - (a.createdAt || 0); // hòa thì lệnh nhập sau lên trước
+    for (const { key, dir } of levels) {
+      const mul = dir === "asc" ? 1 : -1;
+      const av = tradeSortValue(a, key, resources);
+      const bv = tradeSortValue(b, key, resources);
+      if (av === null && bv === null) continue; // cùng trống thì để cấp sau phân định
+      if (av === null) return 1; // ô trống luôn xuống cuối, bất kể chiều sắp xếp
+      if (bv === null) return -1;
+      if (av < bv) return -1 * mul;
+      if (av > bv) return 1 * mul;
+    }
+    return (b.createdAt || 0) - (a.createdAt || 0); // hòa hết thì lệnh nhập sau lên trước
   });
 }
 
