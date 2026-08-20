@@ -36,6 +36,7 @@ export function emptyTrade() {
     inTradeImages: [{ link: "", image: "" }], inTradeNote: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
+    partialExits: [],
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
     psychology: "", ratingPsychology: 0, psychologyNote: "",
@@ -791,15 +792,67 @@ export function renameInArrayField(items, fields, oldName, newName) {
   return { items: changed ? next : items, changed };
 }
 
+// ---- Thoát lệnh từng phần ---------------------------------------------------
+// Chốt bớt 25-50% rồi trailing phần còn lại là một lệnh chứ không phải hai, nên
+// mỗi lần chốt là một dòng con của lệnh đó. R của mỗi lần vẫn chia cho rủi ro ban
+// đầu của cả lệnh — chốt 50% được 300$ với rủi ro 100$ là 3R, không phải 6R.
+export const PARTIAL_MAX = 4;
+
+export function emptyPartialExit() {
+  return { id: uid(), date: "", time: "", percent: "", profit: "", link: "", image: "", note: "" };
+}
+
+export function partialExitsOf(t) {
+  return Array.isArray(t && t.partialExits) ? t.partialExits.filter(Boolean) : [];
+}
+
+function numOrNull(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function partialExitR(row, riskAmount) {
+  const profit = numOrNull(row && row.profit);
+  const risk = numOrNull(riskAmount);
+  return profit === null || !risk ? null : profit / risk;
+}
+
+export function partialExitStats(t) {
+  const rows = partialExitsOf(t);
+  const risk = numOrNull(t && t.riskAmount);
+  let profit = 0;
+  let percent = 0;
+  let filled = 0;
+  rows.forEach((row) => {
+    const p = numOrNull(row.profit);
+    if (p !== null) { profit += p; filled += 1; }
+    const pc = numOrNull(row.percent);
+    if (pc !== null) percent += pc;
+  });
+  return {
+    count: rows.length, filled, profit, percent,
+    remainingPercent: 100 - percent,
+    rr: filled && risk ? profit / risk : null,
+  };
+}
+
 export function computeResult(trade) {
-  const profit = trade.profit === "" || trade.profit === null || trade.profit === undefined ? null : Number(trade.profit);
-  const riskAmount = trade.riskAmount === "" || trade.riskAmount === null || trade.riskAmount === undefined ? null : Number(trade.riskAmount);
+  const finalProfit = numOrNull(trade.profit);
+  const riskAmount = numOrNull(trade.riskAmount);
+  const partial = partialExitStats(trade);
+  // Lệnh chỉ tính là đã đóng khi điền lợi nhuận lần đóng cuối. Chốt bớt vài phần
+  // mà chưa đóng hẳn thì vẫn là lệnh đang mở — mọi thống kê "lệnh đã đóng" đang
+  // dựa vào đây, và tiền của phần còn lại thì vẫn đang chạy.
+  const status = finalProfit !== null ? "closed" : "open";
+  const profit = status === "closed" ? finalProfit + partial.profit : null;
   let rr = null;
-  if (profit !== null && riskAmount && riskAmount !== 0) rr = profit / riskAmount;
-  let outcome = null;
-  if (profit !== null) outcome = profit > 0 ? "win" : profit < 0 ? "loss" : "be";
-  const status = profit !== null ? "closed" : "open";
-  return { profit, riskAmount, rr, outcome, status };
+  if (profit !== null && riskAmount) rr = profit / riskAmount;
+  const outcome = profit !== null ? (profit > 0 ? "win" : profit < 0 ? "loss" : "be") : null;
+  return {
+    profit, riskAmount, rr, outcome, status,
+    finalProfit, partialProfit: partial.profit, partialCount: partial.count, partialFilled: partial.filled,
+  };
 }
 
 export function accountBalance(account, ledger, trades) {
@@ -1217,7 +1270,10 @@ const CSV_COLUMNS = [
   ["Ngày exit", (t) => t.exitDate],
   ["Giờ exit", (t) => t.exitTime],
   ["Giờ giữ lệnh", (t) => { const h = holdHours(t); return h === null ? "" : h.toFixed(2); }],
-  ["Lãi/Lỗ", (t) => t.profit],
+  ["Lãi/Lỗ (tổng)", (t) => { const { profit } = computeResult(t); return profit === null ? "" : profit; }],
+  ["Số lần chốt bớt", (t) => partialExitsOf(t).length || ""],
+  ["Lãi/Lỗ chốt bớt", (t) => { const st = partialExitStats(t); return st.filled ? st.profit : ""; }],
+  ["% vị thế đã chốt bớt", (t) => { const st = partialExitStats(t); return st.count ? st.percent : ""; }],
   ["RR", (t) => { const { rr } = computeResult(t); return rr === null ? "" : rr.toFixed(2); }],
   ["Kết quả", (t) => { const { status, outcome } = computeResult(t); return status === "open" ? "Đang mở" : outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"; }],
   ["Vào lệnh", (t) => t.entrySkill],

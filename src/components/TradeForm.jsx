@@ -1,8 +1,112 @@
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle } from "lucide-react";
-import { CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
+import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Scissors } from "lucide-react";
+import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyTrade, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitsOf, partialExitStats, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+
+// Số phần trăm hiển thị gọn: 50 chứ không phải 50.00, nhưng 12.5 thì vẫn giữ.
+function fmtPercent(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return `${Number(n.toFixed(2))}%`;
+}
+
+// Chốt quá 100% là điền sai, hiện số âm chỉ càng rối — cảnh báo riêng bên dưới lo việc đó.
+function fmtRemaining(v) {
+  return fmtPercent(Math.max(0, Number(v) || 0));
+}
+
+// Mỗi lần chốt bớt là một dòng con của lệnh: ngày giờ, phần trăm vị thế đã đóng,
+// lợi nhuận thu về, ảnh và lý do. R của dòng tính trên rủi ro ban đầu của cả lệnh.
+function PartialExits({ trade, onChange }) {
+  const rows = partialExitsOf(trade);
+  const stats = partialExitStats(trade);
+  const risk = trade.riskAmount;
+  const setRow = (id, patch) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const addRow = () => {
+    if (rows.length >= PARTIAL_MAX) return;
+    // Lần chốt mới thường cùng ngày với lần trước, điền sẵn cho đỡ gõ lại.
+    const last = rows[rows.length - 1];
+    onChange([...rows, { ...emptyPartialExit(), date: (last && last.date) || trade.exitDate || "" }]);
+  };
+  const removeRow = (id) => onChange(rows.filter((r) => r.id !== id));
+
+  return (
+    <>
+      {rows.length === 0 ? (
+        <p className="empty-note" style={{ padding: "6px 0 12px" }}>
+          Chưa có lần chốt bớt nào. Chỉ dùng khi bạn đóng một phần vị thế trước rồi mới trailing phần còn lại.
+        </p>
+      ) : null}
+
+      {rows.map((row, i) => {
+        const rr = partialExitR(row, risk);
+        return (
+          <div key={row.id} className="partial-row">
+            <div className="partial-row-head">
+              <span className="partial-row-num">Lần {i + 1}</span>
+              {rr === null ? (
+                <span className="field-hint" style={{ margin: 0 }}>
+                  {row.profit === "" ? "Điền lợi nhuận để tính R" : "Điền Rủi ro (số tiền) ở mục 2 để tính R"}
+                </span>
+              ) : (
+                <span className={`partial-row-r ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}>
+                  {rr > 0 ? "+" : ""}{rr.toFixed(2)}R
+                </span>
+              )}
+              <ConfirmButton onConfirm={() => removeRow(row.id)} label="Xóa lần chốt bớt này" />
+            </div>
+            <div className="grid-2">
+              <Field label="Ngày chốt bớt">
+                <input type="date" className="input" value={row.date} onChange={(e) => setRow(row.id, { date: e.target.value })} />
+              </Field>
+              <Field label="Giờ chốt bớt">
+                <input type="time" className="input" value={row.time} onChange={(e) => setRow(row.id, { time: e.target.value })} />
+              </Field>
+              <Field label="% vị thế đã đóng" hint="Ví dụ 25 hoặc 50">
+                <input type="number" min="0" max="100" step="0.5" className="input" value={row.percent}
+                  onChange={(e) => setRow(row.id, { percent: e.target.value })} placeholder="50" />
+              </Field>
+              <Field label="Lợi nhuận thu về">
+                <MoneyInput value={row.profit} onChange={(v) => setRow(row.id, { profit: v })} placeholder="+300" />
+              </Field>
+            </div>
+            <Field label="Link / hình ảnh lúc chốt bớt">
+              <ImageOrLink link={row.link} image={row.image} onLinkChange={(v) => setRow(row.id, { link: v })}
+                onImageChange={(v) => setRow(row.id, { image: v })} label={`partial-${i}`} />
+            </Field>
+            <Field label="Lý do / ghi chú">
+              <textarea className="input textarea" value={row.note} onChange={(e) => setRow(row.id, { note: e.target.value })}
+                placeholder="Vì sao chốt bớt ở đây — chạm kháng cự, đủ mục tiêu, tin ra..." />
+            </Field>
+          </div>
+        );
+      })}
+
+      {rows.length < PARTIAL_MAX ? (
+        <button type="button" className="btn btn-ghost" onClick={addRow}>
+          <Scissors size={14} /> Thêm lần chốt bớt
+        </button>
+      ) : (
+        <p className="field-hint">Tối đa {PARTIAL_MAX} lần chốt bớt cho một lệnh.</p>
+      )}
+
+      {stats.count ? (
+        <div className="partial-total">
+          <span>Đã chốt {fmtPercent(stats.percent)} vị thế · còn lại {fmtRemaining(stats.remainingPercent)}</span>
+          <strong className={stats.profit > 0 ? "text-win" : stats.profit < 0 ? "text-loss" : ""}>
+            {fmt(stats.profit)}{stats.rr === null ? "" : ` · ${stats.rr > 0 ? "+" : ""}${stats.rr.toFixed(2)}R`}
+          </strong>
+        </div>
+      ) : null}
+      {stats.percent > 100 ? (
+        <p className="field-hint" style={{ color: "var(--loss)" }}>
+          Tổng phần trăm đã chốt vượt quá 100% — xem lại các con số, hoặc lệnh này nên tách thành hai lệnh riêng.
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
@@ -11,6 +115,8 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
   const missing = (key) => isFieldMissing(t, key);
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
+  const partial = partialExitStats(t);
+  const total = computeResult(t);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
   const existingOpenRisk = selectedAccount
@@ -169,7 +275,11 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         </Field>
       </Section>
 
-      <Section num="1B" title="Đóng lệnh" subtitle="Điền khi lệnh đã hoàn thành">
+      <Section num="1B" title="Thoát lệnh từng phần" subtitle="Chốt bớt 25-50% rồi trailing phần còn lại" optional>
+        <PartialExits trade={t} onChange={set("partialExits")} />
+      </Section>
+
+      <Section num="1C" title="Đóng lệnh" subtitle="Đóng nốt phần vị thế còn lại">
         <div className="grid-3">
           <Field label="Ngày exit" incomplete={missing("exitDate")}>
             <input type="date" className="input" value={t.exitDate} onChange={(e) => set("exitDate")(e.target.value)} />
@@ -177,10 +287,21 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
           <Field label="Giờ exit" hint="Tùy chọn — giúp tính chính xác thời gian giữ lệnh đến từng giờ">
             <input type="time" className="input" value={t.exitTime} onChange={(e) => set("exitTime")(e.target.value)} />
           </Field>
-          <Field label="Lợi nhuận (+/-, theo tiền tệ tài khoản)" incomplete={missing("profit")}>
+          <Field label={partial.count ? "Lợi nhuận phần còn lại" : "Lợi nhuận (+/-, theo tiền tệ tài khoản)"}
+            hint={partial.count ? `Chỉ điền phần đóng nốt — ${fmtRemaining(partial.remainingPercent)} vị thế còn lại` : undefined}
+            incomplete={missing("profit")}>
             <MoneyInput value={t.profit} onChange={set("profit")} placeholder="+150 hoặc -100" />
           </Field>
         </div>
+        {partial.filled ? (
+          <div className="partial-total">
+            <span>Cộng dồn cả lệnh</span>
+            <strong className={total.profit > 0 ? "text-win" : total.profit < 0 ? "text-loss" : ""}>
+              {fmt(partial.profit)} (chốt bớt) {t.profit === "" ? "" : `+ ${fmt(Number(t.profit))} (đóng nốt) = ${fmt(total.profit)}`}
+              {total.rr === null ? "" : ` · ${total.rr > 0 ? "+" : ""}${total.rr.toFixed(2)}R`}
+            </strong>
+          </div>
+        ) : null}
         <Field label="Link / hình ảnh lúc thoát lệnh" incomplete={missing("exitVisual")}>
           <ImageOrLink link={t.exitLink} image={t.exitImage} onLinkChange={set("exitLink")} onImageChange={set("exitImage")} label="exit" />
         </Field>

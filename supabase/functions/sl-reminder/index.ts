@@ -114,6 +114,19 @@ function signed(n: number, digits: number) {
 
 // Mỗi tài khoản một loại tiền — cộng thẳng sẽ ra số vô nghĩa, phải quy về USD trước.
 // Khớp với toUSD() ở src/lib/helpers.js: fxRates lưu "bao nhiêu đơn vị cho 1 USD".
+// Chốt bớt 25-50% rồi trailing phần còn lại: mỗi lần chốt là một dòng con của lệnh.
+function partialProfitOf(t: Record<string, unknown>) {
+  const rows = Array.isArray(t.partialExits) ? t.partialExits : [];
+  let sum = 0;
+  for (const row of rows) {
+    const v = (row as { profit?: unknown })?.profit;
+    if (v === "" || v === null || v === undefined) continue;
+    const n = Number(v);
+    if (!Number.isNaN(n)) sum += n;
+  }
+  return sum;
+}
+
 function toUSD(amount: number, currency: string | undefined, fxRates: Record<string, number> | undefined) {
   if (!currency || currency === "USD") return amount;
   const rate = (fxRates && fxRates[currency]) || 1;
@@ -372,8 +385,10 @@ Deno.serve(async () => {
         const closed = trades.filter((t) => inRange(t.exitDate as string | undefined));
         let win = 0, loss = 0, be = 0, totalR = 0, rCount = 0, usd = 0, usdCount = 0;
         for (const t of closed) {
-          const profit = t.profit === "" || t.profit === null || t.profit === undefined ? null : Number(t.profit);
-          if (profit === null || Number.isNaN(profit)) continue;
+          const closingProfit = t.profit === "" || t.profit === null || t.profit === undefined ? null : Number(t.profit);
+          if (closingProfit === null || Number.isNaN(closingProfit)) continue;
+          // Lời/lỗ cả lệnh = các lần chốt bớt + lần đóng nốt, giống hệt bên web.
+          const profit = closingProfit + partialProfitOf(t);
           if (profit > 0) win++; else if (profit < 0) loss++; else be++;
           const risk = Number(t.riskAmount);
           if (t.riskAmount !== "" && t.riskAmount !== null && t.riskAmount !== undefined && risk && !Number.isNaN(risk)) {

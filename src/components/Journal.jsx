@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
@@ -66,6 +66,9 @@ function tradeImageShots(t) {
   (t.inTradeImages || []).forEach((img, i) => {
     if (img && (img.image || img.link)) shots.push({ key: `in-${i}`, label: `Trong lệnh ${i + 1}`, image: img.image, link: img.link });
   });
+  partialExitsOf(t).forEach((row, i) => {
+    if (row.image || row.link) shots.push({ key: `part-${i}`, label: `Chốt bớt lần ${i + 1}`, image: row.image, link: row.link });
+  });
   if (t.exitImage || t.exitLink) shots.push({ key: "exit", label: "Thoát lệnh", image: t.exitImage, link: t.exitLink });
   return shots;
 }
@@ -73,7 +76,9 @@ function tradeImageShots(t) {
 export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   if (!trade) return null;
   const t = trade;
-  const { rr, outcome, status } = computeResult(t);
+  const { rr, outcome, status, profit } = computeResult(t);
+  const partial = partialExitStats(t);
+  const partialRows = partialExitsOf(t);
   const score = avgPillarScore(t);
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
   const checklistEntries = Object.entries(t.checklist || {});
@@ -110,7 +115,16 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Ngày exit" value={t.exitDate} />
               <DetailRow label="Giờ exit" value={t.exitTime} />
               <DetailRow label="TG giữ lệnh" value={fmtHold(holdHours(t))} />
-              <DetailRow label="Lợi nhuận" value={t.profit === "" ? "—" : fmt(Number(t.profit))} tone={Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""} />
+              {partial.count ? (
+                <DetailRow label="Lợi nhuận chốt bớt" value={partial.filled ? fmt(partial.profit) : "—"}
+                  tone={partial.profit > 0 ? "text-win" : partial.profit < 0 ? "text-loss" : ""} />
+              ) : null}
+              {partial.count ? (
+                <DetailRow label="Lợi nhuận đóng nốt" value={t.profit === "" ? "—" : fmt(Number(t.profit))}
+                  tone={Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""} />
+              ) : null}
+              <DetailRow label={partial.count ? "Lợi nhuận cả lệnh" : "Lợi nhuận"} value={profit === null ? "—" : fmt(profit)}
+                tone={profit > 0 ? "text-win" : profit < 0 ? "text-loss" : ""} />
               <DetailRow label="RR thực" value={rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`} tone={rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""} />
               <DetailRow label="Kết quả" value={status === "open" ? "Đang mở" : outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"} />
             </DetailGroup>
@@ -143,6 +157,20 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <span>Trung bình</span><strong>{score === null ? "—" : `${score.toFixed(1)} / 5 ★`}</strong>
             </div>
           </DetailGroup>
+
+          {partialRows.length > 0 ? (
+            <DetailGroup title="Thoát lệnh từng phần">
+              {partialRows.map((row, i) => {
+                const r = partialExitR(row, t.riskAmount);
+                return (
+                  <DetailRow key={row.id || i} label={`Lần ${i + 1}${row.date ? ` · ${row.date}` : ""}${row.time ? ` ${row.time}` : ""}`}
+                    value={`${row.percent === "" ? "—" : `${row.percent}%`} · ${row.profit === "" ? "—" : fmt(Number(row.profit))}${r === null ? "" : ` · ${r > 0 ? "+" : ""}${r.toFixed(2)}R`}${row.note ? ` — ${row.note}` : ""}`}
+                    tone={Number(row.profit) > 0 ? "text-win" : Number(row.profit) < 0 ? "text-loss" : ""} />
+                );
+              })}
+              <DetailRow label="Tổng đã chốt bớt" value={`${Number(partial.percent.toFixed(2))}% vị thế · ${fmt(partial.profit)}${partial.rr === null ? "" : ` · ${partial.rr > 0 ? "+" : ""}${partial.rr.toFixed(2)}R`}`} />
+            </DetailGroup>
+          ) : null}
 
           {checklistEntries.length > 0 ? (
             <DetailGroup title="Checklist">
@@ -295,7 +323,11 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
         </thead>
         <tbody>
           {trades.map((t) => {
-            const { rr, outcome, status } = computeResult(t);
+            const { rr, outcome, status, profit: cellProfit, partialProfit, partialCount, partialFilled } = computeResult(t);
+            // Lệnh chưa đóng hẳn nhưng đã chốt bớt thì vẫn cho thấy số tiền đã bỏ túi,
+            // để mờ đi vì nó chưa phải kết quả cuối của lệnh.
+            const settled = cellProfit !== null;
+            const banked = settled ? cellProfit : (partialFilled ? partialProfit : null);
             const cp = checklistProgress(t, res);
             const completion = tradeCompletion(t);
             const shots = tradeImageShots(t);
@@ -316,9 +348,10 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <td>{t.setup || "—"}</td>
                 <td className="mono">{t.timeframe || "—"}</td>
                 <td className="mono">{t.riskPercent === "" || t.riskPercent === null || t.riskPercent === undefined ? "—" : `${t.riskPercent}%`}</td>
-                <td className={`mono ${Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""}`}
-                  title={t.profit === "" ? "" : `Quy đổi: ${fmtMoney(tradeProfitUSD(t, res), "USD")}`}>
-                  {t.profit === "" ? "—" : fmtMoney(Number(t.profit), tradeCurrency(t, res))}
+                <td className={`mono ${banked === null ? "" : settled ? (banked > 0 ? "text-win" : banked < 0 ? "text-loss" : "") : "partial-pending"}`}
+                  title={banked === null ? "" : settled ? `Quy đổi: ${fmtMoney(tradeProfitUSD(t, res), "USD")}` : "Đã chốt bớt một phần — lệnh chưa đóng hẳn"}>
+                  {banked === null ? "—" : fmtMoney(banked, tradeCurrency(t, res))}
+                  {partialCount ? <span className="partial-badge" title={`Đã chốt bớt ${partialCount} lần`}>×{partialCount}</span> : null}
                 </td>
                 <td className={`mono ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}>{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</td>
                 <td>{status === "open" ? <span className="status-pill open">Đang mở</span> :
