@@ -163,7 +163,8 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
       ) : tab === "symbolwatch" ? (
         <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
       ) : tab === "timeline" ? (
-        <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders} onSettingsChange={onSlReminderSettingsChange} />
+        <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
+          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange} />
       ) : (
       <div className="reminder-list">
         {list.length === 0 ? (

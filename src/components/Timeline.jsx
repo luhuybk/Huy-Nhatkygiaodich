@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle, Clock } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Clock, GripHorizontal } from "lucide-react";
 import { Field } from "./ui.jsx";
 import {
-  TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes,
-  buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, weekdayCodeFromNumber,
+  TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
+  buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes,
+  weekdayCodeFromNumber,
 } from "../lib/helpers.js";
 
 // Trục ngang luôn dừng ở mốc giờ tròn, và luôn rộng ít nhất 4 tiếng để một ngày
@@ -11,6 +12,8 @@ import {
 const MIN_SPAN = 240;
 // Chừa chỗ bên phải cho nhãn nằm ngoài khối, để tên việc không bị cắt cụt.
 const LABEL_SPACE = 300;
+// Nhích dưới ngần này coi như bấm nhầm chứ không phải kéo.
+const DRAG_THRESHOLD = 3;
 
 function trackRange(items) {
   if (!items.length) return { from: 8 * 60, to: 22 * 60 };
@@ -25,12 +28,65 @@ function trackRange(items) {
   return { from, to };
 }
 
-function DayTrack({ items, conflicts }) {
+function DayTrack({ items, conflicts, onMove }) {
   const { from, to } = trackRange(items);
   const span = to - from;
   const hours = [];
   for (let m = from; m <= to; m += 60) hours.push(m);
   const pct = (m) => ((m - from) / span) * 100;
+  const dragRef = useRef(null);
+  const [drag, setDrag] = useState(null);
+
+  const onDrag = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    if (!d.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
+    d.moved = true;
+    d.next = snapMinutes(d.origin + (dx / d.width) * span);
+    setDrag({ id: d.id, start: d.next });
+  };
+
+  const endDrag = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (!d || !d.moved || d.next === undefined || d.next === d.origin) return;
+    onMove(d.item, minutesToHhmm(d.next));
+  };
+
+  // Theo dõi trên window chứ không trên khối, để thả tay ở đâu cũng kết thúc gọn —
+  // kể cả khi kéo vượt ra ngoài khối. Hàm gắn vào window phải cố định qua các lần vẽ
+  // mới gỡ ra được, nên phần thân thật nằm trong `live`.
+  const live = useRef({});
+  live.current.move = onDrag;
+  live.current.end = endDrag;
+  const win = useRef(null);
+  if (!win.current) {
+    const detach = () => {
+      window.removeEventListener("pointermove", win.current.move);
+      window.removeEventListener("pointerup", win.current.up);
+      window.removeEventListener("pointercancel", win.current.up);
+    };
+    win.current = {
+      move: (e) => live.current.move(e),
+      up: () => { detach(); live.current.end(); },
+      detach,
+      attach: () => {
+        window.addEventListener("pointermove", win.current.move);
+        window.addEventListener("pointerup", win.current.up);
+        window.addEventListener("pointercancel", win.current.up);
+      },
+    };
+  }
+  useEffect(() => () => win.current.detach(), []);
+
+  const startDrag = (e, item) => {
+    const width = e.currentTarget.parentElement.getBoundingClientRect().width;
+    if (!width) return;
+    dragRef.current = { id: item.id, item, startX: e.clientX, width, origin: item.start, moved: false };
+    win.current.attach();
+  };
 
   return (
     <div className="tl-track-wrap">
@@ -47,19 +103,26 @@ function DayTrack({ items, conflicts }) {
         {items.map((x) => {
           const k = taskKind(x.kind);
           const clash = conflicts.has(x.id);
+          const moving = drag && drag.id === x.id;
+          const start = moving ? drag.start : x.start;
           return (
             <div key={x.id} className={`tl-row ${x.enabled ? "" : "tl-row-off"}`}>
               <div className="tl-row-grid">
                 {hours.map((m) => <span key={m} className="tl-gridline" style={{ left: `${pct(m)}%` }} />)}
               </div>
-              <div className={`tl-block ${clash ? "tl-block-clash" : ""}`}
+              <div className={`tl-block ${clash ? "tl-block-clash" : ""} ${moving ? "tl-block-moving" : ""}`}
                 style={{
-                  left: `${pct(x.start)}%`, width: `${Math.max((x.minutes / span) * 100, 1.2)}%`,
+                  left: `${pct(start)}%`, width: `${Math.max((x.minutes / span) * 100, 1.2)}%`,
                   background: x.enabled ? `${k.color}33` : "transparent",
                   borderColor: x.enabled ? k.color : "var(--border)",
                 }}
-                title={`${x.title}${x.sub ? ` · ${x.sub}` : ""} — ${minutesToHhmm(x.start)}-${minutesToHhmm(x.start + x.minutes)}`}>
-                <span className="tl-block-label">{minutesToHhmm(x.start)} · {x.title}{x.sub ? ` · ${x.sub}` : ""}</span>
+                onPointerDown={(e) => startDrag(e, x)}
+                title={`Kéo ngang để dời giờ — đổi cho cả ${(x.days || []).join(", ")}`}>
+                <GripHorizontal size={11} className="tl-block-grip" />
+                <span className="tl-block-label">
+                  {minutesToHhmm(start)} · {x.title}{x.sub ? ` · ${x.sub}` : ""}
+                  {moving && start !== x.start ? <b className="tl-block-delta"> ← {minutesToHhmm(x.start)}</b> : null}
+                </span>
               </div>
             </div>
           );
@@ -69,19 +132,72 @@ function DayTrack({ items, conflicts }) {
   );
 }
 
-export function TimelinePanel({ settings, watches, reminders, onSettingsChange }) {
+function SourceDurations({ sources, onChange }) {
+  const groups = TASK_KINDS
+    .map((k) => ({ kind: k, rows: sources.filter((s) => s.kind === k.key) }))
+    .filter((g) => g.rows.length);
+  if (!groups.length) return <p className="empty-note">Chưa có lịch nào để chỉnh.</p>;
+  return (
+    <div className="tl-src-list">
+      {groups.map(({ kind, rows }) => (
+        <div key={kind.key} className="tl-src-group">
+          <span className="tl-kind-label tl-src-group-title"><i style={{ background: kind.color }} /> {kind.label}</span>
+          {rows.map((s) => (
+            <div key={s.key} className={`tl-src ${s.enabled ? "" : "tl-src-off"}`}>
+              <span className="tl-src-name">{s.name}</span>
+              <span className="field-hint tl-src-meta" style={{ margin: 0 }}>
+                {s.hours.length ? s.hours.join(", ") : "chưa đặt giờ"} · {s.activeDays.join(" ")}
+              </span>
+              <span className="tl-src-input">
+                <input type="number" min="1" max="720" className="input" value={s.override}
+                  placeholder={`${taskMinutes(null, s.kind)}`}
+                  onChange={(e) => onChange(s, e.target.value)} />
+                <span className="field-hint" style={{ margin: 0 }}>phút</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function TimelinePanel({ settings, watches, reminders, onSettingsChange, onWatchesChange, onRemindersChange }) {
   const [day, setDay] = useState(() => weekdayCodeFromNumber(new Date().getDay()));
   // Cài đặt cũ chưa có mục này — nhớ lại kết quả để timeline không phải tính lại mỗi lần vẽ.
   const durations = useMemo(() => settings.taskDurations || emptyTaskDurations(), [settings]);
   const args = useMemo(() => ({ settings, watches, reminders, durations }), [settings, watches, reminders, durations]);
   const week = useMemo(() => buildWeekTimeline(args), [args]);
+  const sources = useMemo(() => timelineSources(args), [args]);
   const today = week.find((d) => d.day === day) || week[0];
   const conflicts = useMemo(() => timelineConflicts(today.items), [today]);
   const busiest = Math.max(1, ...week.map((d) => d.load.minutes));
   const totalConflicts = week.reduce((n, d) => n + d.load.conflicts, 0);
 
-  const setDuration = (key, value) => {
+  const setDefaultDuration = (key, value) => {
     onSettingsChange({ ...settings, taskDurations: { ...durations, [key]: value } });
+  };
+
+  // Mọi thay đổi ghi thẳng về bản ghi gốc ở tab tương ứng, nên timeline không giữ
+  // bản sao lịch nào của riêng nó — sửa ở đâu cũng ra cùng một kết quả.
+  const applyPatch = (source, patch) => {
+    const res = applyTaskPatch({ settings, watches, reminders }, source, patch);
+    if (res.changed === "settings") onSettingsChange(res.settings);
+    else if (res.changed === "watches") onWatchesChange(res.watches);
+    else if (res.changed === "reminders") onRemindersChange(res.reminders);
+  };
+  // Dời trúng đúng mốc giờ mà lịch đó đã có thì từ chối: gộp lại là âm thầm xoá
+  // mất một lần nhắc, mà người dùng không hề bảo xoá.
+  const [notice, setNotice] = useState("");
+  const moveTask = (item, hhmm) => {
+    if (!hhmm || hhmm === item.source.hour || hhmmToMinutes(hhmm) === null) return;
+    const src = sources.find((s) => s.kind === item.source.kind && s.id === item.source.id);
+    if (src && src.hours.includes(hhmm)) {
+      setNotice(`${src.name} đã có mốc ${hhmm} rồi — chọn giờ khác, hoặc xoá bớt mốc ở tab tương ứng.`);
+      return;
+    }
+    setNotice("");
+    applyPatch(item.source, { hour: hhmm });
   };
 
   return (
@@ -92,7 +208,7 @@ export function TimelinePanel({ settings, watches, reminders, onSettingsChange }
         Lịch đang tắt vẫn hiện nhưng mờ đi và không tính vào tổng.
       </p>
 
-      <h3 className="block-title" style={{ marginTop: 0 }}>Thời gian dự kiến cho mỗi loại việc</h3>
+      <h3 className="block-title" style={{ marginTop: 0 }}>Thời gian dự kiến — mặc định theo loại việc</h3>
       <p className="field-hint" style={{ marginBottom: 10 }}>
         Tính bằng phút. Đây là con số dùng để xếp khối lên timeline và để phát hiện trùng giờ —
         kiểm tra setup 30-40 phút thì đặt 35, dời SL chỉ liếc qua thì đặt 5.
@@ -102,11 +218,18 @@ export function TimelinePanel({ settings, watches, reminders, onSettingsChange }
           <Field key={k.key} label={<span className="tl-kind-label"><i style={{ background: k.color }} /> {k.label}</span>}>
             <input type="number" min="1" max="720" className="input"
               value={durations[k.key] ?? k.defaultMinutes}
-              onChange={(e) => setDuration(k.key, e.target.value)}
-              onBlur={(e) => setDuration(k.key, taskMinutes({ [k.key]: e.target.value }, k.key))} />
+              onChange={(e) => setDefaultDuration(k.key, e.target.value)}
+              onBlur={(e) => setDefaultDuration(k.key, taskMinutes({ [k.key]: e.target.value }, k.key))} />
           </Field>
         ))}
       </div>
+
+      <h3 className="block-title">Riêng từng lịch</h3>
+      <p className="field-hint" style={{ marginBottom: 10 }}>
+        Bỏ trống thì dùng số mặc định ở trên. Chỉ điền khi một lịch tốn khác hẳn —
+        kiểm tra setup Forex mất 40 phút trong khi VN Stock chỉ 10.
+      </p>
+      <SourceDurations sources={sources} onChange={(s, value) => applyPatch({ kind: s.kind, id: s.id }, { minutes: value })} />
 
       <h3 className="block-title">Cả tuần</h3>
       <div className="tl-week">
@@ -124,7 +247,7 @@ export function TimelinePanel({ settings, watches, reminders, onSettingsChange }
         <p className="field-hint" style={{ color: "var(--win)" }}>Không có việc nào chồng giờ nhau trong tuần.</p>
       ) : (
         <p className="field-hint" style={{ color: "var(--loss)" }}>
-          Có {totalConflicts} việc bị chồng giờ trong tuần — cột đỏ ở trên là ngày dính. Dời bớt giờ nhắc ở tab tương ứng để giãn ra.
+          Có {totalConflicts} việc bị chồng giờ trong tuần — cột đỏ ở trên là ngày dính. Kéo khối bên dưới để giãn ra.
         </p>
       )}
 
@@ -133,14 +256,21 @@ export function TimelinePanel({ settings, watches, reminders, onSettingsChange }
         <p className="empty-note">Ngày này chưa có lịch nào. Đặt giờ nhắc ở các tab Nhắc dời SL, Kiểm tra setup hoặc Symbol theo dõi.</p>
       ) : (
         <>
-          <DayTrack items={today.items} conflicts={conflicts} />
+          <p className="field-hint" style={{ marginBottom: 8 }}>
+            Kéo ngang một khối để dời giờ (nhích theo từng 5 phút), hoặc sửa thẳng ô giờ trong danh sách bên dưới.
+            Mỗi lịch dùng chung một danh sách giờ cho mọi thứ nó đang bật, nên dời ở đây là dời cho cả những ngày kia.
+          </p>
+          {notice ? <p className="field-hint" style={{ marginBottom: 8, color: "var(--loss)" }}>{notice}</p> : null}
+          <DayTrack items={today.items} conflicts={conflicts} onMove={moveTask} />
           <div className="tl-list">
             {today.items.map((x) => {
               const k = taskKind(x.kind);
               const clash = conflicts.has(x.id);
               return (
                 <div key={x.id} className={`tl-item ${x.enabled ? "" : "tl-item-off"}`}>
-                  <span className="mono tl-item-time">{minutesToHhmm(x.start)}</span>
+                  <input type="time" className="input tl-item-time" value={x.source.hour}
+                    title={`Đổi giờ — áp dụng cho ${(x.days || []).join(", ")}`}
+                    onChange={(e) => moveTask(x, e.target.value)} />
                   <span className="tl-item-dot" style={{ background: x.enabled ? k.color : "var(--border)" }} />
                   <span className="tl-item-title">{x.title}</span>
                   {x.sub ? <span className="field-hint" style={{ margin: 0 }}>{x.sub}</span> : null}

@@ -392,12 +392,16 @@ export function emptyTaskDurations() {
   return out;
 }
 
-// Bỏ trống hoặc điền số vô lý thì quay về mặc định, để timeline không bao giờ vỡ.
-export function taskMinutes(durations, kind) {
-  const fallback = (TASK_KINDS.find((k) => k.key === kind) || {}).defaultMinutes || 10;
-  const n = Number((durations || {})[kind]);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(Math.round(n), 12 * 60);
+// Thứ tự ưu tiên: số riêng của lịch đó → số chung của loại việc → mặc định.
+// Bỏ trống hoặc điền số vô lý thì rơi xuống mức sau, để timeline không bao giờ vỡ.
+export function taskMinutes(durations, kind, override) {
+  const clean = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.round(n), 12 * 60) : null;
+  };
+  return clean(override)
+    ?? clean((durations || {})[kind])
+    ?? ((TASK_KINDS.find((k) => k.key === kind) || {}).defaultMinutes || 10);
 }
 
 export function hhmmToMinutes(hhmm) {
@@ -424,13 +428,18 @@ export function weekdayCodeFromNumber(n) {
   return WEEKDAY_CODES[(Number(n) + 6) % 7];
 }
 
-function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId }) {
+function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id }) {
   const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
   (hours || []).forEach((h) => {
     const start = hhmmToMinutes(h);
     if (start === null) return;
-    out.push({ id: `${sourceId}_${h}`, kind, title, sub, start, minutes, enabled });
+    // `source` cho biết đổi giờ thì phải ghi ngược vào bản ghi nào, và `days` để
+    // nhắc rằng giờ này dùng chung cho mọi thứ mà lịch đó đang bật.
+    out.push({
+      id: `${sourceId}_${h}`, kind, title, sub, start, minutes, enabled,
+      source: { kind, key: sourceId, id, hour: h }, days,
+    });
   });
 }
 
@@ -439,21 +448,21 @@ function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, min
 export function buildDayTimeline(day, { settings, watches, reminders, durations }) {
   const st = settings || {};
   const out = [];
-  const mins = (kind) => taskMinutes(durations, kind);
+  const mins = (kind, override) => taskMinutes(durations, kind, override);
 
   (st.schedules || []).forEach((s) => {
     pushHours(out, {
       hours: s.hours, activeDays: s.activeDays, day, kind: "sl",
-      title: "Dời SL", sub: s.accountName || "", minutes: mins("sl"),
-      enabled: !!st.enabled && !!s.enabled, sourceId: `sl_${s.accountId}`,
+      title: "Dời SL", sub: s.accountName || "", minutes: mins("sl", s.minutes),
+      enabled: !!st.enabled && !!s.enabled, sourceId: `sl_${s.accountId}`, id: s.accountId,
     });
   });
 
   (st.setupCheckSchedules || []).forEach((s) => {
     pushHours(out, {
       hours: s.hours, activeDays: s.activeDays, day, kind: "setupCheck",
-      title: "Kiểm tra setup", sub: s.accountName || "", minutes: mins("setupCheck"),
-      enabled: !!st.setupCheckEnabled && !!s.enabled, sourceId: `sc_${s.accountId}`,
+      title: "Kiểm tra setup", sub: s.accountName || "", minutes: mins("setupCheck", s.minutes),
+      enabled: !!st.setupCheckEnabled && !!s.enabled, sourceId: `sc_${s.accountId}`, id: s.accountId,
     });
   });
 
@@ -462,8 +471,8 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations 
     pushHours(out, {
       hours: w.hours, activeDays: w.activeDays, day, kind: "symbolWatch",
       title: "Symbol theo dõi", sub: `${w.label || "Nhóm chưa đặt tên"} · ${live} symbol`,
-      minutes: mins("symbolWatch"),
-      enabled: !!st.symbolWatchEnabled && !!w.enabled && live > 0, sourceId: `w_${w.id}`,
+      minutes: mins("symbolWatch", w.minutes),
+      enabled: !!st.symbolWatchEnabled && !!w.enabled && live > 0, sourceId: `w_${w.id}`, id: w.id,
     });
   });
 
@@ -475,8 +484,8 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations 
     if (!cfg) return;
     pushHours(out, {
       hours: [cfg.time], activeDays: [cfg.weekday], day, kind: "report",
-      title, sub: "Hằng tuần", minutes: mins("report"),
-      enabled: !!cfg.enabled, sourceId: id,
+      title, sub: "Hằng tuần", minutes: mins("report", cfg.minutes),
+      enabled: !!cfg.enabled, sourceId: id, id,
     });
   });
 
@@ -485,7 +494,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations 
     pushHours(out, {
       hours: [r.notifyTime || "08:00"], activeDays: [weekdayCodeFromNumber(r.weekday)], day,
       kind: "reminder", title: r.title || "Nhắc nhở", sub: "Hằng tuần",
-      minutes: mins("reminder"), enabled: r.active !== false, sourceId: `r_${r.id}`,
+      minutes: mins("reminder", r.minutes), enabled: r.active !== false, sourceId: `r_${r.id}`, id: r.id,
     });
   });
 
@@ -524,6 +533,91 @@ export function buildWeekTimeline(args) {
     const items = buildDayTimeline(day, args);
     return { day, items, load: timelineDayLoad(items) };
   });
+}
+
+// Danh sách mọi lịch đang tồn tại, để chỉnh thời gian dự kiến riêng cho từng cái —
+// kiểm tra setup của Forex-H3 tốn 40 phút trong khi VN Stock chỉ 10.
+export function timelineSources({ settings, watches, reminders, durations }) {
+  const st = settings || {};
+  const out = [];
+  const add = (kind, id, key, name, hours, activeDays, enabled, override) => {
+    out.push({
+      key, kind, id, name, hours: hours || [], activeDays: activeDays || WEEKDAY_CODES,
+      enabled, override: override === undefined || override === null ? "" : override,
+      minutes: taskMinutes(durations, kind, override),
+    });
+  };
+
+  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled, x.minutes));
+  (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes));
+  (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes));
+  if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
+  if (st.weeklySummary) add("report", "weekly", "weekly", "Tổng kết tuần", [st.weeklySummary.time], [st.weeklySummary.weekday], !!st.weeklySummary.enabled, st.weeklySummary.minutes);
+  (reminders || []).forEach((r) => {
+    if (r.frequency !== "weekly" || !r.notifyTelegram) return;
+    add("reminder", r.id, `r_${r.id}`, r.title || "Nhắc nhở", [r.notifyTime || "08:00"], [weekdayCodeFromNumber(r.weekday)], r.active !== false, r.minutes);
+  });
+  return out;
+}
+
+// Đổi một mốc giờ: giữ danh sách không trùng và luôn sắp xếp, để lần sau đọc ra
+// vẫn theo đúng thứ tự trong ngày.
+function replaceHour(hours, oldHour, newHour) {
+  const next = (hours || []).map((h) => (h === oldHour ? newHour : h));
+  return [...new Set(next)].sort();
+}
+
+function patchItem(item, source, patch) {
+  const next = { ...item };
+  if (patch.hour) next.hours = replaceHour(item.hours, source.hour, patch.hour);
+  if ("minutes" in patch) next.minutes = patch.minutes;
+  return next;
+}
+
+// Ghi một thay đổi (dời giờ hoặc đổi thời gian dự kiến) ngược về đúng bản ghi gốc.
+// `changed` cho biết phải lưu khoá nào, để không ghi đè những khoá không liên quan.
+export function applyTaskPatch({ settings, watches, reminders }, source, patch) {
+  const st = settings || {};
+  const mapList = (list, match) => (list || []).map((x) => (match(x) ? patchItem(x, source, patch) : x));
+
+  if (source.kind === "sl") {
+    return { settings: { ...st, schedules: mapList(st.schedules, (x) => x.accountId === source.id) }, changed: "settings" };
+  }
+  if (source.kind === "setupCheck") {
+    return { settings: { ...st, setupCheckSchedules: mapList(st.setupCheckSchedules, (x) => x.accountId === source.id) }, changed: "settings" };
+  }
+  if (source.kind === "symbolWatch") {
+    return { watches: mapList(watches, (x) => x.id === source.id), changed: "watches" };
+  }
+  if (source.kind === "report") {
+    const key = source.id === "weekly" ? "weeklySummary" : "incompleteReminder";
+    const cfg = st[key] || {};
+    const next = { ...cfg };
+    if (patch.hour) next.time = patch.hour;
+    if ("minutes" in patch) next.minutes = patch.minutes;
+    return { settings: { ...st, [key]: next }, changed: "settings" };
+  }
+  if (source.kind === "reminder") {
+    return {
+      reminders: (reminders || []).map((r) => {
+        if (r.id !== source.id) return r;
+        const next = { ...r };
+        if (patch.hour) next.notifyTime = patch.hour;
+        if ("minutes" in patch) next.minutes = patch.minutes;
+        return next;
+      }),
+      changed: "reminders",
+    };
+  }
+  return { changed: null };
+}
+
+// Kéo khối trên timeline nhích theo từng 5 phút — đủ mượt mà vẫn ra giờ tròn trịa.
+export const TIMELINE_SNAP = 5;
+
+export function snapMinutes(mins) {
+  const v = Math.round(mins / TIMELINE_SNAP) * TIMELINE_SNAP;
+  return Math.max(0, Math.min(v, 23 * 60 + 55));
 }
 
 export function emptyCapitalAccount() {
