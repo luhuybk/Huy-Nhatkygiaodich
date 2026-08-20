@@ -38,7 +38,7 @@ export function emptyTrade() {
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
-    psychology: "", ratingPsychology: 0,
+    psychology: "", ratingPsychology: 0, psychologyNote: "",
     tradeGrade: "", reviewNote: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
@@ -981,6 +981,7 @@ const CSV_COLUMNS = [
   ["Lý do vào lệnh", (t) => t.entryReason],
   ["Cảm nghĩ trong lệnh", (t) => t.inTradeNote],
   ["Cảm nhận kỹ năng", (t) => t.skillNote],
+  ["Cảm nghĩ tâm lý", (t) => t.psychologyNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
 ];
 

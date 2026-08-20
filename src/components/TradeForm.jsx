@@ -216,6 +216,9 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         <Field label="Tự đánh giá tâm lý" incomplete={missing("ratingPsychology")}>
           <StarRating value={t.ratingPsychology} onChange={set("ratingPsychology")} />
         </Field>
+        <Field label="Cảm nghĩ về tâm lý" hint="Tùy chọn — viết thêm cảm nghĩ về trạng thái tâm lý của bạn ở lệnh này">
+          <textarea className="input textarea" value={t.psychologyNote || ""} onChange={(e) => set("psychologyNote")(e.target.value)} placeholder="Lúc đó bạn sợ, tham, nôn nóng hay bình tĩnh — vì sao..." />
+        </Field>
       </Section>
 
       <Section num="6" title="Chấm điểm" subtitle="Tổng hợp 4 trụ cột sao đã tự đánh giá ở trên">

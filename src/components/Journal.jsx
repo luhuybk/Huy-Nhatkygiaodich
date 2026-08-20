@@ -122,6 +122,7 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Thoát lệnh" value={t.exitSkill} />
               <DetailRow label="Cảm nhận kỹ năng" value={t.skillNote} />
               <DetailRow label="Tâm lý" value={t.psychology} />
+              <DetailRow label="Cảm nghĩ tâm lý" value={t.psychologyNote} />
             </DetailGroup>
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
