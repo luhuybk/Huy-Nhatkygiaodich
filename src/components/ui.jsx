@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, Check, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
+import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
 import { formatVN, readLocalUi, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 
@@ -338,17 +338,26 @@ export function ChecklistEditor({ items, onChange, placeholder }) {
   );
 }
 
-export function Section({ num, title, subtitle, children, optional }) {
+// `collapsible` dành cho các mục không bắt buộc: form đã dài nên mặc định gấp lại,
+// nhưng lệnh nào đã có dữ liệu trong đó thì mở sẵn để không giấu mất thứ đã điền.
+export function Section({ num, title, subtitle, children, optional, collapsible, defaultOpen, badge }) {
+  const [open, setOpen] = useState(!collapsible || !!defaultOpen);
+  const shown = !collapsible || open;
+  const Head = collapsible ? "button" : "div";
   return (
-    <div className={`section ${optional ? "section-optional" : ""}`}>
-      <div className="section-head">
+    <div className={`section ${optional ? "section-optional" : ""} ${collapsible && !open ? "section-closed" : ""}`}>
+      <Head type={collapsible ? "button" : undefined} className="section-head"
+        onClick={collapsible ? () => setOpen((v) => !v) : undefined}
+        aria-expanded={collapsible ? open : undefined}>
         <span className="section-num">{num}</span>
         <span className="section-titles">
           <span className="section-title">{title}{optional ? <span className="section-optional-tag">Không bắt buộc</span> : null}</span>
           {subtitle ? <span className="section-sub">{subtitle}</span> : null}
         </span>
-      </div>
-      <div className="section-body">{children}</div>
+        {collapsible && !open && badge ? <span className="section-badge">{badge}</span> : null}
+        {collapsible ? <ChevronDown size={16} className={`section-caret ${open ? "section-caret-open" : ""}`} /> : null}
+      </Head>
+      {shown ? <div className="section-body">{children}</div> : null}
     </div>
   );
 }

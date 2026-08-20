@@ -128,6 +128,8 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
   const completion = tradeCompletion(t);
   const partial = partialExitStats(t);
   const total = computeResult(t);
+  // Đếm xem mục 1A đã có gì chưa, để nhãn gấp lại nói được là trống hay đã điền.
+  const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
   const existingOpenRisk = selectedAccount
@@ -277,7 +279,8 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         </Field>
       </Section>
 
-      <Section num="1A" title="Trong khi lệnh chạy" subtitle="Diễn biến & cảm nghĩ trong lúc lệnh đang mở" optional>
+      <Section num="1A" title="Trong khi lệnh chạy" subtitle="Diễn biến & cảm nghĩ trong lúc lệnh đang mở" optional
+        collapsible defaultOpen={inTradeFilled > 0} badge={inTradeFilled ? `${inTradeFilled} mục đã điền` : "trống"}>
         <Field label="Link / hình ảnh trong khi lệnh chạy" hint={`Tối đa ${IN_TRADE_MAX_IMAGES} ảnh/link`}>
           <MultiImageOrLink items={t.inTradeImages} onChange={set("inTradeImages")} label="in-trade" max={IN_TRADE_MAX_IMAGES} />
         </Field>
@@ -286,7 +289,11 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
         </Field>
       </Section>
 
-      <Section num="1B" title="Thoát lệnh từng phần" subtitle="Chốt bớt 25-50% rồi trailing phần còn lại" optional>
+      <Section num="1B" title="Thoát lệnh từng phần" subtitle="Chốt bớt 25-50% rồi trailing phần còn lại" optional
+        collapsible defaultOpen={partial.count > 0}
+        badge={partial.count
+          ? `${partial.count} lần · ${fmtPercent(partial.percent)}${partial.filled ? ` · ${fmt(partial.profit)}` : ""}`
+          : "trống"}>
         <PartialExits trade={t} onChange={set("partialExits")} />
       </Section>
 
