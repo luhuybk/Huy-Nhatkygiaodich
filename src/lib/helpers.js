@@ -120,6 +120,7 @@ export function emptySlReminderSettings() {
     schedules: [], setupCheckEnabled: false, setupCheckSchedules: [],
     incompleteReminder: emptyIncompleteReminder(),
     weeklySummary: emptyWeeklySummary(),
+    taskDurations: emptyTaskDurations(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
   };
 }
@@ -367,6 +368,162 @@ export function reminderScheduleLabel(r) {
   if (r.frequency === "monthly") return `Hằng tháng · ngày ${r.dayOfMonth}`;
   if (r.frequency === "once") return `Một lần · ${r.date || "—"}`;
   return "—";
+}
+
+// ---- Timeline làm việc ------------------------------------------------------
+// Lịch nhắc nằm rải ở 3-4 khối cài đặt khác nhau nên không nhìn ra được một ngày
+// thật sự phải làm bao nhiêu việc, và hai việc dài có trùng giờ nhau hay không.
+// Phần dưới gom hết mọi lịch về cùng một trục thời gian của một thứ trong tuần.
+export const TASK_KINDS = [
+  { key: "sl", label: "Dời SL", defaultMinutes: 5, color: "#e0615a" },
+  { key: "setupCheck", label: "Kiểm tra setup", defaultMinutes: 30, color: "#d4a24e" },
+  { key: "symbolWatch", label: "Symbol theo dõi", defaultMinutes: 10, color: "#4a90e2" },
+  { key: "reminder", label: "Nhắc nhở riêng", defaultMinutes: 10, color: "#9b7fe0" },
+  { key: "report", label: "Tổng kết / nhắc điền", defaultMinutes: 15, color: "#4caf7d" },
+];
+
+export function taskKind(key) {
+  return TASK_KINDS.find((k) => k.key === key) || TASK_KINDS[0];
+}
+
+export function emptyTaskDurations() {
+  const out = {};
+  TASK_KINDS.forEach((k) => { out[k.key] = k.defaultMinutes; });
+  return out;
+}
+
+// Bỏ trống hoặc điền số vô lý thì quay về mặc định, để timeline không bao giờ vỡ.
+export function taskMinutes(durations, kind) {
+  const fallback = (TASK_KINDS.find((k) => k.key === kind) || {}).defaultMinutes || 10;
+  const n = Number((durations || {})[kind]);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.round(n), 12 * 60);
+}
+
+export function hhmmToMinutes(hhmm) {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((hhmm || "").trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+export function minutesToHhmm(mins) {
+  const v = Math.max(0, Math.round(mins));
+  return `${String(Math.floor(v / 60) % 24).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
+}
+
+export function fmtDuration(mins) {
+  const v = Math.max(0, Math.round(mins));
+  if (v < 60) return `${v}p`;
+  const h = Math.floor(v / 60);
+  const m = v % 60;
+  return m ? `${h}h${String(m).padStart(2, "0")}` : `${h}h`;
+}
+
+// Nhắc nhở riêng lưu thứ theo số của Date.getDay() (0 = Chủ nhật), còn các lịch
+// khác lưu theo mã "T2".."CN" — quy về cùng một mã trước khi so.
+export function weekdayCodeFromNumber(n) {
+  return WEEKDAY_CODES[(Number(n) + 6) % 7];
+}
+
+function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId }) {
+  const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
+  if (!days.includes(day)) return;
+  (hours || []).forEach((h) => {
+    const start = hhmmToMinutes(h);
+    if (start === null) return;
+    out.push({ id: `${sourceId}_${h}`, kind, title, sub, start, minutes, enabled });
+  });
+}
+
+// Trả về mọi việc của một thứ trong tuần, kể cả việc đang tắt (để hiện mờ) —
+// bên dùng tự lọc theo `enabled` khi cần cộng tổng.
+export function buildDayTimeline(day, { settings, watches, reminders, durations }) {
+  const st = settings || {};
+  const out = [];
+  const mins = (kind) => taskMinutes(durations, kind);
+
+  (st.schedules || []).forEach((s) => {
+    pushHours(out, {
+      hours: s.hours, activeDays: s.activeDays, day, kind: "sl",
+      title: "Dời SL", sub: s.accountName || "", minutes: mins("sl"),
+      enabled: !!st.enabled && !!s.enabled, sourceId: `sl_${s.accountId}`,
+    });
+  });
+
+  (st.setupCheckSchedules || []).forEach((s) => {
+    pushHours(out, {
+      hours: s.hours, activeDays: s.activeDays, day, kind: "setupCheck",
+      title: "Kiểm tra setup", sub: s.accountName || "", minutes: mins("setupCheck"),
+      enabled: !!st.setupCheckEnabled && !!s.enabled, sourceId: `sc_${s.accountId}`,
+    });
+  });
+
+  (watches || []).forEach((w) => {
+    const live = (w.symbols || []).filter((x) => !x.done).length;
+    pushHours(out, {
+      hours: w.hours, activeDays: w.activeDays, day, kind: "symbolWatch",
+      title: "Symbol theo dõi", sub: `${w.label || "Nhóm chưa đặt tên"} · ${live} symbol`,
+      minutes: mins("symbolWatch"),
+      enabled: !!st.symbolWatchEnabled && !!w.enabled && live > 0, sourceId: `w_${w.id}`,
+    });
+  });
+
+  const weeklyJobs = [
+    { cfg: st.incompleteReminder, title: "Nhắc điền nốt lệnh", id: "incomplete" },
+    { cfg: st.weeklySummary, title: "Tổng kết tuần", id: "weekly" },
+  ];
+  weeklyJobs.forEach(({ cfg, title, id }) => {
+    if (!cfg) return;
+    pushHours(out, {
+      hours: [cfg.time], activeDays: [cfg.weekday], day, kind: "report",
+      title, sub: "Hằng tuần", minutes: mins("report"),
+      enabled: !!cfg.enabled, sourceId: id,
+    });
+  });
+
+  (reminders || []).forEach((r) => {
+    if (r.frequency !== "weekly" || !r.notifyTelegram) return;
+    pushHours(out, {
+      hours: [r.notifyTime || "08:00"], activeDays: [weekdayCodeFromNumber(r.weekday)], day,
+      kind: "reminder", title: r.title || "Nhắc nhở", sub: "Hằng tuần",
+      minutes: mins("reminder"), enabled: r.active !== false, sourceId: `r_${r.id}`,
+    });
+  });
+
+  return out.sort((a, b) => a.start - b.start || a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title));
+}
+
+// Hai việc chồng nhau khi khoảng [bắt đầu, bắt đầu + dự kiến) giao nhau.
+// Việc đang tắt không tính — nó không thật sự chiếm thời gian của bạn.
+export function timelineConflicts(items) {
+  const live = (items || []).filter((x) => x.enabled);
+  const ids = new Set();
+  for (let i = 0; i < live.length; i += 1) {
+    for (let j = i + 1; j < live.length; j += 1) {
+      const a = live[i];
+      const b = live[j];
+      if (b.start < a.start + a.minutes && a.start < b.start + b.minutes) {
+        ids.add(a.id);
+        ids.add(b.id);
+      }
+    }
+  }
+  return ids;
+}
+
+export function timelineDayLoad(items) {
+  const live = (items || []).filter((x) => x.enabled);
+  return {
+    count: live.length,
+    minutes: live.reduce((n, x) => n + x.minutes, 0),
+    conflicts: timelineConflicts(live).size,
+  };
+}
+
+export function buildWeekTimeline(args) {
+  return WEEKDAY_CODES.map((day) => {
+    const items = buildDayTimeline(day, args);
+    return { day, items, load: timelineDayLoad(items) };
+  });
 }
 
 export function emptyCapitalAccount() {

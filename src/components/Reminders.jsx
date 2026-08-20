@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye } from "lucide-react";
+import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye, CalendarClock } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
-import { emptyReminder, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
+import { buildWeekTimeline, emptyReminder, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
 import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
+import { TimelinePanel } from "./Timeline.jsx";
 
 export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   const [r, setR] = useState(initial || emptyReminder());
@@ -86,12 +87,18 @@ export function ReminderBell({ reminders, onOpen }) {
 
 export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, slMutedTrades, onSlMutedTradesChange }) {
   const [editing, setEditing] = useState(null);
-  const [tab, setTab] = useStickyTab("remindersTab", "today", ["today", "all", "sl", "setupcheck", "symbolwatch"]);
+  const [tab, setTab] = useStickyTab("remindersTab", "today", ["today", "all", "sl", "setupcheck", "symbolwatch", "timeline"]);
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
   const list = tab === "today" ? dueList : reminders;
   const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
   const activeWatchCount = symbolWatchActiveCount(symbolWatches);
+  // Số việc bị chồng giờ trong tuần — hiện luôn trên nhãn tab để không phải mở ra mới biết.
+  const weekConflicts = useMemo(
+    () => buildWeekTimeline({ settings: slReminderSettings, watches: symbolWatches, reminders, durations: slReminderSettings.taskDurations })
+      .reduce((n, d) => n + d.load.conflicts, 0),
+    [slReminderSettings, symbolWatches, reminders]
+  );
 
   const markDone = (r) => {
     onChange(reminders.map((x) => (x.id === r.id ? { ...x, doneDates: [...(x.doneDates || []), ts] } : x)));
@@ -141,6 +148,12 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
             {activeWatchCount ? <span className="subtab-badge">{activeWatchCount}</span> : null}
           </span>
         </button>
+        <button className={`subtab ${tab === "timeline" ? "subtab-active" : ""}`} onClick={() => setTab("timeline")}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <CalendarClock size={12} /> Timeline làm việc
+            {weekConflicts ? <span className="subtab-badge subtab-badge-warn">{weekConflicts}</span> : null}
+          </span>
+        </button>
       </div>
       {tab === "sl" ? (
         <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange}
@@ -149,6 +162,8 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
         <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} checkLog={setupCheckLog} />
       ) : tab === "symbolwatch" ? (
         <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
+      ) : tab === "timeline" ? (
+        <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders} onSettingsChange={onSlReminderSettingsChange} />
       ) : (
       <div className="reminder-list">
         {list.length === 0 ? (
