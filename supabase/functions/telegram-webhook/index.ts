@@ -184,6 +184,24 @@ Deno.serve(async (req) => {
       notice = "✅ Đã ghi nhận, sẽ nhắc lại ở khung giờ kế tiếp.";
       messageSuffix = "\n\n✅ Đã dời SL — nhắc lại ở khung giờ kế tiếp.";
     }
+  } else if (kind === "mf") {
+    // Nhắc điền nhật ký cho lệnh đã bấm "Kết thúc lệnh" — tắt riêng nhắc này,
+    // vẫn giữ lệnh trong danh sách tắt nhắc dời SL.
+    const [tradeId] = rest;
+    const muted = ((await readValue(supabase, userId, "slMutedTrades")) || []) as { tradeId?: string; mutedAt?: string; fillDone?: boolean }[];
+    const entry = muted.find((m) => m.tradeId === tradeId);
+    if (!entry) {
+      await answerCallback(botToken, cb.id, "Lệnh này không còn trong danh sách nữa.");
+      return json({ ok: true, skipped: "muted entry gone" });
+    }
+    entry.fillDone = true;
+    const { error: saveErr } = await writeValue(supabase, userId, "slMutedTrades", muted);
+    if (saveErr) {
+      await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+      return json({ error: saveErr.message }, 500);
+    }
+    notice = "🔕 Đã ngừng nhắc điền cho lệnh này.";
+    messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
   } else {
     await answerCallback(botToken, cb.id, "Lệnh không hợp lệ.");
     return json({ ok: true, skipped: "unknown kind" });

@@ -18,6 +18,8 @@ const CHECK_LOG_RETENTION_DAYS = 90; // đủ dài để xem tỷ lệ hoàn th�
 const MAX_INCOMPLETE_LINES = 15; // tránh tin nhắn dài quá giới hạn Telegram
 const MAX_SL_MESSAGES_PER_RUN = 20; // chặn trường hợp mở quá nhiều lệnh làm spam Telegram
 const MAX_WATCH_MESSAGES_PER_RUN = 20; // tương tự cho nhóm symbol theo dõi
+const MAX_FILL_MESSAGES_PER_RUN = 10; // nhắc điền nhật ký cho lệnh đã bấm "Kết thúc lệnh"
+const MUTED_FILL_DEFAULT_DAYS = 3;
 
 // Ký tự Braille rỗng (U+2800). Telegram cắt khoảng trắng ở đầu tin nhắn nhưng giữ ký tự này,
 // nhờ đó dòng tiêu đề nằm riêng một dòng thay vì dính vào tên bot ở phần xem trước thông báo.
@@ -207,6 +209,7 @@ Deno.serve(async () => {
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       weeklySummary?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
+      mutedFillReminder?: { enabled?: boolean; days?: number | string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
     };
@@ -249,7 +252,7 @@ Deno.serve(async () => {
     const watches = (watchesRow?.value || []) as WatchGroup[];
     // Lệnh người dùng đã bấm "Kết thúc lệnh" trên Telegram — thật sự đã chạm SL/TP nhưng
     // chưa kịp điền ngày thoát vào nhật ký, nên ngừng nhắc mà không đụng vào bản ghi lệnh.
-    let muted = (mutedRow?.value || []) as { tradeId?: string; mutedAt?: string }[];
+    let muted = (mutedRow?.value || []) as { tradeId?: string; mutedAt?: string; fillDone?: boolean }[];
     const checkLog = (checkLogRow?.value || []) as {
       accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string;
     }[];
@@ -367,6 +370,46 @@ Deno.serve(async () => {
             logChanged = true;
             sent++;
           }
+        }
+      }
+    }
+
+    // Bấm "Kết thúc lệnh" trên Telegram là hẹn sẽ ghi nhật ký sau. Quá số ngày đã đặt mà
+    // lệnh vẫn chưa có ngày thoát thì nhắc riêng từng lệnh, mỗi lệnh mỗi ngày một lần.
+    // Danh sách `muted` ở trên đã lọc bỏ lệnh đã đóng, nên còn ở đây tức là vẫn chưa điền.
+    const fill = settings.mutedFillReminder;
+    if (fill?.enabled !== false && muted.length
+        && minutesDiff(fill?.time || "20:00", currentHHMM) <= MATCH_TOLERANCE_MIN) {
+      const daysNum = Number(fill?.days);
+      const waitDays = Number.isFinite(daysNum) && daysNum > 0 ? Math.round(daysNum) : MUTED_FILL_DEFAULT_DAYS;
+      const cutoffMs = Date.now() - waitDays * 86400000;
+      let fillSent = 0;
+      for (const m of muted) {
+        if (fillSent >= MAX_FILL_MESSAGES_PER_RUN) break;
+        if (!m.tradeId || m.fillDone) continue;
+        const mutedAtMs = Date.parse(m.mutedAt || "");
+        if (!Number.isFinite(mutedAtMs) || mutedAtMs > cutoffMs) continue;
+        const t = trades.find((x) => x.id === m.tradeId);
+        if (!t) continue;
+        // Giữ ngày ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
+        const logKey = `mutedfill_${today}_${m.tradeId}`;
+        if (log[logKey]) continue;
+
+        const waited = Math.floor((Date.now() - mutedAtMs) / 86400000);
+        const text = buildMessage(
+          "📝", "CHƯA ĐIỀN NHẬT KÝ", "🔴", (t.symbol as string) || "?", (t.account as string) || undefined,
+          `Đã bấm "Kết thúc lệnh" ${waited} ngày trước — lệnh vào ${t.entryDate || "?"} vẫn chưa điền ngày thoát.`,
+        );
+        const markup = {
+          inline_keyboard: [[
+            { text: "🔕 Ngừng nhắc điền", callback_data: `mf|${m.tradeId}|stop` },
+          ]],
+        };
+        if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, fill?.threadId, markup)) {
+          log[logKey] = true;
+          logChanged = true;
+          sent++;
+          fillSent++;
         }
       }
     }

@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  emptyIncompleteReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary, mergeSymbolList, parseHoursInput,
+  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
+  mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
 } from "../lib/helpers.js";
@@ -105,6 +106,9 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
   };
 
   const muted = mutedTrades || [];
+  const fill = s.mutedFillReminder || emptyMutedFillReminder();
+  const fillDays = mutedFillDays(fill);
+  const setFill = (patch) => onChange({ ...s, mutedFillReminder: { ...fill, ...patch } });
   const mutedList = useMemo(
     () => muted.map((m) => ({ ...m, trade: (trades || []).find((t) => t.id === m.tradeId) })),
     [muted, trades]
@@ -160,20 +164,56 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
         <p className="empty-note">Không có lệnh nào đang tắt nhắc.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {mutedList.map((m) => (
-            <div key={m.tradeId} className="backup-row">
-              <span style={{ fontWeight: 600 }}>{m.trade ? (m.trade.symbol || "?") : "(lệnh không còn)"}</span>
-              <span className="field-hint" style={{ flex: 1 }}>
-                {m.trade ? `${m.trade.account || ""} · vào lệnh ${m.trade.entryDate || "—"}` : "Lệnh đã bị xóa hoặc đã đóng"}
-                {m.mutedAt ? ` · tắt lúc ${new Date(m.mutedAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}
-              </span>
-              <button type="button" className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => unmute(m.tradeId)}>
-                <Bell size={13} /> Nhắc lại
-              </button>
-            </div>
-          ))}
+          {mutedList.map((m) => {
+            const waited = daysSince(m.mutedAt);
+            const overdue = fill.enabled !== false && waited !== null && waited >= fillDays;
+            return (
+              <div key={m.tradeId} className="backup-row">
+                <span style={{ fontWeight: 600 }}>{m.trade ? (m.trade.symbol || "?") : "(lệnh không còn)"}</span>
+                <span className="field-hint" style={{ flex: 1 }}>
+                  {m.trade ? `${m.trade.account || ""} · vào lệnh ${m.trade.entryDate || "—"}` : "Lệnh đã bị xóa hoặc đã đóng"}
+                  {m.mutedAt ? ` · tắt lúc ${new Date(m.mutedAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}
+                  {waited !== null ? ` · chờ ${waited} ngày` : ""}
+                </span>
+                {m.fillDone ? (
+                  <span className="tl-tag" title="Bạn đã bấm Ngừng nhắc điền trên Telegram">đã tắt nhắc điền</span>
+                ) : overdue ? (
+                  <span className="tl-tag tl-tag-clash">quá hạn điền</span>
+                ) : null}
+                <button type="button" className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => unmute(m.tradeId)}>
+                  <Bell size={13} /> Nhắc lại
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      <h4 className="block-title" style={{ fontSize: 14 }}>Nhắc điền nốt lệnh đã bấm "Kết thúc lệnh"</h4>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Bấm "Kết thúc lệnh" trên Telegram nghĩa là lệnh đã xong thật, chỉ chưa kịp ghi nhật ký. Quá số ngày dưới đây mà
+        lệnh vẫn chưa có ngày thoát, bot sẽ nhắc riêng từng lệnh, mỗi ngày một lần — kèm nút "Ngừng nhắc điền" nếu bạn
+        muốn để đó. Điền ngày thoát vào Nhật ký là lệnh tự rời khỏi danh sách này và hết nhắc.
+      </p>
+      <div className="account-form">
+        <button type="button"
+          className={`lesson-toggle-btn ${fill.enabled !== false ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => setFill({ enabled: fill.enabled === false })}>
+          <Bell size={15} /> {fill.enabled !== false ? "🔔 Đang bật nhắc điền" : "Bật nhắc điền"}
+        </button>
+        <div className="grid-3" style={{ marginTop: 12 }}>
+          <Field label="Sau bao nhiêu ngày" hint="Tính từ lúc bấm Kết thúc lệnh">
+            <input type="number" min="1" max="60" className="input" value={fill.days ?? ""}
+              onChange={(e) => setFill({ days: e.target.value })} placeholder={`${fillDays}`} />
+          </Field>
+          <Field label="Giờ nhắc (giờ Việt Nam)">
+            <input type="time" className="input" value={fill.time || "20:00"} onChange={(e) => setFill({ time: e.target.value })} />
+          </Field>
+          <Field label="Thread ID (nếu có Topics)">
+            <input className="input mono" value={fill.threadId || ""} onChange={(e) => setFill({ threadId: e.target.value.trim() })} placeholder="Thread ID" />
+          </Field>
+        </div>
+      </div>
 
       <details style={{ marginTop: 18 }}>
         <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Hướng dẫn kích hoạt gửi nền (làm 1 lần trong Supabase Dashboard)</summary>

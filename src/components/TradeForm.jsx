@@ -4,6 +4,9 @@ import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImag
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
 import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitsOf, partialExitStats, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
 
+// Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
+const PERCENT_PRESETS = [25, 33, 50, 100];
+
 // Số phần trăm hiển thị gọn: 50 chứ không phải 50.00, nhưng 12.5 thì vẫn giữ.
 function fmtPercent(v) {
   const n = Number(v);
@@ -63,9 +66,17 @@ function PartialExits({ trade, onChange }) {
               <Field label="Giờ chốt bớt">
                 <input type="time" className="input" value={row.time} onChange={(e) => setRow(row.id, { time: e.target.value })} />
               </Field>
-              <Field label="% vị thế đã đóng" hint="Ví dụ 25 hoặc 50">
+              <Field label="% vị thế đã đóng" hint="Gõ tay, hoặc bấm mức có sẵn">
                 <input type="number" min="0" max="100" step="0.5" className="input" value={row.percent}
                   onChange={(e) => setRow(row.id, { percent: e.target.value })} placeholder="50" />
+                <div className="percent-quick">
+                  {PERCENT_PRESETS.map((v) => (
+                    <button type="button" key={v} className={`percent-chip ${Number(row.percent) === v ? "percent-chip-on" : ""}`}
+                      onClick={() => setRow(row.id, { percent: Number(row.percent) === v ? "" : String(v) })}>
+                      {v}%
+                    </button>
+                  ))}
+                </div>
               </Field>
               <Field label="Lợi nhuận thu về">
                 <MoneyInput value={row.profit} onChange={(v) => setRow(row.id, { profit: v })} placeholder="+300" />

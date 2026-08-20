@@ -121,6 +121,7 @@ export function emptySlReminderSettings() {
     schedules: [], setupCheckEnabled: false, setupCheckSchedules: [],
     incompleteReminder: emptyIncompleteReminder(),
     weeklySummary: emptyWeeklySummary(),
+    mutedFillReminder: emptyMutedFillReminder(),
     taskDurations: emptyTaskDurations(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
   };
@@ -134,6 +135,26 @@ export function emptyIncompleteReminder() {
 // Tổng kết 7 ngày gần nhất gửi qua Telegram — mặc định tối Chủ nhật.
 export function emptyWeeklySummary() {
   return { enabled: false, weekday: "CN", time: "19:00", threadId: "" };
+}
+
+// Bấm "Kết thúc lệnh" trên Telegram là hẹn sẽ điền nhật ký sau. Quá số ngày này mà
+// lệnh vẫn chưa có ngày thoát thì nhắc lại, mỗi lệnh mỗi ngày một lần.
+export function emptyMutedFillReminder() {
+  return { enabled: true, days: 3, time: "20:00", threadId: "" };
+}
+
+export const MUTED_FILL_DEFAULT_DAYS = 3;
+
+export function mutedFillDays(cfg) {
+  const n = Number(cfg && cfg.days);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : MUTED_FILL_DEFAULT_DAYS;
+}
+
+// Số ngày kể từ lúc bấm "Kết thúc lệnh", để hiện trên web cho khớp với tin nhắn.
+export function daysSince(iso, nowMs) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return null;
+  return Math.floor(((nowMs || Date.now()) - t) / 86400000);
 }
 
 export const SYMBOL_WATCH_DEFAULT_HOURS = ["09:00", "14:00", "20:00"];
