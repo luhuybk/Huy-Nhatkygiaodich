@@ -470,10 +470,47 @@ export function openTradeCounter({ accounts, trades, mutedTrades } = {}) {
   };
 }
 
-function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id }) {
+// Một lịch dùng chung một danh sách giờ cho MỌI ngày đang bật, nhưng đời thật không đều
+// như vậy: 22h thứ 6 khỏi kiểm tra setup vì sáng chủ nhật đã kiểm tra rồi, còn 22h chủ nhật
+// thì thị trường chưa mở lại. `skip` ghi đúng những ô lẻ đó, dạng "T6@22:00".
+export function skipKey(day, hour) {
+  return `${day}@${hour}`;
+}
+
+export function skipListOf(x) {
+  return Array.isArray(x && x.skip) ? x.skip : [];
+}
+
+export function toggleSkip(list, day, hour, off) {
+  const key = skipKey(day, hour);
+  const cur = Array.isArray(list) ? list : [];
+  if (off) return cur.includes(key) ? cur : [...cur, key].sort();
+  return cur.filter((k) => k !== key);
+}
+
+// Giờ hoặc thứ bị bỏ ở nơi khác thì ô lẻ trỏ tới nó thành rác — dọn để nó không âm thầm
+// sống lại khi bạn thêm lại đúng mốc giờ đó.
+export function pruneSkip(list, hours, activeDays) {
+  const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
+  return (Array.isArray(list) ? list : []).filter((k) => {
+    const [d, h] = String(k).split("@");
+    return days.includes(d) && (hours || []).includes(h);
+  });
+}
+
+// Những thứ mà một mốc giờ thật sự chạy — đã trừ các ô lẻ đã bỏ.
+export function daysOfHour(x, hour) {
+  const days = Array.isArray(x && x.activeDays) && x.activeDays.length ? x.activeDays : WEEKDAY_CODES;
+  const skip = skipListOf(x);
+  return days.filter((d) => !skip.includes(skipKey(d, hour)));
+}
+
+function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip }) {
   const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
+  const off = Array.isArray(skip) ? skip : [];
   (hours || []).forEach((h) => {
+    if (off.includes(skipKey(day, h))) return;
     const start = hhmmToMinutes(h);
     if (start === null) return;
     // `source` cho biết đổi giờ thì phải ghi ngược vào bản ghi nào, và `days` để
@@ -504,6 +541,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
       sub: open === null ? name : `${name}${name ? " · " : ""}${open ? `${open} lệnh mở` : "không có lệnh mở"}`,
       minutes: mins("sl", s.minutes),
       enabled: !!st.enabled && !!s.enabled && open !== 0, sourceId: `sl_${s.accountId}`, id: s.accountId,
+      skip: s.skip,
     });
   });
 
@@ -512,6 +550,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
       hours: s.hours, activeDays: s.activeDays, day, kind: "setupCheck",
       title: "Kiểm tra setup", sub: s.accountName || "", minutes: mins("setupCheck", s.minutes),
       enabled: !!st.setupCheckEnabled && !!s.enabled, sourceId: `sc_${s.accountId}`, id: s.accountId,
+      skip: s.skip,
     });
   });
 
@@ -522,6 +561,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
       title: "Symbol theo dõi", sub: `${w.label || "Nhóm chưa đặt tên"} · ${live} symbol`,
       minutes: mins("symbolWatch", w.minutes),
       enabled: !!st.symbolWatchEnabled && !!w.enabled && live > 0, sourceId: `w_${w.id}`, id: w.id,
+      skip: w.skip,
     });
   });
 
@@ -652,18 +692,22 @@ export function markSetupCheckDone(log, { accountId, accountName, date, hour }, 
 export function timelineSources({ settings, watches, reminders, durations, openTrades }) {
   const st = settings || {};
   const out = [];
-  const add = (kind, id, key, name, hours, activeDays, enabled, override) => {
+  const add = (kind, id, key, name, hours, activeDays, enabled, override, skip) => {
     out.push({
       key, kind, id, name, hours: hours || [], activeDays: activeDays || WEEKDAY_CODES,
       enabled, override: override === undefined || override === null ? "" : override,
       minutes: taskMinutes(durations, kind, override),
+      // Chỉ lịch nhiều giờ/nhiều thứ mới bỏ được ô lẻ; nhắc nhở và báo cáo tuần chỉ có
+      // đúng một giờ một thứ nên không có gì để bỏ.
+      skip: Array.isArray(skip) ? skip : [],
+      canSkip: kind === "sl" || kind === "setupCheck" || kind === "symbolWatch",
     });
   };
 
   const countOpen = typeof openTrades === "function" ? openTrades : null;
-  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName) > 0), x.minutes));
-  (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes));
-  (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes));
+  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName) > 0), x.minutes, x.skip));
+  (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes, x.skip));
+  (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
   if (st.weeklySummary) add("report", "weekly", "weekly", "Tổng kết tuần", [st.weeklySummary.time], [st.weeklySummary.weekday], !!st.weeklySummary.enabled, st.weeklySummary.minutes);
   (reminders || []).forEach((r) => {
@@ -682,8 +726,16 @@ function replaceHour(hours, oldHour, newHour) {
 
 function patchItem(item, source, patch) {
   const next = { ...item };
-  if (patch.hour) next.hours = replaceHour(item.hours, source.hour, patch.hour);
+  if (patch.hour) {
+    next.hours = replaceHour(item.hours, source.hour, patch.hour);
+    // Dời giờ thì ô lẻ đã bỏ phải đi theo, không thì nó nằm lại ở mốc giờ không còn tồn tại.
+    next.skip = skipListOf(item).map((k) => {
+      const [d, h] = String(k).split("@");
+      return h === source.hour ? skipKey(d, patch.hour) : k;
+    });
+  }
   if ("minutes" in patch) next.minutes = patch.minutes;
+  if ("skip" in patch) next.skip = pruneSkip(patch.skip, next.hours, next.activeDays);
   return next;
 }
 

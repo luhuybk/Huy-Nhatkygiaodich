@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ClipboardCopy, Clock, Download, GripHorizontal, ListChecks } from "lucide-react";
+import { AlertTriangle, CalendarX2, ClipboardCopy, Clock, Download, GripHorizontal, ListChecks } from "lucide-react";
 import { Field } from "./ui.jsx";
 import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
   buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes, openTradeCounter,
   weekdayCodeFromNumber, todayChecklist, setTaskDone, markSetupCheckDone, todayStr,
+  skipKey, toggleSkip, daysOfHour, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
 // Trục ngang luôn dừng ở mốc giờ tròn, và luôn rộng ít nhất 4 tiếng để một ngày
@@ -199,7 +200,70 @@ function TodayChecklist({ rows, nowMin, onToggle }) {
   );
 }
 
-function SourceDurations({ sources, onChange }) {
+// Bảng giờ × thứ của một lịch. Bỏ một ô là bỏ đúng một mốc của đúng một thứ — chứ không
+// phải tắt cả mốc giờ đó ở mọi ngày, cũng không phải tắt cả ngày hôm đó.
+function SkipGrid({ src, onChange }) {
+  const days = src.activeDays.length ? src.activeDays : WEEKDAY_CODES;
+  return (
+    <div className="tl-skip">
+      <div className="tl-skip-row">
+        <span className="tl-skip-hour" />
+        {days.map((d) => <span key={d} className="tl-skip-day">{d}</span>)}
+      </div>
+      {src.hours.map((h) => (
+        <div className="tl-skip-row" key={h}>
+          <span className="tl-skip-hour">{h}</span>
+          {days.map((d) => {
+            const off = src.skip.includes(skipKey(d, h));
+            return (
+              <button type="button" key={d}
+                className={`tl-skip-cell ${off ? "tl-skip-cell-off" : ""}`}
+                title={`${d} ${h} — ${off ? "đang bỏ, bấm để chạy lại" : "đang chạy, bấm để bỏ"}`}
+                onClick={() => onChange(toggleSkip(src.skip, d, h, !off))}>
+                {off ? "–" : "✓"}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+      <p className="field-hint" style={{ margin: "6px 0 0" }}>
+        Ô "–" là mốc đó không chạy vào thứ ấy: không hiện trên timeline, không vào danh sách
+        việc hôm nay, và Telegram cũng không nhắc.
+      </p>
+    </div>
+  );
+}
+
+function SourceRow({ src, onMinutes, onSkip }) {
+  const [open, setOpen] = useState(false);
+  const skipped = src.skip.length;
+  return (
+    <div className="tl-src-item">
+      <div className={`tl-src ${src.enabled ? "" : "tl-src-off"}`}>
+        <span className="tl-src-name">{src.name}</span>
+        <span className="field-hint tl-src-meta" style={{ margin: 0 }}>
+          {src.hours.length ? src.hours.join(", ") : "chưa đặt giờ"} · {src.activeDays.join(" ")}
+          {skipped ? <b className="tl-src-skip"> · bỏ {skipped} ô</b> : null}
+        </span>
+        {src.canSkip && src.hours.length ? (
+          <button type="button" className={`tl-src-skip-btn ${open ? "tl-src-skip-btn-on" : ""}`}
+            onClick={() => setOpen(!open)} title="Bỏ bớt mốc giờ ở một số thứ">
+            <CalendarX2 size={13} />
+          </button>
+        ) : null}
+        <span className="tl-src-input">
+          <input type="number" min="1" max="720" className="input" value={src.override}
+            placeholder={`${taskMinutes(null, src.kind)}`}
+            onChange={(e) => onMinutes(src, e.target.value)} />
+          <span className="field-hint" style={{ margin: 0 }}>phút</span>
+        </span>
+      </div>
+      {open ? <SkipGrid src={src} onChange={(next) => onSkip(src, next)} /> : null}
+    </div>
+  );
+}
+
+function SourceDurations({ sources, onChange, onSkip }) {
   const groups = TASK_KINDS
     .map((k) => ({ kind: k, rows: sources.filter((s) => s.kind === k.key) }))
     .filter((g) => g.rows.length);
@@ -209,20 +273,7 @@ function SourceDurations({ sources, onChange }) {
       {groups.map(({ kind, rows }) => (
         <div key={kind.key} className="tl-src-group">
           <span className="tl-kind-label tl-src-group-title"><i style={{ background: kind.color }} /> {kind.label}</span>
-          {rows.map((s) => (
-            <div key={s.key} className={`tl-src ${s.enabled ? "" : "tl-src-off"}`}>
-              <span className="tl-src-name">{s.name}</span>
-              <span className="field-hint tl-src-meta" style={{ margin: 0 }}>
-                {s.hours.length ? s.hours.join(", ") : "chưa đặt giờ"} · {s.activeDays.join(" ")}
-              </span>
-              <span className="tl-src-input">
-                <input type="number" min="1" max="720" className="input" value={s.override}
-                  placeholder={`${taskMinutes(null, s.kind)}`}
-                  onChange={(e) => onChange(s, e.target.value)} />
-                <span className="field-hint" style={{ margin: 0 }}>phút</span>
-              </span>
-            </div>
-          ))}
+          {rows.map((s) => <SourceRow key={s.key} src={s} onMinutes={onChange} onSkip={onSkip} />)}
         </div>
       ))}
     </div>
@@ -271,12 +322,14 @@ export function TimelinePanel({
     exportedAt: localIso(new Date()),
     items: timelineSources({ settings, watches, reminders, durations })
       .filter((x) => x.enabled && x.hours.length)
+      // days tính riêng cho từng mốc giờ: bỏ ô lẻ nào thì thứ đó không còn trong mốc ấy,
+      // nếu không Life Hub lại hiện mốc bạn vừa bỏ.
       .flatMap((x) => x.hours.map((h) => ({
         title: [KIND_VI[x.kind], x.name].filter(Boolean).join(" · "),
         time: h,
         mins: x.minutes,
-        days: x.activeDays,
-      }))),
+        days: daysOfHour(x, h),
+      })).filter((it) => it.days.length)),
   });
 
   const exportFeed = () => {
@@ -377,8 +430,12 @@ export function TimelinePanel({
       <p className="field-hint" style={{ marginBottom: 10 }}>
         Bỏ trống thì dùng số mặc định ở trên. Chỉ điền khi một lịch tốn khác hẳn —
         kiểm tra setup Forex mất 40 phút trong khi VN Stock chỉ 10.
+        Nút <CalendarX2 size={12} style={{ verticalAlign: "-2px" }} /> mở bảng giờ × thứ, để bỏ
+        riêng vài mốc lẻ mà không phải tắt cả mốc giờ hay cả ngày.
       </p>
-      <SourceDurations sources={sources} onChange={(s, value) => applyPatch({ kind: s.kind, id: s.id }, { minutes: value })} />
+      <SourceDurations sources={sources}
+        onChange={(s, value) => applyPatch({ kind: s.kind, id: s.id }, { minutes: value })}
+        onSkip={(s, next) => applyPatch({ kind: s.kind, id: s.id }, { skip: next })} />
 
       <div className="tl-feed">
         <button type="button" className="btn" onClick={exportFeed}><Download size={14} /> Xuất lịch cho Life Hub</button>

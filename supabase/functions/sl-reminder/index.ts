@@ -76,7 +76,7 @@ function minutesDiff(a: string, b: string) {
 type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type WatchGroup = {
   id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
-  hours?: string[]; activeDays?: string[];
+  hours?: string[]; activeDays?: string[]; skip?: string[];
   symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
 };
 
@@ -205,9 +205,9 @@ Deno.serve(async () => {
       enabled?: boolean;
       telegramBotToken?: string;
       telegramChatId?: string;
-      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
+      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       setupCheckEnabled?: boolean;
-      setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[] }[];
+      setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       weeklySummary?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       mutedFillReminder?: { enabled?: boolean; days?: number | string; time?: string; threadId?: string };
@@ -222,11 +222,16 @@ Deno.serve(async () => {
 
     // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
     // activeDays không tồn tại (dữ liệu cũ trước khi có tính năng này) → mặc định coi như chạy mọi ngày.
-    const isDueNow = (s: { activeDays?: string[]; hours?: string[] }) => {
+    // Một lịch có thể bỏ riêng vài ô giờ × thứ (VD: 22h thứ 6 khỏi kiểm tra setup vì sáng
+    // chủ nhật đã kiểm tra) — khớp với `skip` trên web, dạng "T6@22:00".
+    const isSkipped = (s: { skip?: string[] }, hour: string) =>
+      (s.skip || []).includes(`${todayWeekdayCode}@${hour}`);
+    const hoursDueNow = (s: { activeDays?: string[]; hours?: string[]; skip?: string[] }) => {
       const activeDays = Array.isArray(s.activeDays) ? s.activeDays : null;
-      if (activeDays && !activeDays.includes(todayWeekdayCode)) return false;
-      return (s.hours || []).some((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      if (activeDays && !activeDays.includes(todayWeekdayCode)) return [];
+      return (s.hours || []).filter((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN && !isSkipped(s, h));
     };
+    const isDueNow = (s: { activeDays?: string[]; hours?: string[]; skip?: string[] }) => hoursDueNow(s).length > 0;
     const dueSchedules = schedules.filter(isDueNow);
     const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
@@ -283,7 +288,7 @@ Deno.serve(async () => {
       const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id));
       if (!openTrades.length) continue;
 
-      const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      const matchedHour = hoursDueNow(sched)[0];
       if (isTaskDone(`sl_${sched.accountId}`, matchedHour)) continue;
 
       // Mỗi lệnh một tin riêng để nút bấm gắn đúng lệnh — gộp chung thì không biết bấm cho symbol nào.
@@ -315,7 +320,7 @@ Deno.serve(async () => {
       const accountName = account ? account.name : sched.accountName;
       if (!accountName) continue;
 
-      const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      const matchedHour = hoursDueNow(sched)[0];
       if (isTaskDone(`sc_${sched.accountId}`, matchedHour)) continue;
       // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
       const logKey = `setup_${today}_${sched.accountId}_${matchedHour}`;
@@ -519,7 +524,7 @@ Deno.serve(async () => {
 
         const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
         if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
-        const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+        const matchedHour = hoursDueNow(w)[0];
         if (!matchedHour) continue;
         if (isTaskDone(`w_${w.id}`, matchedHour)) continue;
 
