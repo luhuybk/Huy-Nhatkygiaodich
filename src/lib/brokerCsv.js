@@ -119,7 +119,9 @@ export function parseBrokerCsv(text) {
     const commission = num(get(r, "commission"));
     const swap = num(get(r, "swap"));
     out.push({
-      key: String(get(r, "ticket") || `${i}`),
+      // Chốt bớt làm một vị thế xuất ra nhiều dòng CÙNG số ticket — thêm số thứ tự để hai
+      // dòng đó không bị coi là một.
+      key: `${get(r, "ticket") || "row"}#${i}`,
       ticket: String(get(r, "ticket") || "").trim(),
       openAt,
       closeAt: parseUtc(get(r, "closeAt")),
@@ -127,7 +129,10 @@ export function parseBrokerCsv(text) {
       lots: num(get(r, "lots")),
       symbol,
       symbolKey: normalizeSymbol(symbol),
-      // Lãi lỗ thật về túi = lãi lỗ giá + phí + qua đêm.
+      // Sàn tách làm hai phần: lãi lỗ theo giá, và phí (hoa hồng + qua đêm). Cổ phiếu giữ
+      // nhiều ngày thì phí qua đêm ăn thẳng vào kết quả, nên phải giữ riêng để đối chiếu.
+      commission, swap,
+      fees: commission === null && swap === null ? null : (commission || 0) + (swap || 0),
       net: profit === null ? null : profit + (commission || 0) + (swap || 0),
       profit,
       closeReason: String(get(r, "closeReason") || "").trim().toLowerCase(),
@@ -146,11 +151,16 @@ function tradeOpenMs(t) {
 // Lệch tiền bao nhiêu thì coi là gõ sai chứ không phải sàn làm tròn.
 const PROFIT_TOLERANCE = 0.5;
 
+// Cửa sổ so giờ mở lệnh. Rộng 2 ngày vì lệnh mở buổi tối giờ Mỹ rơi sang sáng hôm sau giờ
+// VN (JNJ mở 17:37 UTC = 00:37 ngày hôm sau), nên ngày trên sàn và ngày bạn ghi lệch nhau
+// đúng một ngày là chuyện thường — cùng symbol cùng tài khoản thì vẫn là một lệnh.
+export const DEFAULT_TOLERANCE_HOURS = 48;
+
 // Ghép mỗi dòng CSV với đúng một lệnh trong nhật ký: cùng symbol, cùng tài khoản, và giờ mở
 // gần nhau nhất. Ghép 1-1 theo thứ tự lệch ít nhất trước, để hai lệnh cùng symbol trong một
 // ngày không cùng nhận một bản ghi.
-export function reconcileBrokerRows(rows, trades, { account, toleranceHours = 24 } = {}) {
-  const tol = Math.max(1, Number(toleranceHours) || 24) * 3600000;
+export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DEFAULT_TOLERANCE_HOURS } = {}) {
+  const tol = Math.max(1, Number(toleranceHours) || DEFAULT_TOLERANCE_HOURS) * 3600000;
   const pool = (trades || []).filter((t) => t.account === account && t.symbol && t.entryDate);
   const pairs = [];
   (rows || []).forEach((row) => {
@@ -177,20 +187,30 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = 24
   (rows || []).forEach((row) => {
     const hit = rowTaken.get(row.key);
     if (!hit) {
-      // Cùng symbol cùng ngày mà đã có dòng khác khớp rồi thì nhiều khả năng đây là lần
-      // chốt bớt của chính lệnh đó, không phải một lệnh bị quên.
-      const sameDay = matchedSameDay(rowTaken, rows, row);
-      missing.push({ ...row, maybePartial: sameDay });
+      // Cùng số ticket với một dòng đã khớp thì chắc chắn là lần chốt bớt của chính vị thế
+      // đó, không phải lệnh bị quên; cùng symbol cùng ngày thì mới chỉ là khả năng.
+      const samePosition = !!row.ticket && (rows || []).some((r) => r.key !== row.key
+        && r.ticket === row.ticket && rowTaken.has(r.key));
+      missing.push({ ...row, samePosition, maybePartial: samePosition || matchedSameDay(rowTaken, rows, row) });
       return;
     }
     const net = row.net;
     const journal = computeResult(hit.trade).profit;
     const diff = net === null || journal === null ? null : journal - net;
+    const split = partialExitsOf(hit.trade).length > 0;
+    // Phí chưa điền mà sàn có tính thì đó là lý do lệch — nói thẳng ra thay vì bắt người
+    // dùng tự ngồi trừ, vì cổ phiếu giữ qua đêm phí ăn hẳn vào kết quả.
+    const feeMissing = !split && row.fees !== null && row.fees !== 0
+      && (hit.trade.fees === "" || hit.trade.fees === undefined || hit.trade.fees === null);
     matched.push({
       row, trade: hit.trade, gap: hit.gap,
       // Lệnh có chốt bớt thì tổng nhật ký gồm nhiều dòng CSV, so một dòng sẽ luôn lệch.
-      profitDiff: partialExitsOf(hit.trade).length ? null : diff,
-      profitOff: diff !== null && !partialExitsOf(hit.trade).length && Math.abs(diff) > PROFIT_TOLERANCE,
+      profitDiff: split ? null : diff,
+      profitOff: diff !== null && !split && Math.abs(diff) > PROFIT_TOLERANCE,
+      feeMissing,
+      // Ngày trên sàn (đã quy về giờ máy bạn) khác ngày bạn ghi — vẫn là một lệnh, nhưng
+      // lệch ngày thì lịch và thống kê theo ngày sẽ đếm sai chỗ.
+      dateOff: localDate(row.openAt) !== hit.trade.entryDate,
     });
   });
 
@@ -214,7 +234,8 @@ function matchedSameDay(rowTaken, rows, row) {
 }
 
 // Dựng sẵn một lệnh từ dòng CSV để mở thẳng form — điền hộ đúng những gì sàn biết chắc,
-// phần đánh giá/tâm lý vẫn để trống cho bạn tự viết.
+// phần đánh giá/tâm lý vẫn để trống cho bạn tự viết. Lãi lỗ và phí để riêng đúng như sàn
+// tách, để tổng cộng lại ra khớp con số cuối cùng.
 export function tradeFromBrokerRow(row, account, symbols) {
   const known = (symbols || []).find((s) => normalizeSymbol(s) === row.symbolKey);
   return {
@@ -226,6 +247,12 @@ export function tradeFromBrokerRow(row, account, symbols) {
     entryTime: localTime(row.openAt),
     exitDate: localDate(row.closeAt),
     exitTime: localTime(row.closeAt),
-    profit: row.net === null ? "" : String(Number(row.net.toFixed(2))),
+    profit: row.profit === null ? "" : String(Number(row.profit.toFixed(2))),
+    fees: row.fees === null || row.fees === 0 ? "" : String(Number(row.fees.toFixed(2))),
   };
+}
+
+// Điền phí sàn vào một lệnh đã có. Giữ nguyên dấu của sàn: bị trừ là số âm.
+export function withBrokerFees(trade, row) {
+  return { ...trade, fees: row.fees === null ? "" : String(Number(row.fees.toFixed(2))) };
 }

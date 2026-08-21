@@ -65,6 +65,7 @@
         .rec-title { font-size:14px; font-weight:700; margin:16px 0 8px; }
         .rec-title-bad { color:var(--loss); }
         .rec-title-warn { color:var(--accent); }
+        .rec-actions { display:flex; gap:6px; align-items:center; justify-content:flex-end; white-space:nowrap; }
         .rec-tag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:20px;
           background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:11px; }
 

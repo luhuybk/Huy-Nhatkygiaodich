@@ -127,6 +127,10 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
   const partial = partialExitStats(t);
+  // Phí dương nghĩa là được cộng thêm — hiếm, nên nhắc một câu phòng khi gõ thiếu dấu trừ.
+  const feeNum = t.fees === "" || t.fees === undefined || t.fees === null ? null : Number(t.fees);
+  const feeApplied = feeNum !== null && Number.isFinite(feeNum) && feeNum !== 0 && t.profit !== "";
+  const feeWarn = feeNum !== null && Number.isFinite(feeNum) && feeNum > 0;
   const total = computeResult(t);
   // Đếm xem mục 1A đã có gì chưa, để nhãn gấp lại nói được là trống hay đã điền.
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
@@ -311,6 +315,26 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
             <MoneyInput value={t.profit} onChange={set("profit")} placeholder="+150 hoặc -100" />
           </Field>
         </div>
+        <div className="grid-3">
+          <Field label="Phí hoa hồng + qua đêm"
+            hint="Giữ đúng dấu như sàn xuất: bị trừ thì là số âm (-8.78). Cổ phiếu giữ nhiều ngày thì khoản này ăn thẳng vào kết quả.">
+            <MoneyInput value={t.fees} onChange={set("fees")} placeholder="-8.78" />
+          </Field>
+        </div>
+        {feeWarn ? (
+          <p className="field-hint" style={{ color: "var(--accent)", marginTop: -4 }}>
+            Phí đang là số dương nên được cộng thêm vào lãi — nếu đây là khoản bị trừ thì đổi thành số âm.
+          </p>
+        ) : null}
+        {feeApplied ? (
+          <div className="partial-total">
+            <span>Sau phí</span>
+            <strong className={total.profit > 0 ? "text-win" : total.profit < 0 ? "text-loss" : ""}>
+              {fmt(Number(t.profit) + partial.profit)} (lãi/lỗ) {Number(t.fees) >= 0 ? "+" : "−"} {fmt(Math.abs(Number(t.fees)))} (phí) = {fmt(total.profit)}
+              {total.rr === null ? "" : ` · ${total.rr > 0 ? "+" : ""}${total.rr.toFixed(2)}R`}
+            </strong>
+          </div>
+        ) : null}
         {partial.filled ? (
           <div className="partial-total">
             <span>Cộng dồn cả lệnh</span>

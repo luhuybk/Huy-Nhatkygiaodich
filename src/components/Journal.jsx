@@ -124,6 +124,10 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
                 <DetailRow label="Lợi nhuận đóng nốt" value={t.profit === "" ? "—" : fmt(Number(t.profit))}
                   tone={Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""} />
               ) : null}
+              {t.fees !== "" && t.fees !== undefined && t.fees !== null ? (
+                <DetailRow label="Phí (hoa hồng + qua đêm)" value={fmt(Number(t.fees))}
+                  tone={Number(t.fees) < 0 ? "text-loss" : ""} />
+              ) : null}
               <DetailRow label={partial.count ? "Lợi nhuận cả lệnh" : "Lợi nhuận"} value={profit === null ? "—" : fmt(profit)}
                 tone={profit > 0 ? "text-win" : profit < 0 ? "text-loss" : ""} />
               <DetailRow label="RR thực" value={rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`} tone={rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""} />
@@ -464,7 +468,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, ledger, onEdit, onCreate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, ledger, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
@@ -524,7 +528,7 @@ export function JournalSection({ trades, resources, ledger, onEdit, onCreate, on
         <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu sàn</button>
       </div>
       {tab === "reconcile" ? (
-        <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} />
+        <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} onUpdateTrade={onUpdate} />
       ) : null}
       {tab === "list" ? (
         <div>

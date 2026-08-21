@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, PlusCircle, RotateCcw } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, PlusCircle, RotateCcw } from "lucide-react";
 import { Field, ResourceSelect } from "./ui.jsx";
-import { localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerRow } from "../lib/brokerCsv.js";
+import { localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerRow, withBrokerFees } from "../lib/brokerCsv.js";
 import { computeResult, fmtMoney } from "../lib/helpers.js";
 
 function money(v, currency) {
@@ -12,7 +12,7 @@ function when(d) {
   return d ? `${localDate(d)} ${localTime(d)}` : "—";
 }
 
-export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade }) {
+export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
   const accounts = resources.accounts || [];
   const [account, setAccount] = useState(() => (accounts.length === 1 ? accounts[0].name : ""));
   const [parsed, setParsed] = useState(null);
@@ -42,6 +42,12 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
   // Tài khoản cent trả về USC chứ không phải USD — hiện đúng đơn vị của tài khoản đó.
   const currency = (accounts.find((a) => a.name === account) || {}).currency || "USD";
   const offRows = result ? result.matched.filter((m) => m.profitOff) : [];
+  const dateRows = result ? result.matched.filter((m) => m.dateOff) : [];
+  const fillableFees = offRows.filter((m) => m.feeMissing);
+
+  // Điền phí cho mọi lệnh mà sàn có tính phí còn nhật ký bỏ trống — thường cả tuần chỉ
+  // thiếu đúng khoản này, ngồi mở từng lệnh ra sửa thì quá phí thời gian.
+  const fillAllFees = () => onUpdateTrade(fillableFees.map((m) => withBrokerFees(m.trade, m.row)));
 
   return (
     <div className="account-form">
@@ -76,6 +82,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
             ) : null}
             {result.extra.length ? <span className="rec-chip rec-chip-warn">{result.extra.length} chỉ có trong nhật ký</span> : null}
             {offRows.length ? <span className="rec-chip rec-chip-warn">{offRows.length} lệch tiền</span> : null}
+            {dateRows.length ? <span className="rec-chip rec-chip-warn">{dateRows.length} lệch ngày</span> : null}
             <button type="button" className="btn btn-ghost" onClick={reset}><RotateCcw size={13} /> Xoá kết quả</button>
           </div>
 
@@ -105,7 +112,8 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
                         <td className={row.net > 0 ? "text-win" : row.net < 0 ? "text-loss" : ""}>{money(row.net, currency)}</td>
                         <td>
                           {row.closeReason || "—"}
-                          {row.maybePartial ? <span className="rec-tag">có thể là lần chốt bớt</span> : null}
+                          {row.samePosition ? <span className="rec-tag">cùng vị thế — là lần chốt bớt</span>
+                            : row.maybePartial ? <span className="rec-tag">có thể là lần chốt bớt</span> : null}
                         </td>
                         <td>
                           <button type="button" className="btn btn-ghost"
@@ -131,7 +139,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
               <div className="table-wrap">
                 <table className="table">
                   <thead>
-                    <tr><th>Symbol</th><th>Vào lệnh</th><th>Nhật ký</th><th>Sàn</th><th>Lệch</th><th /></tr>
+                    <tr><th>Symbol</th><th>Vào lệnh</th><th>Nhật ký</th><th>Sàn</th><th>Phí sàn</th><th>Lệch</th><th /></tr>
                   </thead>
                   <tbody>
                     {offRows.map((m) => (
@@ -140,8 +148,14 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
                         <td>{when(m.row.openAt)}</td>
                         <td>{money(computeResult(m.trade).profit, currency)}</td>
                         <td>{money(m.row.net, currency)}</td>
+                        <td>{money(m.row.fees, currency)}{m.feeMissing ? <span className="rec-tag">chưa điền</span> : null}</td>
                         <td className="text-loss">{money(m.profitDiff, currency)}</td>
-                        <td>
+                        <td className="rec-actions">
+                          {m.feeMissing ? (
+                            <button type="button" className="btn btn-ghost" onClick={() => onUpdateTrade([withBrokerFees(m.trade, m.row)])}>
+                              <Coins size={13} /> Điền phí {money(m.row.fees, currency)}
+                            </button>
+                          ) : null}
                           <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(m.trade)}>Mở lệnh</button>
                         </td>
                       </tr>
@@ -150,8 +164,42 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade 
                 </table>
               </div>
               <p className="field-hint">
-                Sàn tính cả phí và qua đêm, nên chênh vài xu là bình thường — bảng này chỉ liệt kê
-                khoản lệch trên {money(result.tolerance, currency)}, thường là gõ nhầm số.
+                Chênh vài xu là do sàn làm tròn — bảng này chỉ liệt kê khoản lệch trên {money(result.tolerance, currency)}.
+                Phần lớn là do chưa điền phí hoa hồng + qua đêm, phần còn lại thường là gõ nhầm số.
+              </p>
+              {fillableFees.length > 1 ? (
+                <button type="button" className="btn" onClick={fillAllFees}>
+                  <Coins size={13} /> Điền phí cho cả {fillableFees.length} lệnh
+                </button>
+              ) : null}
+            </>
+          ) : null}
+
+          {dateRows.length ? (
+            <>
+              <h4 className="rec-title rec-title-warn">
+                <CalendarClock size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
+                Lệch ngày vào lệnh ({dateRows.length})
+              </h4>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead><tr><th>Symbol</th><th>Nhật ký ghi</th><th>Sàn (đã đổi sang giờ máy bạn)</th><th /></tr></thead>
+                  <tbody>
+                    {dateRows.map((m) => (
+                      <tr key={m.row.key}>
+                        <td><b>{m.row.symbol}</b></td>
+                        <td>{m.trade.entryDate} {m.trade.entryTime}</td>
+                        <td>{when(m.row.openAt)}</td>
+                        <td><button type="button" className="btn btn-ghost" onClick={() => onEditTrade(m.trade)}>Mở lệnh</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="field-hint">
+                Vẫn là một lệnh, chỉ khác ngày. Hay gặp với lệnh mở buổi tối giờ Mỹ: sàn ghi giờ UTC
+                nên rơi vào hôm trước, còn giờ Việt Nam đã sang ngày mới. Sửa lại cho khớp thì lịch
+                và thống kê theo ngày mới đếm đúng chỗ.
               </p>
             </>
           ) : null}

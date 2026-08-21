@@ -1009,12 +1009,15 @@ export function computeResult(trade) {
   // mà chưa đóng hẳn thì vẫn là lệnh đang mở — mọi thống kê "lệnh đã đóng" đang
   // dựa vào đây, và tiền của phần còn lại thì vẫn đang chạy.
   const status = finalProfit !== null ? "closed" : "open";
-  const profit = status === "closed" ? finalProfit + partial.profit : null;
+  // Phí hoa hồng + qua đêm giữ dấu đúng như sàn xuất (bị trừ là số âm) nên cứ cộng thẳng.
+  // Cổ phiếu giữ nhiều ngày thì khoản này ăn hẳn vào kết quả, bỏ qua là sai số thật.
+  const fees = numOrNull(trade.fees) || 0;
+  const profit = status === "closed" ? finalProfit + partial.profit + fees : null;
   let rr = null;
   if (profit !== null && riskAmount) rr = profit / riskAmount;
   const outcome = profit !== null ? (profit > 0 ? "win" : profit < 0 ? "loss" : "be") : null;
   return {
-    profit, riskAmount, rr, outcome, status,
+    profit, riskAmount, rr, outcome, status, fees,
     finalProfit, partialProfit: partial.profit, partialCount: partial.count, partialFilled: partial.filled,
   };
 }
@@ -1434,6 +1437,7 @@ const CSV_COLUMNS = [
   ["Ngày exit", (t) => t.exitDate],
   ["Giờ exit", (t) => t.exitTime],
   ["Giờ giữ lệnh", (t) => { const h = holdHours(t); return h === null ? "" : h.toFixed(2); }],
+  ["Phí (hoa hồng + qua đêm)", (t) => (t.fees === "" || t.fees === undefined || t.fees === null ? "" : t.fees)],
   ["Lãi/Lỗ (tổng)", (t) => { const { profit } = computeResult(t); return profit === null ? "" : profit; }],
   ["Số lần chốt bớt", (t) => partialExitsOf(t).length || ""],
   ["Lãi/Lỗ chốt bớt", (t) => { const st = partialExitStats(t); return st.filled ? st.profit : ""; }],
