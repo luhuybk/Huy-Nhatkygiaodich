@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
@@ -463,7 +464,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, ledger, onEdit, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, ledger, onEdit, onCreate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
@@ -520,7 +521,11 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
       <div className="subtabs">
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Danh sách</button>
         <button className={`subtab ${tab === "calendar" ? "subtab-active" : ""}`} onClick={() => setTab("calendar")}><CalendarDays size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Lịch</button>
+        <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu sàn</button>
       </div>
+      {tab === "reconcile" ? (
+        <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} />
+      ) : null}
       {tab === "list" ? (
         <div>
           <JournalFilters trades={trades} resources={resources} filters={filters} setFilters={setFilters} />
@@ -544,9 +549,9 @@ export function JournalSection({ trades, resources, ledger, onEdit, onDelete, on
           <SortBar sort={sort} onChange={setSort} />
           <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} />
         </div>
-      ) : (
+      ) : tab === "calendar" ? (
         <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} />
-      )}
+      ) : null}
     </div>
   );
 }

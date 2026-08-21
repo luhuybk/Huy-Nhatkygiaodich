@@ -55,6 +55,19 @@
         .subtab-badge-muted { background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); line-height:14px; }
         .subtab-badge-warn { background:var(--loss); color:#fff; }
 
+        /* Đối chiếu file sàn */
+        .rec-summary { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0 10px; }
+        .rec-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:20px;
+          border:1px solid var(--border); background:var(--surface-2); font-size:12px; font-weight:600; }
+        .rec-chip-ok { color:var(--win); border-color:var(--win); }
+        .rec-chip-bad { color:var(--loss); border-color:var(--loss); }
+        .rec-chip-warn { color:var(--accent); border-color:var(--accent); }
+        .rec-title { font-size:14px; font-weight:700; margin:16px 0 8px; }
+        .rec-title-bad { color:var(--loss); }
+        .rec-title-warn { color:var(--accent); }
+        .rec-tag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:20px;
+          background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:11px; }
+
         /* Timeline làm việc */
         .tl-src-item { display:flex; flex-direction:column; }
         .tl-src-skip { color:var(--accent); font-weight:600; white-space:nowrap; }
