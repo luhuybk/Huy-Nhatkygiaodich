@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye, CalendarClock } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
-import { buildWeekTimeline, emptyReminder, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
+import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
 import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
 import { TimelinePanel } from "./Timeline.jsx";
 
@@ -94,10 +94,14 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
   const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
   const activeWatchCount = symbolWatchActiveCount(symbolWatches);
   // Số việc bị chồng giờ trong tuần — hiện luôn trên nhãn tab để không phải mở ra mới biết.
+  const openTrades = useMemo(
+    () => openTradeCounter({ accounts: resources.accounts, trades, mutedTrades: slMutedTrades }),
+    [resources.accounts, trades, slMutedTrades]
+  );
   const weekConflicts = useMemo(
-    () => buildWeekTimeline({ settings: slReminderSettings, watches: symbolWatches, reminders, durations: slReminderSettings.taskDurations })
+    () => buildWeekTimeline({ settings: slReminderSettings, watches: symbolWatches, reminders, durations: slReminderSettings.taskDurations, openTrades })
       .reduce((n, d) => n + d.load.conflicts, 0),
-    [slReminderSettings, symbolWatches, reminders]
+    [slReminderSettings, symbolWatches, reminders, openTrades]
   );
 
   const markDone = (r) => {
@@ -164,6 +168,7 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
         <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
       ) : tab === "timeline" ? (
         <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
+          accounts={resources.accounts} trades={trades} mutedTrades={slMutedTrades}
           onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange} />
       ) : (
       <div className="reminder-list">

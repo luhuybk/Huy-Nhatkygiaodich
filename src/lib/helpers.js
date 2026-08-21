@@ -450,6 +450,26 @@ export function weekdayCodeFromNumber(n) {
   return WEEKDAY_CODES[(Number(n) + 6) % 7];
 }
 
+// Nhắc dời SL chỉ được gửi khi tài khoản còn lệnh đang mở (xem supabase/functions/
+// sl-reminder/index.ts) — đếm y hệt ở đây để timeline hiện mờ đúng những mốc mà thực tế
+// sẽ không có tin nào chạy. Lệnh đã bấm "Kết thúc lệnh" trên Telegram cũng không tính.
+export function openTradeCounter({ accounts, trades, mutedTrades } = {}) {
+  const mutedIds = new Set((mutedTrades || []).map((m) => m && m.tradeId).filter(Boolean));
+  const byName = {};
+  (trades || []).forEach((t) => {
+    if (!t || !t.id || !t.entryDate || t.exitDate || mutedIds.has(t.id)) return;
+    const name = t.account || "";
+    if (name) byName[name] = (byName[name] || 0) + 1;
+  });
+  const nameById = {};
+  (accounts || []).forEach((a) => { if (a && a.id) nameById[a.id] = a.name; });
+  // Lịch trỏ tới tài khoản đã xoá thì lấy tên đã lưu trong lịch, giống hàm gửi tin.
+  return (accountId, fallbackName) => {
+    const name = nameById[accountId] || fallbackName || "";
+    return name ? byName[name] || 0 : 0;
+  };
+}
+
 function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id }) {
   const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
@@ -467,16 +487,23 @@ function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, min
 
 // Trả về mọi việc của một thứ trong tuần, kể cả việc đang tắt (để hiện mờ) —
 // bên dùng tự lọc theo `enabled` khi cần cộng tổng.
-export function buildDayTimeline(day, { settings, watches, reminders, durations }) {
+export function buildDayTimeline(day, { settings, watches, reminders, durations, openTrades }) {
   const st = settings || {};
   const out = [];
   const mins = (kind, override) => taskMinutes(durations, kind, override);
+  // Không truyền danh sách lệnh vào thì để nguyên trạng thái bật/tắt của lịch —
+  // thà không làm mờ còn hơn làm mờ nhầm vì thiếu dữ liệu.
+  const countOpen = typeof openTrades === "function" ? openTrades : null;
 
   (st.schedules || []).forEach((s) => {
+    const open = countOpen ? countOpen(s.accountId, s.accountName) : null;
+    const name = s.accountName || "";
     pushHours(out, {
       hours: s.hours, activeDays: s.activeDays, day, kind: "sl",
-      title: "Dời SL", sub: s.accountName || "", minutes: mins("sl", s.minutes),
-      enabled: !!st.enabled && !!s.enabled, sourceId: `sl_${s.accountId}`, id: s.accountId,
+      title: "Dời SL",
+      sub: open === null ? name : `${name}${name ? " · " : ""}${open ? `${open} lệnh mở` : "không có lệnh mở"}`,
+      minutes: mins("sl", s.minutes),
+      enabled: !!st.enabled && !!s.enabled && open !== 0, sourceId: `sl_${s.accountId}`, id: s.accountId,
     });
   });
 
@@ -559,7 +586,7 @@ export function buildWeekTimeline(args) {
 
 // Danh sách mọi lịch đang tồn tại, để chỉnh thời gian dự kiến riêng cho từng cái —
 // kiểm tra setup của Forex-H3 tốn 40 phút trong khi VN Stock chỉ 10.
-export function timelineSources({ settings, watches, reminders, durations }) {
+export function timelineSources({ settings, watches, reminders, durations, openTrades }) {
   const st = settings || {};
   const out = [];
   const add = (kind, id, key, name, hours, activeDays, enabled, override) => {
@@ -570,7 +597,8 @@ export function timelineSources({ settings, watches, reminders, durations }) {
     });
   };
 
-  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled, x.minutes));
+  const countOpen = typeof openTrades === "function" ? openTrades : null;
+  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName) > 0), x.minutes));
   (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes));
   (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);

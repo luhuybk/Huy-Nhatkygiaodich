@@ -3,7 +3,7 @@ import { AlertTriangle, Clock, GripHorizontal } from "lucide-react";
 import { Field } from "./ui.jsx";
 import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
-  buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes,
+  buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes, openTradeCounter,
   weekdayCodeFromNumber,
 } from "../lib/helpers.js";
 
@@ -162,11 +162,17 @@ function SourceDurations({ sources, onChange }) {
   );
 }
 
-export function TimelinePanel({ settings, watches, reminders, onSettingsChange, onWatchesChange, onRemindersChange }) {
+export function TimelinePanel({ settings, watches, reminders, accounts, trades, mutedTrades, onSettingsChange, onWatchesChange, onRemindersChange }) {
   const [day, setDay] = useState(() => weekdayCodeFromNumber(new Date().getDay()));
   // Cài đặt cũ chưa có mục này — nhớ lại kết quả để timeline không phải tính lại mỗi lần vẽ.
   const durations = useMemo(() => settings.taskDurations || emptyTaskDurations(), [settings]);
-  const args = useMemo(() => ({ settings, watches, reminders, durations }), [settings, watches, reminders, durations]);
+  // Tài khoản không còn lệnh nào mở thì mốc "Dời SL" của nó không hề chạy — đếm ở đây
+  // để timeline làm mờ nó đúng như thực tế.
+  const openTrades = useMemo(() => openTradeCounter({ accounts, trades, mutedTrades }), [accounts, trades, mutedTrades]);
+  const args = useMemo(
+    () => ({ settings, watches, reminders, durations, openTrades }),
+    [settings, watches, reminders, durations, openTrades]
+  );
   const week = useMemo(() => buildWeekTimeline(args), [args]);
   const sources = useMemo(() => timelineSources(args), [args]);
   const today = week.find((d) => d.day === day) || week[0];
@@ -205,7 +211,8 @@ export function TimelinePanel({ settings, watches, reminders, onSettingsChange, 
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Gom mọi lịch bạn đã đặt ở các tab bên cạnh — dời SL, kiểm tra setup, symbol theo dõi, nhắc nhở riêng,
         tổng kết tuần — về cùng một trục thời gian để thấy ngày nào nặng, việc nào đè lên việc nào.
-        Lịch đang tắt vẫn hiện nhưng mờ đi và không tính vào tổng.
+        Lịch đang tắt vẫn hiện nhưng mờ đi và không tính vào tổng — mốc "Dời SL" của tài khoản
+        đang không có lệnh mở cũng mờ, vì Telegram sẽ không gửi tin nào cho nó.
       </p>
 
       <h3 className="block-title" style={{ marginTop: 0 }}>Thời gian dự kiến — mặc định theo loại việc</h3>
