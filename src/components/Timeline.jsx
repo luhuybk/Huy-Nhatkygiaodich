@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Clock, GripHorizontal, ListChecks } from "lucide-react";
+import { AlertTriangle, ClipboardCopy, Clock, Download, GripHorizontal, ListChecks } from "lucide-react";
 import { Field } from "./ui.jsx";
 import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
@@ -132,6 +132,27 @@ function DayTrack({ items, conflicts, onMove }) {
   );
 }
 
+// Xuất lịch sang Life Hub (app quản lý công việc cá nhân) — CHỈ nhịp tuần: tên việc, giờ,
+// số phút, thứ trong tuần. Không kèm token/chat id/thread id, không kèm id tài khoản, và
+// không đụng tới nhật ký lệnh hay dữ liệu vốn.
+const FEED_ID = "nkgd";
+const FEED_NAME = "Nhật ký giao dịch";
+const FEED_COLOR = "#d4a24e";
+const KIND_VI = {
+  sl: "Dời SL", setupCheck: "Kiểm tra setup",
+  symbolWatch: "Symbol theo dõi", reminder: "Nhắc", report: "",
+};
+
+// "2026-08-21T14:00:00+07:00" — giờ địa phương kèm lệch múi giờ, để bên Life Hub đọc ra
+// đúng thời điểm xuất mà không phải đoán múi giờ.
+function localIso(d) {
+  const p = (n) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  const off = -d.getTimezoneOffset();
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    + `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    + `${off >= 0 ? "+" : "-"}${p(off / 60)}:${p(off % 60)}`;
+}
+
 // Giờ đã tích xong, hiện theo giờ máy — chỉ để bạn nhớ lúc nãy làm lúc mấy giờ.
 function doneHhmm(iso) {
   const d = new Date(iso || "");
@@ -239,6 +260,48 @@ export function TimelinePanel({
     return todayChecklist({ day: todayCode, date: dateStr, items: d ? d.items : [], doneMap: taskDone, setupCheckLog });
   }, [week, todayCode, dateStr, taskDone, setupCheckLog]);
 
+  // Life Hub chỉ cần nhịp tuần cố định, nên CỐ TÌNH không truyền openTrades: số lệnh đang mở
+  // đổi từng giờ, xuất lúc 9h sáng và 3h chiều sẽ ra hai kết quả khác nhau và bên đó tưởng
+  // lịch vừa bị sửa. Cứ xuất trọn bộ mỗi lần — "feed" cố định để Life Hub thay hẳn bản trước.
+  const [feedMsg, setFeedMsg] = useState("");
+  const buildFeed = () => ({
+    feed: FEED_ID,
+    name: FEED_NAME,
+    color: FEED_COLOR,
+    exportedAt: localIso(new Date()),
+    items: timelineSources({ settings, watches, reminders, durations })
+      .filter((x) => x.enabled && x.hours.length)
+      .flatMap((x) => x.hours.map((h) => ({
+        title: [KIND_VI[x.kind], x.name].filter(Boolean).join(" · "),
+        time: h,
+        mins: x.minutes,
+        days: x.activeDays,
+      }))),
+  });
+
+  const exportFeed = () => {
+    const feed = buildFeed();
+    const blob = new Blob([JSON.stringify(feed, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lich-${FEED_ID}-${todayStr()}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setFeedMsg(`Đã tải file — ${feed.items.length} mốc việc.`);
+  };
+
+  const copyFeed = async () => {
+    const feed = buildFeed();
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(feed, null, 2));
+      setFeedMsg(`Đã chép — ${feed.items.length} mốc việc, dán thẳng vào Life Hub.`);
+    } catch {
+      // Trình duyệt chặn clipboard (thường vì không chạy trên HTTPS) — còn nút tải file.
+      setFeedMsg("Trình duyệt không cho chép — bấm \"Xuất lịch\" để tải file nhé.");
+    }
+  };
+
   const toggleTask = (row, done) => {
     onTaskDoneChange(setTaskDone(taskDone, dateStr, row.slotKey, done));
     // Việc kiểm tra setup còn được đếm tỷ lệ hoàn thành ở tab riêng — ghi luôn vào đó
@@ -316,6 +379,17 @@ export function TimelinePanel({
         kiểm tra setup Forex mất 40 phút trong khi VN Stock chỉ 10.
       </p>
       <SourceDurations sources={sources} onChange={(s, value) => applyPatch({ kind: s.kind, id: s.id }, { minutes: value })} />
+
+      <div className="tl-feed">
+        <button type="button" className="btn" onClick={exportFeed}><Download size={14} /> Xuất lịch cho Life Hub</button>
+        <button type="button" className="btn" onClick={copyFeed}><ClipboardCopy size={14} /> Chép cho Life Hub</button>
+        {feedMsg ? <span className="tl-feed-msg">{feedMsg}</span> : null}
+      </div>
+      <p className="field-hint">
+        Chỉ gồm tên việc, giờ, số phút và thứ trong tuần của những lịch đang bật — không kèm
+        token Telegram, không kèm dữ liệu lệnh. Đây là nhịp tuần cố định nên vẫn xuất cả mốc dời SL
+        của tài khoản hiện không có lệnh mở. Mỗi lần xuất là trọn bộ, Life Hub sẽ thay hẳn bản trước.
+      </p>
 
       <h3 className="block-title">Cả tuần</h3>
       <div className="tl-week">
