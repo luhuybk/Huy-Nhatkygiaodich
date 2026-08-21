@@ -584,6 +584,69 @@ export function buildWeekTimeline(args) {
   });
 }
 
+// Việc trong ngày mà bạn đã tự làm xong trước khi Telegram kịp nhắc. Lưu theo ngày để
+// sáng hôm sau danh sách tự sạch, và giữ lại vài ngày phòng khi cần nhìn lại hôm qua.
+// CHỈ web ghi khoá này; Edge Function chỉ đọc để biết mốc nào khỏi gửi.
+export const TASK_DONE_RETENTION_DAYS = 14;
+
+// Một "mốc việc" = một lịch tại một giờ, đúng đơn vị mà Telegram bắn tin. Dấu "@" ngăn
+// nhầm với dấu "_" đã có sẵn trong khoá lịch (sl_<accountId>, w_<groupId>...).
+export function taskSlotKey(source) {
+  if (!source || !source.key || !source.hour) return "";
+  return `${source.key}@${source.hour}`;
+}
+
+export function taskDoneAt(doneMap, date, key) {
+  const day = doneMap && doneMap[date];
+  return (day && day[key]) || "";
+}
+
+export function setTaskDone(doneMap, date, key, done) {
+  const next = { ...(doneMap || {}) };
+  const day = { ...(next[date] || {}) };
+  if (done) day[key] = new Date().toISOString();
+  else delete day[key];
+  if (Object.keys(day).length) next[date] = day;
+  else delete next[date];
+  // app_data chỉ có một ô cho khoá này nên phải tự dọn, không thì nó phình mãi.
+  const cutoff = shiftDate(date, -TASK_DONE_RETENTION_DAYS);
+  Object.keys(next).forEach((d) => { if (d < cutoff) delete next[d]; });
+  return next;
+}
+
+// Việc của hôm nay, kèm trạng thái đã xong — dùng cho danh sách tích việc ở tab timeline.
+// Lịch đang tắt không đưa vào: nó không gửi tin thì cũng không có gì để làm.
+export function todayChecklist({ day, date, items, doneMap, setupCheckLog }) {
+  const checked = {};
+  (setupCheckLog || []).forEach((e) => {
+    if (e && e.date === date && e.checkedAt) checked[`sc_${e.accountId}@${e.hour}`] = e.checkedAt;
+  });
+  return (items || [])
+    .filter((x) => x.enabled)
+    .map((x) => {
+      const key = taskSlotKey(x.source);
+      // Bấm "Đã kiểm tra" trên Telegram cũng là làm xong — hiện đã tích cho khớp.
+      const at = taskDoneAt(doneMap, date, key) || checked[key] || "";
+      return { ...x, slotKey: key, done: !!at, doneAt: at, day };
+    });
+}
+
+// Tab "Kiểm tra setup" tính tỷ lệ hoàn thành từ setupCheckLog, mà log đó chỉ sinh ra lúc
+// Telegram gửi tin. Tự tay tích trước giờ nhắc thì phải ghi vào đây, không thì việc đã làm
+// lại biến mất khỏi thống kê. `via: "web"` để lúc bỏ tích còn biết dòng nào do web tạo ra.
+export function markSetupCheckDone(log, { accountId, accountName, date, hour }, done) {
+  const list = Array.isArray(log) ? [...log] : [];
+  const i = list.findIndex((e) => e && e.accountId === accountId && e.date === date && e.hour === hour);
+  if (!done) {
+    if (i < 0) return list;
+    if (list[i].via === "web") return list.filter((_, n) => n !== i);
+    return list.map((e, n) => (n === i ? { ...e, checkedAt: "" } : e));
+  }
+  const at = new Date().toISOString();
+  if (i < 0) return [...list, { accountId, accountName, date, hour, checkedAt: at, via: "web" }];
+  return list.map((e, n) => (n === i ? { ...e, checkedAt: e.checkedAt || at } : e));
+}
+
 // Danh sách mọi lịch đang tồn tại, để chỉnh thời gian dự kiến riêng cho từng cái —
 // kiểm tra setup của Forex-H3 tốn 40 phút trong khi VN Stock chỉ 10.
 export function timelineSources({ settings, watches, reminders, durations, openTrades }) {

@@ -6,6 +6,7 @@
 // Cần biến môi trường SUPABASE_URL và SUPABASE_SERVICE_ROLE_KEY — Supabase tự cấp sẵn cho mọi Edge Function.
 // Kích hoạt gọi định kỳ bằng file supabase-sl-reminder-cron.sql (pg_cron + pg_net) ở thư mục gốc repo.
 // Các nút bấm trong tin nhắn do function telegram-webhook xử lý.
+// Việc đã tự tích "xong" ở tab Timeline làm việc trên web (khoá timelineDone) thì bỏ qua, không gửi.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -229,7 +230,7 @@ Deno.serve(async () => {
     const dueSchedules = schedules.filter(isDueNow);
     const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
-    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }, { data: mutedRow }, { data: checkLogRow }] = await Promise.all([
+    const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }, { data: mutedRow }, { data: checkLogRow }, { data: doneRow }] = await Promise.all([
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "resources").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "trades").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slReminderLog").maybeSingle(),
@@ -237,6 +238,7 @@ Deno.serve(async () => {
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "symbolWatches").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "slMutedTrades").maybeSingle(),
       supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "setupCheckLog").maybeSingle(),
+      supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "timelineDone").maybeSingle(),
     ]);
 
     const accounts = (resourcesRow?.value?.accounts || []) as { id: string; name: string }[];
@@ -256,6 +258,12 @@ Deno.serve(async () => {
     const checkLog = (checkLogRow?.value || []) as {
       accountId?: string; accountName?: string; date?: string; hour?: string; checkedAt?: string;
     }[];
+    // Việc người dùng đã tự tích "xong" trên web (tab Timeline làm việc) trước khi tin nhắn kịp
+    // bay tới. Function này CHỈ ĐỌC khoá timelineDone — web là bên duy nhất ghi, nên không bao giờ
+    // có chuyện ghi đè mất cái vừa tích trên điện thoại.
+    const doneToday = ((doneRow?.value || {}) as Record<string, Record<string, string>>)[today] || {};
+    const isTaskDone = (sourceKey: string, hour?: string) => !!(hour && doneToday[`${sourceKey}@${hour}`]);
+
     let logChanged = false;
     let mutedChanged = false;
     let checkLogChanged = false;
@@ -276,6 +284,7 @@ Deno.serve(async () => {
       if (!openTrades.length) continue;
 
       const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      if (isTaskDone(`sl_${sched.accountId}`, matchedHour)) continue;
 
       // Mỗi lệnh một tin riêng để nút bấm gắn đúng lệnh — gộp chung thì không biết bấm cho symbol nào.
       for (const t of openTrades) {
@@ -307,6 +316,7 @@ Deno.serve(async () => {
       if (!accountName) continue;
 
       const matchedHour = (sched.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
+      if (isTaskDone(`sc_${sched.accountId}`, matchedHour)) continue;
       // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
       const logKey = `setup_${today}_${sched.accountId}_${matchedHour}`;
       if (log[logKey]) continue;
@@ -338,6 +348,7 @@ Deno.serve(async () => {
     });
 
     for (const r of dueReminders) {
+      if (isTaskDone(`r_${r.id}`, r.notifyTime || "08:00")) continue;
       // Giữ vị trí "ngày" ở phần tử thứ 2 của key (giống key nhắc dời SL) để logic dọn log cũ bên dưới hoạt động đúng.
       const logKey = `reminder_${today}_${r.id}`;
       if (log[logKey]) continue;
@@ -352,7 +363,8 @@ Deno.serve(async () => {
 
     // Nhắc điền nốt các lệnh chưa hoàn thành 100% — mỗi tuần 1 lần vào thứ + giờ đã chọn.
     const inc = settings.incompleteReminder;
-    if (inc?.enabled && (inc.weekday || "CN") === todayWeekdayCode && minutesDiff(inc.time || "20:00", currentHHMM) <= MATCH_TOLERANCE_MIN) {
+    if (inc?.enabled && (inc.weekday || "CN") === todayWeekdayCode && minutesDiff(inc.time || "20:00", currentHHMM) <= MATCH_TOLERANCE_MIN
+        && !isTaskDone("incomplete", inc.time || "20:00")) {
       const logKey = `incomplete_${today}`;
       if (!log[logKey]) {
         const pending = trades
@@ -416,7 +428,8 @@ Deno.serve(async () => {
 
     // Tổng kết 7 ngày gần nhất — gom số liệu rải rác trên web thành một nhịp tuần.
     const ws = settings.weeklySummary;
-    if (ws?.enabled && (ws.weekday || "CN") === todayWeekdayCode && minutesDiff(ws.time || "19:00", currentHHMM) <= MATCH_TOLERANCE_MIN) {
+    if (ws?.enabled && (ws.weekday || "CN") === todayWeekdayCode && minutesDiff(ws.time || "19:00", currentHHMM) <= MATCH_TOLERANCE_MIN
+        && !isTaskDone("weekly", ws.time || "19:00")) {
       const logKey = `weekly_${today}`;
       if (!log[logKey]) {
         const from = shiftDateStr(today, -6);
@@ -508,6 +521,7 @@ Deno.serve(async () => {
         if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
         const matchedHour = (w.hours || []).find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN);
         if (!matchedHour) continue;
+        if (isTaskDone(`w_${w.id}`, matchedHour)) continue;
 
         const groupName = (w.label || "").trim();
         for (const sym of watchSymbols(w)) {

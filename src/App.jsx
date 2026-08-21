@@ -103,6 +103,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [symbolWatches, setSymbolWatches] = useState([]);
   const [setupCheckLog, setSetupCheckLog] = useState([]);
   const [slMutedTrades, setSlMutedTrades] = useState([]);
+  const [taskDone, setTaskDoneMap] = useState({});
   const [view, setView] = useStickyTab("view", "dashboard", NAV_KEYS);
   const [activeAccount, setActiveAccount] = useState("");
   const [viewingTrade, setViewingTrade] = useState(null);
@@ -116,7 +117,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -140,6 +141,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("backups", []),
         safeGet("setupCheckLog", []),
         safeGet("slMutedTrades", []),
+        safeGet("timelineDone", {}),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -166,6 +168,7 @@ function AppShell({ onSignOut, userEmail }) {
       setBackups(Array.isArray(bk) ? bk : []);
       setSetupCheckLog(Array.isArray(scl) ? scl : []);
       setSlMutedTrades(Array.isArray(smt) ? smt : []);
+      setTaskDoneMap(tdn && typeof tdn === "object" && !Array.isArray(tdn) ? tdn : {});
       if (rawWatches.some((w) => !Array.isArray(w.symbols))) await safeSet("symbolWatches", normalizedWatches);
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
@@ -276,6 +279,8 @@ function AppShell({ onSignOut, userEmail }) {
     flashSaved(await safeSet("slMutedTrades", merged));
   }, [slMutedTrades]);
   const persistSetupCheckLog = useCallback(async (next) => { setSetupCheckLog(next); flashSaved(await safeSet("setupCheckLog", next)); }, []);
+  // Chỉ web ghi khoá này, Edge Function chỉ đọc — nên ghi đè thẳng là an toàn.
+  const persistTaskDone = useCallback(async (next) => { setTaskDoneMap(next); flashSaved(await safeSet("timelineDone", next)); }, []);
 
   // Giao dịch (và setup miss/skip) tham chiếu tài khoản bằng TÊN, không phải id.
   // Nên khi đổi tên tài khoản phải đổi luôn tên trong mọi bản ghi cũ, nếu không toàn bộ
@@ -580,6 +585,7 @@ function AppShell({ onSignOut, userEmail }) {
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} ledger={ledger} onEdit={startEdit} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
+                  taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :

@@ -56,6 +56,26 @@
         .subtab-badge-warn { background:var(--loss); color:#fff; }
 
         /* Timeline làm việc */
+        .tl-check-wrap { margin-bottom:4px; }
+        .tl-check-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+        .tl-check-count { font-size:12px; font-weight:700; color:var(--text-dim); white-space:nowrap; }
+        .tl-check-bar { flex:1; height:5px; border-radius:3px; background:var(--surface-2); overflow:hidden; }
+        .tl-check-bar i { display:block; height:100%; background:var(--win); border-radius:3px; transition:width .18s; }
+        .tl-check-list { display:flex; flex-direction:column; gap:5px; }
+        .tl-check { display:flex; align-items:center; gap:9px; padding:8px 11px; border:1px solid var(--border);
+          border-radius:8px; background:var(--surface); cursor:pointer; }
+        .tl-check:hover { border-color:var(--accent); }
+        .tl-check input { width:15px; height:15px; flex-shrink:0; accent-color:var(--win); cursor:pointer; margin:0; }
+        .tl-check-time { font-variant-numeric:tabular-nums; font-size:12px; font-weight:700; letter-spacing:.4px; flex-shrink:0; }
+        .tl-check-dot { width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+        .tl-check-title { font-size:13px; font-weight:600; white-space:nowrap; }
+        .tl-check-sub { font-size:12px; color:var(--text-dim); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .tl-check-state { font-size:11px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
+        .tl-check-late { color:var(--loss); font-weight:600; }
+        .tl-check-now { color:var(--accent); font-weight:600; }
+        .tl-check-off { opacity:.5; }
+        .tl-check-off .tl-check-title, .tl-check-off .tl-check-time { text-decoration:line-through; }
+        .tl-check-off .tl-check-state { color:var(--win); }
         .tl-duration-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:4px; }
         .tl-kind-label { display:inline-flex; align-items:center; gap:6px; }
         .tl-kind-label i { width:9px; height:9px; border-radius:2px; display:inline-block; flex-shrink:0; }
@@ -601,6 +621,9 @@
           .modal-backdrop, .modal-overlay { padding:0; align-items:flex-end; }
           .modal-panel { max-width:100%; max-height:92vh; border-radius:16px 16px 0 0; }
           .reminders-page-head { align-items:flex-start; }
+          /* Màn hẹp: tên lịch xuống hàng riêng để tiêu đề việc không bị bóp thành cột chữ dọc. */
+          .tl-check { flex-wrap:wrap; row-gap:2px; }
+          .tl-check-sub { flex:1 1 100%; order:5; margin-left:24px; }
           /* Màn hẹp: nhãn tóm tắt xuống hàng riêng, nếu không nó ép tiêu đề mục thành cột chữ dọc. */
           .section-head { flex-wrap:wrap; }
           .section-titles { min-width:0; }

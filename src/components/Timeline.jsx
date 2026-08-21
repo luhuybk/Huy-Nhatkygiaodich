@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Clock, GripHorizontal } from "lucide-react";
+import { AlertTriangle, Clock, GripHorizontal, ListChecks } from "lucide-react";
 import { Field } from "./ui.jsx";
 import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
   buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes, openTradeCounter,
-  weekdayCodeFromNumber,
+  weekdayCodeFromNumber, todayChecklist, setTaskDone, markSetupCheckDone, todayStr,
 } from "../lib/helpers.js";
 
 // Trục ngang luôn dừng ở mốc giờ tròn, và luôn rộng ít nhất 4 tiếng để một ngày
@@ -132,6 +132,52 @@ function DayTrack({ items, conflicts, onMove }) {
   );
 }
 
+// Giờ đã tích xong, hiện theo giờ máy — chỉ để bạn nhớ lúc nãy làm lúc mấy giờ.
+function doneHhmm(iso) {
+  const d = new Date(iso || "");
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// Danh sách việc của riêng hôm nay. Tích vào là việc đó coi như xong và Telegram
+// bỏ qua mốc đó — không phải chờ tin nhắn nhảy lên rồi mới bấm nút trong tin.
+function TodayChecklist({ rows, nowMin, onToggle }) {
+  if (!rows.length) return <p className="empty-note">Hôm nay không có lịch nào đang bật.</p>;
+  const done = rows.filter((r) => r.done).length;
+  return (
+    <div className="tl-check-wrap">
+      <div className="tl-check-head">
+        <span className="tl-check-count">{done}/{rows.length} việc</span>
+        <span className="tl-check-bar"><i style={{ width: `${(done / rows.length) * 100}%` }} /></span>
+      </div>
+      <div className="tl-check-list">
+        {rows.map((r) => {
+          const k = taskKind(r.kind);
+          const late = !r.done && nowMin > r.start + r.minutes;
+          return (
+            <label key={r.id} className={`tl-check ${r.done ? "tl-check-off" : ""}`}>
+              <input type="checkbox" checked={r.done} onChange={(e) => onToggle(r, e.target.checked)} />
+              <span className="tl-check-time">{minutesToHhmm(r.start)}</span>
+              <i className="tl-check-dot" style={{ background: k.color }} />
+              <span className="tl-check-title">{r.title}</span>
+              <span className="tl-check-sub">{r.sub}</span>
+              {r.done ? (
+                <span className="tl-check-state">xong{doneHhmm(r.doneAt) ? ` ${doneHhmm(r.doneAt)}` : ""}</span>
+              ) : late ? (
+                <span className="tl-check-state tl-check-late">quá giờ</span>
+              ) : nowMin >= r.start ? (
+                <span className="tl-check-state tl-check-now">tới giờ</span>
+              ) : (
+                <span className="tl-check-state">{fmtDuration(r.minutes)}</span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SourceDurations({ sources, onChange }) {
   const groups = TASK_KINDS
     .map((k) => ({ kind: k, rows: sources.filter((s) => s.kind === k.key) }))
@@ -162,7 +208,10 @@ function SourceDurations({ sources, onChange }) {
   );
 }
 
-export function TimelinePanel({ settings, watches, reminders, accounts, trades, mutedTrades, onSettingsChange, onWatchesChange, onRemindersChange }) {
+export function TimelinePanel({
+  settings, watches, reminders, accounts, trades, mutedTrades, taskDone, setupCheckLog,
+  onSettingsChange, onWatchesChange, onRemindersChange, onTaskDoneChange, onSetupCheckLogChange,
+}) {
   const [day, setDay] = useState(() => weekdayCodeFromNumber(new Date().getDay()));
   // Cài đặt cũ chưa có mục này — nhớ lại kết quả để timeline không phải tính lại mỗi lần vẽ.
   const durations = useMemo(() => settings.taskDurations || emptyTaskDurations(), [settings]);
@@ -179,6 +228,27 @@ export function TimelinePanel({ settings, watches, reminders, accounts, trades, 
   const conflicts = useMemo(() => timelineConflicts(today.items), [today]);
   const busiest = Math.max(1, ...week.map((d) => d.load.minutes));
   const totalConflicts = week.reduce((n, d) => n + d.load.conflicts, 0);
+
+  // Danh sách tích việc luôn là của HÔM NAY, không đổi theo ngày đang xem ở dải tuần bên dưới —
+  // tích vào một ngày không phải hôm nay thì Telegram của hôm nay chẳng liên quan gì.
+  const dateStr = todayStr();
+  const todayCode = weekdayCodeFromNumber(new Date().getDay());
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const checklist = useMemo(() => {
+    const d = week.find((x) => x.day === todayCode);
+    return todayChecklist({ day: todayCode, date: dateStr, items: d ? d.items : [], doneMap: taskDone, setupCheckLog });
+  }, [week, todayCode, dateStr, taskDone, setupCheckLog]);
+
+  const toggleTask = (row, done) => {
+    onTaskDoneChange(setTaskDone(taskDone, dateStr, row.slotKey, done));
+    // Việc kiểm tra setup còn được đếm tỷ lệ hoàn thành ở tab riêng — ghi luôn vào đó
+    // để con số không hụt đi chỉ vì bạn làm sớm hơn giờ nhắc.
+    if (row.source.kind === "setupCheck" && onSetupCheckLogChange) {
+      onSetupCheckLogChange(markSetupCheckDone(setupCheckLog, {
+        accountId: row.source.id, accountName: row.sub || "", date: dateStr, hour: row.source.hour,
+      }, done));
+    }
+  };
 
   const setDefaultDuration = (key, value) => {
     onSettingsChange({ ...settings, taskDurations: { ...durations, [key]: value } });
@@ -215,7 +285,16 @@ export function TimelinePanel({ settings, watches, reminders, accounts, trades, 
         đang không có lệnh mở cũng mờ, vì Telegram sẽ không gửi tin nào cho nó.
       </p>
 
-      <h3 className="block-title" style={{ marginTop: 0 }}>Thời gian dự kiến — mặc định theo loại việc</h3>
+      <h3 className="block-title" style={{ marginTop: 0 }}>
+        <span className="tl-kind-label"><ListChecks size={15} /> Việc hôm nay · {todayCode}</span>
+      </h3>
+      <p className="field-hint" style={{ marginBottom: 10 }}>
+        Làm xong việc nào thì tích vào đây — mốc đó sẽ không bắn tin Telegram nữa.
+        Danh sách tự làm mới mỗi ngày, và chỉ gồm những lịch đang bật.
+      </p>
+      <TodayChecklist rows={checklist} nowMin={nowMin} onToggle={toggleTask} />
+
+      <h3 className="block-title">Thời gian dự kiến — mặc định theo loại việc</h3>
       <p className="field-hint" style={{ marginBottom: 10 }}>
         Tính bằng phút. Đây là con số dùng để xếp khối lên timeline và để phát hiện trùng giờ —
         kiểm tra setup 30-40 phút thì đặt 35, dời SL chỉ liếc qua thì đặt 5.

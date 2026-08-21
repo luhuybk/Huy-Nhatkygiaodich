@@ -85,7 +85,7 @@ export function ReminderBell({ reminders, onOpen }) {
   );
 }
 
-export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, slMutedTrades, onSlMutedTradesChange }) {
+export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, onSetupCheckLogChange, slMutedTrades, onSlMutedTradesChange, taskDone, onTaskDoneChange }) {
   const [editing, setEditing] = useState(null);
   const [tab, setTab] = useStickyTab("remindersTab", "today", ["today", "all", "sl", "setupcheck", "symbolwatch", "timeline"]);
   const ts = todayStr();
@@ -169,7 +169,9 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
       ) : tab === "timeline" ? (
         <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
           accounts={resources.accounts} trades={trades} mutedTrades={slMutedTrades}
-          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange} />
+          taskDone={taskDone} setupCheckLog={setupCheckLog}
+          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange}
+          onTaskDoneChange={onTaskDoneChange} onSetupCheckLogChange={onSetupCheckLogChange} />
       ) : (
       <div className="reminder-list">
         {list.length === 0 ? (
