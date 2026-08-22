@@ -233,6 +233,28 @@ function matchedSameDay(rowTaken, rows, row) {
     && r.symbolKey === row.symbolKey && localDate(r.openAt) === day);
 }
 
+// Đoán file này là của tài khoản nào bằng chính lịch sử của bạn: tài khoản nào từng đánh
+// nhiều symbol trùng với file nhất thì gần như chắc là nó. Hoà nhau hoặc không có gì trùng
+// (tài khoản mới tinh) thì trả về rỗng để người dùng tự chọn — đoán bừa còn tệ hơn.
+export function guessAccount(rows, trades, accounts) {
+  const names = new Set((accounts || []).map((a) => a.name));
+  const symbols = new Set((rows || []).map((r) => r.symbolKey));
+  const hits = new Map();
+  (trades || []).forEach((t) => {
+    if (!t.account || !t.symbol || !names.has(t.account)) return;
+    const key = normalizeSymbol(t.symbol);
+    if (!symbols.has(key)) return;
+    if (!hits.has(t.account)) hits.set(t.account, new Set());
+    hits.get(t.account).add(key);
+  });
+  const ranked = [...hits.entries()]
+    .map(([name, set]) => ({ name, n: set.size }))
+    .sort((a, b) => b.n - a.n);
+  if (!ranked.length) return "";
+  if (ranked.length > 1 && ranked[0].n === ranked[1].n) return "";
+  return ranked[0].name;
+}
+
 // Dựng sẵn một lệnh từ dòng CSV để mở thẳng form — điền hộ đúng những gì sàn biết chắc,
 // phần đánh giá/tâm lý vẫn để trống cho bạn tự viết. Lãi lỗ và phí để riêng đúng như sàn
 // tách, để tổng cộng lại ra khớp con số cuối cùng.

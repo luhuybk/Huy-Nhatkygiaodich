@@ -122,6 +122,7 @@ export function emptySlReminderSettings() {
     incompleteReminder: emptyIncompleteReminder(),
     weeklySummary: emptyWeeklySummary(),
     mutedFillReminder: emptyMutedFillReminder(),
+    reconcileReminder: emptyReconcileReminder(),
     taskDurations: emptyTaskDurations(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
   };
@@ -141,6 +142,12 @@ export function emptyWeeklySummary() {
 // lệnh vẫn chưa có ngày thoát thì nhắc lại, mỗi lệnh mỗi ngày một lần.
 export function emptyMutedFillReminder() {
   return { enabled: true, days: 3, time: "20:00", threadId: "" };
+}
+
+// Đối chiếu file sàn chỉ có tác dụng nếu nhớ chạy — mỗi tuần một lần, sau khi thị trường
+// đóng cửa, nhắc xuất CSV rồi quét ở tab Nhật ký → Đối chiếu sàn.
+export function emptyReconcileReminder() {
+  return { enabled: false, weekday: "CN", time: "10:00", threadId: "" };
 }
 
 export const MUTED_FILL_DEFAULT_DAYS = 3;
@@ -568,6 +575,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
   const weeklyJobs = [
     { cfg: st.incompleteReminder, title: "Nhắc điền nốt lệnh", id: "incomplete" },
     { cfg: st.weeklySummary, title: "Tổng kết tuần", id: "weekly" },
+    { cfg: st.reconcileReminder, title: "Đối chiếu file sàn", id: "reconcile" },
   ];
   weeklyJobs.forEach(({ cfg, title, id }) => {
     if (!cfg) return;
@@ -710,6 +718,7 @@ export function timelineSources({ settings, watches, reminders, durations, openT
   (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
   if (st.weeklySummary) add("report", "weekly", "weekly", "Tổng kết tuần", [st.weeklySummary.time], [st.weeklySummary.weekday], !!st.weeklySummary.enabled, st.weeklySummary.minutes);
+  if (st.reconcileReminder) add("report", "reconcile", "reconcile", "Đối chiếu file sàn", [st.reconcileReminder.time], [st.reconcileReminder.weekday], !!st.reconcileReminder.enabled, st.reconcileReminder.minutes);
   (reminders || []).forEach((r) => {
     if (r.frequency !== "weekly" || !r.notifyTelegram) return;
     add("reminder", r.id, `r_${r.id}`, r.title || "Nhắc nhở", [r.notifyTime || "08:00"], [weekdayCodeFromNumber(r.weekday)], r.active !== false, r.minutes);
@@ -739,6 +748,9 @@ function patchItem(item, source, patch) {
   return next;
 }
 
+// Mỗi báo cáo tuần nằm ở một khoá riêng trong cài đặt — bảng này để timeline biết sửa vào đâu.
+const REPORT_KEYS = { weekly: "weeklySummary", incomplete: "incompleteReminder", reconcile: "reconcileReminder" };
+
 // Ghi một thay đổi (dời giờ hoặc đổi thời gian dự kiến) ngược về đúng bản ghi gốc.
 // `changed` cho biết phải lưu khoá nào, để không ghi đè những khoá không liên quan.
 export function applyTaskPatch({ settings, watches, reminders }, source, patch) {
@@ -755,7 +767,7 @@ export function applyTaskPatch({ settings, watches, reminders }, source, patch) 
     return { watches: mapList(watches, (x) => x.id === source.id), changed: "watches" };
   }
   if (source.kind === "report") {
-    const key = source.id === "weekly" ? "weeklySummary" : "incompleteReminder";
+    const key = REPORT_KEYS[source.id] || "incompleteReminder";
     const cfg = st[key] || {};
     const next = { ...cfg };
     if (patch.hour) next.time = patch.hour;
@@ -1241,8 +1253,48 @@ export function closedOfUSD(trades, resources) {
   return closedOf(trades).map((x) => {
     const acc = resources.accounts.find((a) => a.name === x.t.account);
     const currency = acc ? acc.currency : "USD";
-    return { t: x.t, r: { ...x.r, profit: toUSD(x.r.profit, currency, resources.fxRates) } };
+    // Phí cũng phải quy đổi cùng tỷ giá với lãi lỗ, không thì gộp nhiều tài khoản sẽ ra
+    // con số vô nghĩa: phí tài khoản cent cộng thẳng vào phí tài khoản USD.
+    return { t: x.t, r: { ...x.r,
+      profit: toUSD(x.r.profit, currency, resources.fxRates),
+      fees: toUSD(x.r.fees || 0, currency, resources.fxRates) } };
   });
+}
+
+// Phí hoa hồng + qua đêm gộp lại. Chỉ những lệnh ĐÃ điền phí mới có ý nghĩa, nên đếm riêng
+// số lệnh đó — nhìn "tổng phí $33" mà không biết nó gom từ mấy lệnh thì dễ tưởng đã đủ.
+export function feeStats(items) {
+  let fees = 0;
+  let withFee = 0;
+  let net = 0;
+  (items || []).forEach(({ r }) => {
+    const f = r.fees || 0;
+    fees += f;
+    if (f) withFee += 1;
+    net += r.profit || 0;
+  });
+  // Lãi gộp = kết quả trước khi trừ phí. Tỷ lệ chỉ có nghĩa khi lãi gộp dương.
+  const gross = net - fees;
+  return {
+    fees, withFee, count: (items || []).length, gross, net,
+    share: gross > 0 ? Math.abs(fees) / gross : null,
+    avg: withFee ? fees / withFee : null,
+  };
+}
+
+export function groupFeeStats(items, keyFn) {
+  const out = {};
+  (items || []).forEach(({ t, r }) => {
+    const key = keyFn(t) || "—";
+    if (!out[key]) out[key] = { key, count: 0, withFee: 0, fees: 0, net: 0 };
+    out[key].count += 1;
+    if (r.fees) out[key].withFee += 1;
+    out[key].fees += r.fees || 0;
+    out[key].net += r.profit || 0;
+  });
+  return Object.values(out)
+    .map((g) => ({ ...g, gross: g.net - g.fees }))
+    .sort((a, b) => Math.abs(b.fees) - Math.abs(a.fees));
 }
 
 export function groupStats(items, keyFn) {

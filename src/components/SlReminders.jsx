@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
+  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
   mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
@@ -241,6 +241,8 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
   const setInc = (patch) => onChange({ ...s, incompleteReminder: { ...inc, ...patch } });
   const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
   const setWs = (patch) => onChange({ ...s, weeklySummary: { ...ws, ...patch } });
+  const rec = { ...emptyReconcileReminder(), ...(s.reconcileReminder || {}) };
+  const setRec = (patch) => onChange({ ...s, reconcileReminder: { ...rec, ...patch } });
 
   const week = useMemo(() => setupCheckStats(checkLog, 7), [checkLog]);
   const month = useMemo(() => setupCheckStats(checkLog, 30), [checkLog]);
@@ -382,6 +384,35 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
           </Field>
           <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
             <input className="input mono" defaultValue={ws.threadId || ""} placeholder="Thread ID" onBlur={(e) => setWs({ threadId: e.target.value.trim() })} />
+          </Field>
+        </div>
+      </div>
+
+      <h3 className="block-title">Nhắc đối chiếu file sàn</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Đối chiếu chỉ bắt được lệnh quên ghi nếu bạn nhớ chạy nó. Mỗi tuần một lần, nhắc xuất CSV
+        lịch sử giao dịch từ sàn rồi quét ở Nhật ký → Đối chiếu sàn. Đặt vào lúc thị trường đã đóng
+        cửa để file phủ trọn tuần.
+      </p>
+      <div className="account-form">
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${rec.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => setRec({ enabled: !rec.enabled })}
+        >
+          <Bell size={15} /> {rec.enabled ? "🔔 Đang bật nhắc đối chiếu sàn" : "Bật nhắc đối chiếu sàn (tùy chọn)"}
+        </button>
+        <div className="grid-3" style={{ marginTop: 12 }}>
+          <Field label="Vào thứ">
+            <select className="input" value={rec.weekday} onChange={(e) => setRec({ weekday: e.target.value })}>
+              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
+            </select>
+          </Field>
+          <Field label="Giờ nhắc (giờ Việt Nam)">
+            <input type="time" className="input" value={rec.time || "10:00"} onChange={(e) => setRec({ time: e.target.value })} />
+          </Field>
+          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
+            <input className="input mono" defaultValue={rec.threadId || ""} placeholder="Thread ID" onBlur={(e) => setRec({ threadId: e.target.value.trim() })} />
           </Field>
         </div>
       </div>

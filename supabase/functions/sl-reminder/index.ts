@@ -7,6 +7,7 @@
 // Kích hoạt gọi định kỳ bằng file supabase-sl-reminder-cron.sql (pg_cron + pg_net) ở thư mục gốc repo.
 // Các nút bấm trong tin nhắn do function telegram-webhook xử lý.
 // Việc đã tự tích "xong" ở tab Timeline làm việc trên web (khoá timelineDone) thì bỏ qua, không gửi.
+// Ngoài ra còn nhắc hằng tuần: điền nốt lệnh dở, tổng kết tuần, và đối chiếu file sàn.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -211,6 +212,7 @@ Deno.serve(async () => {
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       weeklySummary?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       mutedFillReminder?: { enabled?: boolean; days?: number | string; time?: string; threadId?: string };
+      reconcileReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
     };
@@ -427,6 +429,32 @@ Deno.serve(async () => {
           logChanged = true;
           sent++;
           fillSent++;
+        }
+      }
+    }
+
+    // Nhắc đối chiếu file sàn — việc này bắt lệnh quên ghi, mà lệnh quên ghi thì không để lại
+    // dấu vết nào trong nhật ký để tự nhắc được. Nên nhắc theo lịch là cách duy nhất.
+    const rec = settings.reconcileReminder;
+    if (rec?.enabled && (rec.weekday || "CN") === todayWeekdayCode
+        && minutesDiff(rec.time || "10:00", currentHHMM) <= MATCH_TOLERANCE_MIN
+        && !isTaskDone("reconcile", rec.time || "10:00")) {
+      const logKey = `reconcile_${today}`;
+      if (!log[logKey]) {
+        const accountNames = [...new Set(trades
+          .filter((t) => t.entryDate && t.entryDate >= shiftDateStr(today, -7) && t.account)
+          .map((t) => t.account as string))];
+        const body = accountNames.length
+          ? `Tuần này có lệnh ở: ${accountNames.join(", ")}.`
+          : "Tuần này chưa ghi lệnh nào — quét một lượt cho chắc.";
+        const text = buildMessage(
+          "📑", "ĐỐI CHIẾU FILE SÀN", "🧾", "Xuất CSV lịch sử tuần này", undefined,
+          `${body}\nMở Nhật ký → Đối chiếu sàn rồi thả file vào để soi lệnh quên ghi.`,
+        );
+        if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, rec.threadId)) {
+          log[logKey] = true;
+          logChanged = true;
+          sent++;
         }
       }
     }

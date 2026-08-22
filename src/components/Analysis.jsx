@@ -4,7 +4,7 @@ import { ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./Dashboard.jsx";
 import { CATEGORY_COLORS, GRADE_OPTIONS, LOSS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
-import { avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, fmt, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
+import { avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
 
 export function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
@@ -244,6 +244,69 @@ export function TradeAnalysisPage({ trades, resources }) {
   );
 }
 
+// Phí hoa hồng + qua đêm: với lệnh giữ vài ngày thì đây là khoản ăn thẳng vào kết quả, và
+// nó chỉ hiện ra khi gom lại — từng lệnh nhìn thì chỉ vài đô, cả tháng lại là một con số khác.
+function FeeBreakdown({ closed }) {
+  const stats = feeStats(closed);
+  const bySymbol = groupFeeStats(closed, (t) => t.symbol);
+  const byAccount = groupFeeStats(closed, (t) => t.account);
+  const filled = stats.withFee > 0;
+
+  const table = (title, rows, label) => (
+    <>
+      <h4 className="rec-title">{title}</h4>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr><th>{label}</th><th>Lệnh có phí</th><th>Tổng phí</th><th>Phí/lệnh</th><th>Lãi gộp</th><th>Sau phí</th></tr>
+          </thead>
+          <tbody>
+            {rows.filter((g) => g.fees).map((g) => (
+              <tr key={g.key}>
+                <td><b>{g.key}</b></td>
+                <td>{g.withFee} / {g.count}</td>
+                <td className="text-loss">{fmt(g.fees)}</td>
+                <td>{fmt(g.fees / g.withFee)}</td>
+                <td className={g.gross > 0 ? "text-win" : g.gross < 0 ? "text-loss" : ""}>{fmt(g.gross)}</td>
+                <td className={g.net > 0 ? "text-win" : g.net < 0 ? "text-loss" : ""}>{fmt(g.net)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+
+  return (
+    <div>
+      {!filled ? (
+        <p className="empty-note">
+          Chưa lệnh nào điền phí. Điền ở mục 1C của từng lệnh, hoặc nhanh hơn: vào Nhật ký → Đối chiếu sàn,
+          thả file CSV vào rồi bấm "Điền phí" — nó lấy đúng số hoa hồng + qua đêm sàn đã tính.
+        </p>
+      ) : (
+        <>
+          <div className="stat-grid">
+            <StatCard label="Tổng phí" value={fmt(stats.fees)} tone={stats.fees < 0 ? "loss" : ""}
+              sub={`${stats.withFee} / ${stats.count} lệnh đã điền phí`} />
+            <StatCard label="Phí trung bình mỗi lệnh" value={stats.avg === null ? "—" : fmt(stats.avg)} />
+            <StatCard label="Lãi gộp (trước phí)" value={fmt(stats.gross)} tone={stats.gross > 0 ? "win" : stats.gross < 0 ? "loss" : ""} />
+            <StatCard label="Sau phí" value={fmt(stats.net)} tone={stats.net > 0 ? "win" : stats.net < 0 ? "loss" : ""}
+              sub={stats.share === null ? "Lãi gộp âm nên không tính tỷ lệ" : `Phí ăn mất ${(stats.share * 100).toFixed(1)}% lãi gộp`} />
+          </div>
+          <p className="field-hint">
+            Chỉ gom những lệnh đã điền phí — {stats.count - stats.withFee > 0
+              ? `còn ${stats.count - stats.withFee} lệnh chưa điền nên chưa vào đây.`
+              : "toàn bộ lệnh trong khoảng đang xem đều đã có."}
+          </p>
+          {table("Theo symbol", bySymbol, "Symbol")}
+          {byAccount.filter((g) => g.fees).length > 1 ? table("Theo tài khoản", byAccount, "Tài khoản") : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function Analysis({ trades, resources, onViewTrade }) {
   const [tab, setTab] = useState("topbottom");
   const [scope, setScope] = useState("");
@@ -280,9 +343,11 @@ export function Analysis({ trades, resources, onViewTrade }) {
         <button className={`subtab ${tab === "topbottom" ? "subtab-active" : ""}`} onClick={() => setTab("topbottom")}>Top / Cuối bảng</button>
         <button className={`subtab ${tab === "rdist" ? "subtab-active" : ""}`} onClick={() => setTab("rdist")}>Phân bố R-multiple</button>
         <button className={`subtab ${tab === "metrics" ? "subtab-active" : ""}`} onClick={() => setTab("metrics")}>Chỉ số nâng cao</button>
+        <button className={`subtab ${tab === "fees" ? "subtab-active" : ""}`} onClick={() => setTab("fees")}>Phí</button>
       </div>
       {tab === "topbottom" ? <TopBottom closed={closed} /> :
         tab === "rdist" ? <RDistribution closed={closed} resources={resources} onViewTrade={onViewTrade} /> :
+        tab === "fees" ? <FeeBreakdown closed={closed} /> :
         <AdvancedMetrics closed={closed} />}
     </div>
   );

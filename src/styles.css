@@ -65,6 +65,10 @@
         .rec-title { font-size:14px; font-weight:700; margin:16px 0 8px; }
         .rec-title-bad { color:var(--loss); }
         .rec-title-warn { color:var(--accent); }
+        .rec-file { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:12px; }
+        .rec-file-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+        .rec-file-name { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; }
+        .rec-file-account { display:inline-flex; align-items:center; gap:8px; flex:1; min-width:180px; max-width:320px; }
         .rec-actions { display:flex; gap:6px; align-items:center; justify-content:flex-end; white-space:nowrap; }
         .rec-tag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:20px;
           background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:11px; }

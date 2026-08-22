@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, PlusCircle, RotateCcw } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, PlusCircle, RotateCcw, X } from "lucide-react";
 import { Field, ResourceSelect } from "./ui.jsx";
-import { localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerRow, withBrokerFees } from "../lib/brokerCsv.js";
-import { computeResult, fmtMoney } from "../lib/helpers.js";
+import {
+  guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerRow, withBrokerFees,
+} from "../lib/brokerCsv.js";
+import { computeResult, fmtMoney, uid } from "../lib/helpers.js";
 
 function money(v, currency) {
   return v === null || v === undefined ? "—" : fmtMoney(v, currency);
@@ -12,70 +14,35 @@ function when(d) {
   return d ? `${localDate(d)} ${localTime(d)}` : "—";
 }
 
-export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
-  const accounts = resources.accounts || [];
-  const [account, setAccount] = useState(() => (accounts.length === 1 ? accounts[0].name : ""));
-  const [parsed, setParsed] = useState(null);
-  const [error, setError] = useState("");
-  const [fileName, setFileName] = useState("");
-  const fileRef = useRef(null);
-
-  const readFile = async (file) => {
-    if (!file) return;
-    setFileName(file.name);
-    const res = parseBrokerCsv(await file.text());
-    setError(res.error);
-    setParsed(res.error ? null : res.rows);
-  };
-
-  const result = useMemo(
-    () => (parsed && account ? reconcileBrokerRows(parsed, trades, { account }) : null),
-    [parsed, account, trades]
-  );
-
-  const reset = () => {
-    setParsed(null); setError(""); setFileName("");
-    if (fileRef.current) fileRef.current.value = "";
-  };
-
-  const symbols = resources.symbols || [];
-  // Tài khoản cent trả về USC chứ không phải USD — hiện đúng đơn vị của tài khoản đó.
-  const currency = (accounts.find((a) => a.name === account) || {}).currency || "USD";
+// Một file = một tài khoản. Sáu tài khoản thì thả cả sáu file vào một lượt, mỗi file một thẻ
+// kết quả riêng — chứ chọn tài khoản rồi tải lại sáu lần thì quá mất công cho việc làm hằng tuần.
+function FileCard({ file, result, accounts, symbols, trades, onAccountChange, onRemove, onCreateTrade, onEditTrade, onUpdateTrade }) {
+  const currency = (accounts.find((a) => a.name === file.account) || {}).currency || "USD";
   const offRows = result ? result.matched.filter((m) => m.profitOff) : [];
   const dateRows = result ? result.matched.filter((m) => m.dateOff) : [];
   const fillableFees = offRows.filter((m) => m.feeMissing);
 
-  // Điền phí cho mọi lệnh mà sàn có tính phí còn nhật ký bỏ trống — thường cả tuần chỉ
-  // thiếu đúng khoản này, ngồi mở từng lệnh ra sửa thì quá phí thời gian.
-  const fillAllFees = () => onUpdateTrade(fillableFees.map((m) => withBrokerFees(m.trade, m.row)));
-
   return (
-    <div className="account-form">
-      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu với file sàn xuất ra</h3>
-      <p className="field-hint">
-        Sàn cho xuất lịch sử giao dịch ra CSV theo khoảng thời gian. Tải file đó lên đây để soi
-        xem có lệnh nào đã đánh mà quên ghi nhật ký không — sàn là bằng chứng gốc, thiếu ở đây
-        gần như chắc chắn là bỏ sót. File chỉ đọc trên máy bạn, không gửi đi đâu và cũng không lưu lại.
-      </p>
-
-      <div className="grid-2" style={{ marginBottom: 10 }}>
-        <Field label="Tài khoản của file này" required
-          hint="File sàn không ghi tên tài khoản — chọn đúng tài khoản trong nhật ký ứng với số tài khoản đã xuất.">
-          <ResourceSelect value={account} onChange={setAccount} options={accounts.map((a) => a.name)} placeholder="Chọn tài khoản" />
-        </Field>
-        <Field label="File CSV từ sàn" hint={fileName ? `Đang xem: ${fileName}` : "Nhận file Exness và các sàn MT4/MT5 tương tự."}>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="input"
-            onChange={(e) => readFile(e.target.files && e.target.files[0])} />
-        </Field>
+    <div className="rec-file">
+      <div className="rec-file-head">
+        <span className="rec-file-name"><FileSpreadsheet size={14} /> {file.name}</span>
+        <span className="rec-file-account">
+          <ResourceSelect value={file.account} onChange={onAccountChange}
+            options={accounts.map((a) => a.name)} placeholder="Chọn tài khoản" />
+          {file.guessed && file.account ? <span className="rec-tag">tự đoán theo symbol</span> : null}
+        </span>
+        <button type="button" className="row-btn" title="Bỏ file này" onClick={onRemove}><X size={14} /></button>
       </div>
 
-      {error ? <p className="empty-note" style={{ color: "var(--loss)" }}>{error}</p> : null}
-      {parsed && !account ? <p className="empty-note">Đọc được {parsed.length} lệnh — chọn tài khoản để đối chiếu.</p> : null}
+      {file.error ? <p className="empty-note" style={{ color: "var(--loss)" }}>{file.error}</p> : null}
+      {!file.error && !file.account ? (
+        <p className="empty-note">Đọc được {file.rows.length} lệnh — chọn tài khoản để đối chiếu.</p>
+      ) : null}
 
       {result ? (
         <>
           <div className="rec-summary">
-            <span className="rec-chip"><FileSpreadsheet size={13} /> {parsed.length} lệnh trên sàn</span>
+            <span className="rec-chip">{file.rows.length} lệnh trên sàn</span>
             <span className="rec-chip rec-chip-ok"><CheckCircle2 size={13} /> {result.matched.length} khớp nhật ký</span>
             {result.missing.length ? (
               <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {result.missing.length} chưa ghi nhật ký</span>
@@ -83,7 +50,6 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
             {result.extra.length ? <span className="rec-chip rec-chip-warn">{result.extra.length} chỉ có trong nhật ký</span> : null}
             {offRows.length ? <span className="rec-chip rec-chip-warn">{offRows.length} lệch tiền</span> : null}
             {dateRows.length ? <span className="rec-chip rec-chip-warn">{dateRows.length} lệch ngày</span> : null}
-            <button type="button" className="btn btn-ghost" onClick={reset}><RotateCcw size={13} /> Xoá kết quả</button>
           </div>
 
           {result.missing.length === 0 ? (
@@ -117,7 +83,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
                         </td>
                         <td>
                           <button type="button" className="btn btn-ghost"
-                            onClick={() => onCreateTrade(tradeFromBrokerRow(row, account, symbols))}>
+                            onClick={() => onCreateTrade(tradeFromBrokerRow(row, file.account, symbols))}>
                             <PlusCircle size={13} /> Ghi vào nhật ký
                           </button>
                         </td>
@@ -127,7 +93,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
                 </table>
               </div>
               <p className="field-hint">
-                Bấm "Ghi vào nhật ký" là mở form với symbol, ngày giờ vào/ra và lãi lỗ điền sẵn theo sàn —
+                Bấm "Ghi vào nhật ký" là mở form với symbol, ngày giờ vào/ra, lãi lỗ và phí điền sẵn theo sàn —
                 bạn chỉ cần bổ sung setup, ảnh và phần đánh giá.
               </p>
             </>
@@ -168,7 +134,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
                 Phần lớn là do chưa điền phí hoa hồng + qua đêm, phần còn lại thường là gõ nhầm số.
               </p>
               {fillableFees.length > 1 ? (
-                <button type="button" className="btn" onClick={fillAllFees}>
+                <button type="button" className="btn" onClick={() => onUpdateTrade(fillableFees.map((m) => withBrokerFees(m.trade, m.row)))}>
                   <Coins size={13} /> Điền phí cho cả {fillableFees.length} lệnh
                 </button>
               ) : null}
@@ -230,6 +196,89 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
           ) : null}
         </>
       ) : null}
+    </div>
+  );
+}
+
+export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
+  const accounts = resources.accounts || [];
+  const symbols = resources.symbols || [];
+  const [files, setFiles] = useState([]);
+  const fileRef = useRef(null);
+
+  const addFiles = async (list) => {
+    const picked = Array.from(list || []);
+    if (!picked.length) return;
+    const next = await Promise.all(picked.map(async (f) => {
+      const res = parseBrokerCsv(await f.text());
+      const guess = res.error ? "" : guessAccount(res.rows, trades, accounts);
+      return {
+        id: uid(), name: f.name, rows: res.rows, error: res.error,
+        // Chỉ có một tài khoản thì khỏi đoán, cứ dùng nó.
+        account: guess || (accounts.length === 1 ? accounts[0].name : ""),
+        guessed: !!guess,
+      };
+    }));
+    setFiles((prev) => [...prev, ...next]);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const results = useMemo(
+    () => files.map((f) => (f.account && f.rows.length ? reconcileBrokerRows(f.rows, trades, { account: f.account }) : null)),
+    [files, trades]
+  );
+
+  const reset = () => {
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const totals = results.reduce((acc, r) => {
+    if (!r) return acc;
+    acc.matched += r.matched.length;
+    acc.missing += r.missing.length;
+    acc.fees.push(...r.matched.filter((m) => m.profitOff && m.feeMissing));
+    return acc;
+  }, { matched: 0, missing: 0, fees: [] });
+
+  return (
+    <div className="account-form">
+      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu với file sàn xuất ra</h3>
+      <p className="field-hint">
+        Sàn cho xuất lịch sử giao dịch ra CSV theo khoảng thời gian. Thả vào đây cả loạt file của
+        nhiều tài khoản một lượt để soi xem có lệnh nào đã đánh mà quên ghi nhật ký không — sàn là
+        bằng chứng gốc, thiếu ở đây gần như chắc chắn là bỏ sót. File chỉ đọc trên máy bạn, không
+        gửi đi đâu và cũng không lưu lại.
+      </p>
+
+      <Field label="File CSV từ sàn"
+        hint="Chọn được nhiều file cùng lúc. Tài khoản của từng file được đoán theo symbol đã từng đánh — sai thì chọn lại ở thẻ bên dưới.">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" multiple className="input"
+          onChange={(e) => addFiles(e.target.files)} />
+      </Field>
+
+      {files.length ? (
+        <div className="rec-summary" style={{ marginBottom: 4 }}>
+          <span className="rec-chip"><FileSpreadsheet size={13} /> {files.length} file</span>
+          <span className="rec-chip rec-chip-ok"><CheckCircle2 size={13} /> {totals.matched} khớp nhật ký</span>
+          {totals.missing ? (
+            <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {totals.missing} chưa ghi nhật ký</span>
+          ) : null}
+          {totals.fees.length > 1 ? (
+            <button type="button" className="btn" onClick={() => onUpdateTrade(totals.fees.map((m) => withBrokerFees(m.trade, m.row)))}>
+              <Coins size={13} /> Điền phí cho cả {totals.fees.length} lệnh (mọi file)
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-ghost" onClick={reset}><RotateCcw size={13} /> Xoá hết</button>
+        </div>
+      ) : null}
+
+      {files.map((f, i) => (
+        <FileCard key={f.id} file={f} result={results[i]} accounts={accounts} symbols={symbols} trades={trades}
+          onAccountChange={(v) => setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, account: v, guessed: false } : x)))}
+          onRemove={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
+          onCreateTrade={onCreateTrade} onEditTrade={onEditTrade} onUpdateTrade={onUpdateTrade} />
+      ))}
     </div>
   );
 }
