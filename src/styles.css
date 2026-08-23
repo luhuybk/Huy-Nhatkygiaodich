@@ -446,7 +446,7 @@
         .account-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
         .account-card-grid-lg { grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); }
         .account-card { text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px;
-          cursor:pointer; color:var(--text); display:flex; flex-direction:column; gap:10px; }
+          cursor:pointer; color:var(--text); font:inherit; display:flex; flex-direction:column; gap:10px; }
         .account-card:hover { border-color:var(--accent); }
         .account-card-head { display:flex; align-items:center; justify-content:space-between; }
         .account-card-head strong { font-size:15px; }

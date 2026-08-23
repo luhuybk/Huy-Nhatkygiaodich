@@ -61,12 +61,18 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
     const pnl = closedOf(accountTrades).reduce((s, x) => s + x.r.profit, 0);
     const growth = initial ? ((bal - initial) / Math.abs(initial)) * 100 : null;
     const openRisk = accountOpenRisk(a, ledger, trades);
+    // Thẻ không thể là <button> vì bên trong đã có nút sửa/xóa — button lồng button là HTML sai.
     return (
-      <button type="button" key={a.id} className="account-card" onClick={() => onView(a.id)}>
+      <div key={a.id} className="account-card" role="button" tabIndex={0} onClick={() => onView(a.id)}
+        onKeyDown={(e) => {
+          // Enter/Space bấm trên nút con cũng nổi bọt lên đây, chỉ nhận phím khi chính thẻ đang focus.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(a.id); }
+        }}>
         <div className="account-card-head">
           <strong>{a.name}</strong>
           <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 4 }}>
-            <button type="button" className="row-btn" onClick={() => { setForm({ ...blank, ...a }); setError(""); }}><Pencil size={13} /></button>
+            <button type="button" className="row-btn" aria-label="Sửa tài khoản" onClick={() => { setForm({ ...blank, ...a }); setError(""); }}><Pencil size={13} /></button>
             <ConfirmButton onConfirm={() => remove(a.id)} />
           </span>
         </div>
@@ -79,7 +85,7 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
           <div><span>Số lệnh</span><span className="mono">{accountTrades.length}</span></div>
           <div><span>% Risk đang mở</span><span className={`mono ${openRisk.pct >= 5 ? "text-loss" : ""}`}>{openRisk.count === 0 ? "—" : `${openRisk.pct.toFixed(2)}% (${openRisk.count} lệnh)`}</span></div>
         </div>
-      </button>
+      </div>
     );
   };
   const renderGroup = (a) => [renderCard(a, null), ...childrenOf(a.id).map((c) => renderCard(c, a))];
