@@ -6,7 +6,7 @@ import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyIn
 import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid } from "../lib/helpers.js";
 
 export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
-  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "" };
+  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState("");
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
@@ -128,6 +128,17 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
             <IdSelect value={form.parentId} onChange={setF("parentId")} items={accounts.filter((a) => a.id !== form.id)} placeholder="Không thuộc nhóm nào" />
           </Field>
         </div>
+        <label className={`checklist-item ${form.syncBrokerTime !== false ? "checklist-checked" : ""}`}>
+          <input type="checkbox" checked={form.syncBrokerTime !== false}
+            onChange={(e) => setF("syncBrokerTime")(e.target.checked)} />
+          <span>
+            Lấy cả giờ vào/ra khi đối chiếu file sàn
+            <span className="field-hint" style={{ display: "block", margin: 0 }}>
+              Bật cho forex và hàng hoá — vào ra trong ngày nên giờ khớp lệnh mới đáng tin.
+              Tắt cho cổ phiếu giữ nhiều ngày: chỉ đồng bộ ngày, giữ nguyên giờ bạn tự ghi.
+            </span>
+          </span>
+        </label>
         {error ? <p className="error-text">{error}</p> : null}
         <div className="form-actions" style={{ marginTop: 4 }}>
           {form.id ? <button type="button" className="btn btn-ghost" onClick={() => setForm(blank)}>Hủy sửa</button> : null}

@@ -159,7 +159,7 @@ export const DEFAULT_TOLERANCE_HOURS = 48;
 // Ghép mỗi dòng CSV với đúng một lệnh trong nhật ký: cùng symbol, cùng tài khoản, và giờ mở
 // gần nhau nhất. Ghép 1-1 theo thứ tự lệch ít nhất trước, để hai lệnh cùng symbol trong một
 // ngày không cùng nhận một bản ghi.
-export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DEFAULT_TOLERANCE_HOURS } = {}) {
+export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DEFAULT_TOLERANCE_HOURS, syncTime = true } = {}) {
   const tol = Math.max(1, Number(toleranceHours) || DEFAULT_TOLERANCE_HOURS) * 3600000;
   const pool = (trades || []).filter((t) => t.account === account && t.symbol && t.entryDate);
   const pairs = [];
@@ -208,8 +208,10 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
       profitDiff: split ? null : diff,
       profitOff: diff !== null && !split && Math.abs(diff) > PROFIT_TOLERANCE,
       feeMissing,
-      // Ngày trên sàn (đã quy về giờ máy bạn) khác ngày bạn ghi — vẫn là một lệnh, nhưng
-      // lệch ngày thì lịch và thống kê theo ngày sẽ đếm sai chỗ.
+      // Giờ/ngày trên sàn (đã quy về giờ máy bạn) khác cái bạn ghi — vẫn là một lệnh, nhưng
+      // lệch ngày thì lịch và thống kê theo ngày đếm sai chỗ, còn lệch giờ thì thời gian giữ
+      // lệnh và phân tích theo phiên sai theo.
+      timeFields: timeFieldsToSync(hit.trade, row, syncTime),
       dateOff: localDate(row.openAt) !== hit.trade.entryDate,
     });
   });
@@ -224,13 +226,39 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
     return ms !== null && ms >= from - 86400000 && ms <= to + 86400000;
   });
 
-  return { matched, missing, extra, tolerance: PROFIT_TOLERANCE };
+  return { matched, missing, extra, tolerance: PROFIT_TOLERANCE, syncTime };
 }
 
 function matchedSameDay(rowTaken, rows, row) {
   const day = localDate(row.openAt);
   return (rows || []).some((r) => r.key !== row.key && rowTaken.has(r.key)
     && r.symbolKey === row.symbolKey && localDate(r.openAt) === day);
+}
+
+// Những mốc thời gian mà file sàn nói khác nhật ký. Tài khoản tắt đồng bộ giờ (cổ phiếu —
+// chỉ cần đúng ngày) thì chỉ soi ngày, bỏ qua giờ. Lệnh có chốt bớt thì KHÔNG đụng tới thời
+// gian thoát: một vị thế chốt nhiều lần cho ra nhiều dòng, dòng khớp được chưa chắc là lần
+// đóng cuối. Lệnh chưa điền ngày thoát cũng để yên — điền hộ là tự tay đóng lệnh của bạn.
+export function timeFieldsToSync(trade, row, syncTime = true) {
+  const out = [];
+  if (trade.entryDate !== localDate(row.openAt)) out.push("entryDate");
+  if (syncTime && (trade.entryTime || "") !== localTime(row.openAt)) out.push("entryTime");
+  if (trade.exitDate && row.closeAt && !partialExitsOf(trade).length) {
+    if (trade.exitDate !== localDate(row.closeAt)) out.push("exitDate");
+    if (syncTime && (trade.exitTime || "") !== localTime(row.closeAt)) out.push("exitTime");
+  }
+  return out;
+}
+
+export function withBrokerTimes(trade, row, syncTime = true) {
+  const fields = timeFieldsToSync(trade, row, syncTime);
+  if (!fields.length) return trade;
+  const next = { ...trade };
+  if (fields.includes("entryDate")) next.entryDate = localDate(row.openAt);
+  if (fields.includes("entryTime")) next.entryTime = localTime(row.openAt);
+  if (fields.includes("exitDate")) next.exitDate = localDate(row.closeAt);
+  if (fields.includes("exitTime")) next.exitTime = localTime(row.closeAt);
+  return next;
 }
 
 // Đoán file này là của tài khoản nào bằng chính lịch sử của bạn: tài khoản nào từng đánh

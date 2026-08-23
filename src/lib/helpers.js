@@ -878,6 +878,13 @@ export function normalizeResources(rs) {
   return merged;
 }
 
+// Forex/hàng hoá vào ra trong ngày nên giờ khớp lệnh mới là thứ đáng tin; cổ phiếu giữ
+// nhiều ngày thì chỉ cần đúng ngày. Bỏ trống = có đồng bộ giờ, để tài khoản cũ giữ nguyên
+// hành vi mặc định.
+export function accountSyncsTime(account) {
+  return !account || account.syncBrokerTime !== false;
+}
+
 export function toUSD(amount, currency, fxRates) {
   if (!currency || currency === "USD") return amount;
   const rate = (fxRates && fxRates[currency]) || 1;
