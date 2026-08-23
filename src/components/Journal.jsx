@@ -5,6 +5,14 @@ import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
+// Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
+const RR_PRESETS = [
+  { label: "Thua quá -1R", from: "", to: "-1" },
+  { label: "-1R → -0.7R", from: "-1", to: "-0.7" },
+  { label: "Cắt non (-0.7R → 0)", from: "-0.7", to: "0" },
+  { label: "Thắng từ 2R", from: "2", to: "" },
+];
+
 export function JournalFilters({ trades, resources, filters, setFilters }) {
   const years = useMemo(() => {
     const set = new Set(trades.map((t) => yearKey(t.entryDate)).filter(Boolean));
@@ -21,14 +29,22 @@ export function JournalFilters({ trades, resources, filters, setFilters }) {
         <ResourceSelect value={filters.year || ""} onChange={set("year")} options={years} placeholder="Năm" />
         <ResourceSelect value={filters.month || ""} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
         <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
-        <ResourceSelect value={filters.session || ""} onChange={set("session")} options={resources.sessions} placeholder="Phiên" />
         <ResourceSelect value={filters.psychology || ""} onChange={set("psychology")} options={resources.psychologies} placeholder="Tâm lý" />
-        <select className="input" value={filters.direction || ""} onChange={(e) => set("direction")(e.target.value)}>
-          <option value="">Hướng lệnh</option><option value="buy">Buy</option><option value="sell">Sell</option>
-        </select>
         <select className="input" value={filters.result || ""} onChange={(e) => set("result")(e.target.value)}>
           {RESULT_FILTERS.map((r) => <option key={r.id} value={r.id}>{r.id === "" ? "Kết quả" : r.label}</option>)}
         </select>
+        <select className="input" value={filters.grade || ""} onChange={(e) => set("grade")(e.target.value)}>
+          <option value="">Chất lượng lệnh</option>
+          <option value="good">Giao dịch Tốt (cả thắng &amp; thua)</option>
+          <option value="bad">Giao dịch Tồi (cả thắng &amp; thua)</option>
+          {GRADE_OPTIONS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+          <option value="none">Chưa chấm</option>
+        </select>
+        <div className="filter-rr">
+          <input className="input" type="text" inputMode="decimal" placeholder="RR từ" value={filters.rrFrom ?? ""} onChange={(e) => set("rrFrom")(e.target.value)} />
+          <span className="filter-rr-sep">→</span>
+          <input className="input" type="text" inputMode="decimal" placeholder="RR đến" value={filters.rrTo ?? ""} onChange={(e) => set("rrTo")(e.target.value)} />
+        </div>
         <select className="input" value={filters.score || ""} onChange={(e) => set("score")(e.target.value)}>
           <option value="">Chấm điểm</option>
           <option value="low">Thấp (≤ 2 sao)</option>
@@ -54,7 +70,19 @@ export function JournalFilters({ trades, resources, filters, setFilters }) {
           <option value="full">Đã hoàn thành đủ (100%)</option>
         </select>
       </div>
-      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+      <div className="filter-foot">
+        <span className="filter-foot-label">Khoảng RR nhanh:</span>
+        {RR_PRESETS.map((p) => {
+          const on = (filters.rrFrom ?? "") === p.from && (filters.rrTo ?? "") === p.to;
+          return (
+            <button key={p.label} type="button" className={`filter-rr-chip ${on ? "filter-rr-on" : ""}`}
+              onClick={() => setFilters((prev) => (on ? { ...prev, rrFrom: "", rrTo: "" } : { ...prev, rrFrom: p.from, rrTo: p.to }))}>
+              {p.label}
+            </button>
+          );
+        })}
+        <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+      </div>
     </div>
   );
 }

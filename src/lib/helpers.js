@@ -1528,6 +1528,40 @@ export function tradesToCsv(trades) {
   return "﻿" + lines.join("\r\n");
 }
 
+// Lọc theo chất lượng lệnh: "good"/"bad" gộp cả thắng lẫn thua để soi riêng cách vào lệnh,
+// còn 4 id trong GRADE_OPTIONS thì khớp đúng một ô.
+export function gradeMatches(tradeGrade, want) {
+  const g = tradeGrade || "";
+  if (!want) return true;
+  if (want === "none") return !g;
+  const opt = GRADE_OPTIONS.find((x) => x.id === g);
+  if (!opt) return false;
+  if (want === "good") return opt.tone === "win";
+  if (want === "bad") return opt.tone === "loss";
+  return g === want;
+}
+
+// Khoảng RR: điền một đầu là mở về phía còn lại, điền cả hai thì thứ tự nào cũng được
+// (gõ "-0.7 đến -1" cũng hiểu như "-1 đến -0.7"). Nới 1e-6 để lệnh đúng -1R không bị
+// phép chia lẻ ra -1.0000000000000002 rồi rơi khỏi khoảng.
+const RR_EPSILON = 1e-6;
+
+export function rrInRange(rr, fromRaw, toRaw) {
+  // Bàn phím tiếng Việt hay ra dấu phẩy thập phân — nhận cả "-0,7" lẫn "-0.7",
+  // không thì ô lọc trông như đang có số mà thật ra không lọc gì.
+  const rrNum = (v) => numOrNull(typeof v === "string" ? v.trim().replace(",", ".") : v);
+  const a = rrNum(fromRaw);
+  const b = rrNum(toRaw);
+  if (a === null && b === null) return true;
+  // Lệnh đang mở hoặc không ghi số tiền rủi ro thì không có RR để so — lọc RR là loại chúng ra.
+  if (rr === null || !isFinite(rr)) return false;
+  const lo = a !== null && b !== null ? Math.min(a, b) : a;
+  const hi = a !== null && b !== null ? Math.max(a, b) : b;
+  if (lo !== null && rr < lo - RR_EPSILON) return false;
+  if (hi !== null && rr > hi + RR_EPSILON) return false;
+  return true;
+}
+
 export function applyFilters(trades, filters, resources) {
   return trades.filter((t) => {
     const r = computeResult(t);
@@ -1536,9 +1570,9 @@ export function applyFilters(trades, filters, resources) {
     if (filters.year && yearKey(t.entryDate) !== filters.year) return false;
     if (filters.month && (t.entryDate || "").slice(5, 7) !== filters.month) return false;
     if (filters.setup && t.setup !== filters.setup) return false;
-    if (filters.session && t.session !== filters.session) return false;
     if (filters.psychology && t.psychology !== filters.psychology) return false;
-    if (filters.direction && t.direction !== filters.direction) return false;
+    if (filters.grade && !gradeMatches(t.tradeGrade, filters.grade)) return false;
+    if (!rrInRange(r.rr, filters.rrFrom, filters.rrTo)) return false;
     if (filters.result) {
       if (filters.result === "open" && r.status !== "open") return false;
       if (["win", "loss", "be"].includes(filters.result) && r.outcome !== filters.result) return false;
