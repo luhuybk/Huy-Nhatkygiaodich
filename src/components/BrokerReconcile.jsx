@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, PlusCircle, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, Flag, PlusCircle, RotateCcw, Scissors, X } from "lucide-react";
 import { Field, ResourceSelect } from "./ui.jsx";
 import {
-  guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerRow, withBrokerFees, withBrokerTimes,
+  guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerPosition,
+  withBrokerFees, withBrokerOutcome, withBrokerTimes,
 } from "../lib/brokerCsv.js";
 import { accountSyncsTime, computeResult, fmtMoney, uid } from "../lib/helpers.js";
 
@@ -14,6 +15,15 @@ function when(d) {
   return d ? `${localDate(d)} ${localTime(d)}` : "—";
 }
 
+// Nói bằng lời cái sắp được ghi vào, để bạn đọc xong mới bấm chứ không phải bấm rồi mới biết.
+function planSummary(plan, currency) {
+  const parts = [];
+  if (plan.partials.length) parts.push(`${plan.partials.length} lần chốt bớt (${plan.partials.map((x) => `${x.percent}%`).join(" + ")})`);
+  if (plan.close) parts.push(`đóng lệnh ${plan.close.exitDate}${plan.close.exitTime ? ` ${plan.close.exitTime}` : ""} · ${money(Number(plan.close.profit), currency)}`);
+  if (plan.fees !== null) parts.push(`phí ${money(Number(plan.fees), currency)}`);
+  return parts.join(" · ");
+}
+
 // Một file = một tài khoản. Sáu tài khoản thì thả cả sáu file vào một lượt, mỗi file một thẻ
 // kết quả riêng — chứ chọn tài khoản rồi tải lại sáu lần thì quá mất công cho việc làm hằng tuần.
 function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, onCreateTrade, onEditTrade, onUpdateTrade }) {
@@ -22,6 +32,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
   const syncTime = accountSyncsTime(acc);
   const offRows = result ? result.matched.filter((m) => m.profitOff) : [];
   const timeRows = result ? result.matched.filter((m) => m.timeFields.length) : [];
+  const outcomeRows = result ? result.matched.filter((m) => m.outcome.changed) : [];
   const fillableFees = offRows.filter((m) => m.feeMissing);
 
   return (
@@ -50,6 +61,9 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
               <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {result.missing.length} chưa ghi nhật ký</span>
             ) : null}
             {result.extra.length ? <span className="rec-chip rec-chip-warn">{result.extra.length} chỉ có trong nhật ký</span> : null}
+            {outcomeRows.length ? (
+              <span className="rec-chip rec-chip-bad"><Flag size={13} /> {outcomeRows.length} chưa ghi kết quả</span>
+            ) : null}
             {offRows.length ? <span className="rec-chip rec-chip-warn">{offRows.length} lệch tiền</span> : null}
             {timeRows.length ? (
               <span className="rec-chip rec-chip-warn">{timeRows.length} lệch {syncTime ? "ngày/giờ" : "ngày"}</span>
@@ -68,26 +82,25 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                   <thead>
                     <tr>
                       <th>Symbol</th><th>Vào lệnh</th><th>Đóng lệnh</th><th>Lệnh</th>
-                      <th>Lot</th><th>Lãi/Lỗ</th><th>Lý do đóng</th><th />
+                      <th>Lot</th><th>Lãi/Lỗ</th><th>Trạng thái</th><th />
                     </tr>
                   </thead>
                   <tbody>
-                    {result.missing.map((row) => (
-                      <tr key={row.key}>
-                        <td><b>{row.symbol}</b></td>
-                        <td>{when(row.openAt)}</td>
-                        <td>{when(row.closeAt)}</td>
-                        <td className={row.type === "sell" ? "text-loss" : "text-win"}>{row.type || "—"}</td>
-                        <td>{row.lots ?? "—"}</td>
-                        <td className={row.net > 0 ? "text-win" : row.net < 0 ? "text-loss" : ""}>{money(row.net, currency)}</td>
+                    {result.missing.map((pos) => (
+                      <tr key={pos.key}>
+                        <td><b>{pos.first.symbol}</b></td>
+                        <td>{when(pos.first.openAt)}</td>
+                        <td>{pos.fullyClosed ? when(pos.lastClose) : "—"}</td>
+                        <td className={pos.first.type === "sell" ? "text-loss" : "text-win"}>{pos.first.type || "—"}</td>
+                        <td>{pos.originalSize || pos.closedLots || "—"}</td>
+                        <td className={pos.net > 0 ? "text-win" : pos.net < 0 ? "text-loss" : ""}>{money(pos.net, currency)}</td>
                         <td>
-                          {row.closeReason || "—"}
-                          {row.samePosition ? <span className="rec-tag">cùng vị thế — là lần chốt bớt</span>
-                            : row.maybePartial ? <span className="rec-tag">có thể là lần chốt bớt</span> : null}
+                          {pos.fullyClosed ? pos.rows[pos.rows.length - 1].closeReason || "đã đóng" : `còn mở ${pos.openLots} lot`}
+                          {pos.rows.length > 1 ? <span className="rec-tag">{pos.rows.length} lần chốt</span> : null}
                         </td>
                         <td>
                           <button type="button" className="btn btn-ghost"
-                            onClick={() => onCreateTrade(tradeFromBrokerRow(row, file.account, symbols))}>
+                            onClick={() => onCreateTrade(tradeFromBrokerPosition(pos, file.account, symbols, syncTime))}>
                             <PlusCircle size={13} /> Ghi vào nhật ký
                           </button>
                         </td>
@@ -97,11 +110,58 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                 </table>
               </div>
               <p className="field-hint">
-                Bấm "Ghi vào nhật ký" là mở form với symbol, ngày giờ vào/ra, lãi lỗ và phí điền sẵn theo sàn —
-                bạn chỉ cần bổ sung setup, ảnh và phần đánh giá.
+                Mỗi dòng ở đây là một vị thế, không phải một dòng CSV — chốt bớt mấy lần vẫn gom về một lệnh.
+                Bấm "Ghi vào nhật ký" là mở form đã điền sẵn symbol, ngày giờ, từng lần chốt bớt, lãi lỗ và phí
+                theo sàn; bạn chỉ cần bổ sung setup, ảnh và phần đánh giá.
               </p>
             </>
           )}
+
+          {outcomeRows.length ? (
+            <>
+              <h4 className="rec-title rec-title-bad">
+                <Scissors size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
+                Sàn đã có kết quả, nhật ký còn bỏ ngỏ ({outcomeRows.length})
+              </h4>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead><tr><th>Symbol</th><th>Vào lệnh</th><th>Trên sàn</th><th>Sẽ điền vào</th><th /></tr></thead>
+                  <tbody>
+                    {outcomeRows.map((m) => (
+                      <tr key={m.position.key}>
+                        <td><b>{m.row.symbol}</b></td>
+                        <td>{m.trade.entryDate} {m.trade.entryTime || ""}</td>
+                        <td>
+                          {m.position.fullyClosed
+                            ? `đã đóng hết · ${money(m.position.net, currency)}`
+                            : `còn mở ${m.position.openLots} lot · đã chốt ${money(m.position.net, currency)}`}
+                        </td>
+                        <td>{planSummary(m.outcome, currency)}</td>
+                        <td className="rec-actions">
+                          <button type="button" className="btn btn-ghost"
+                            onClick={() => onUpdateTrade([withBrokerOutcome(m.trade, m.position, syncTime)])}>
+                            <Flag size={13} /> Điền kết quả
+                          </button>
+                          <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(m.trade)}>Mở lệnh</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="field-hint">
+                Lệnh sàn đã đóng mà nhật ký chưa điền lợi nhuận, và những lần chốt bớt chưa ghi vào mục 1B.
+                Vị thế còn mở trên sàn thì chỉ điền phần đã chốt, không đụng tới ngày thoát — lệnh vẫn đang chạy.
+                Lệnh nào đã điền lợi nhuận rồi thì không nằm ở đây; sai lệch của chúng thuộc bảng "lệch tiền" bên dưới.
+              </p>
+              {outcomeRows.length > 1 ? (
+                <button type="button" className="btn"
+                  onClick={() => onUpdateTrade(outcomeRows.map((m) => withBrokerOutcome(m.trade, m.position, syncTime)))}>
+                  <Flag size={13} /> Điền kết quả cho cả {outcomeRows.length} lệnh
+                </button>
+              ) : null}
+            </>
+          ) : null}
 
           {offRows.length ? (
             <>
@@ -113,7 +173,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                   </thead>
                   <tbody>
                     {offRows.map((m) => (
-                      <tr key={m.row.key}>
+                      <tr key={m.position.key}>
                         <td><b>{m.row.symbol}</b></td>
                         <td>{when(m.row.openAt)}</td>
                         <td>{money(computeResult(m.trade).profit, currency)}</td>
@@ -162,7 +222,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                       const entryOff = f.includes("entryDate") || f.includes("entryTime");
                       const exitOff = f.includes("exitDate") || f.includes("exitTime");
                       return (
-                        <tr key={m.row.key}>
+                        <tr key={m.position.key}>
                           <td><b>{m.row.symbol}</b></td>
                           <td className={entryOff ? "text-loss" : ""}>{m.trade.entryDate} {m.trade.entryTime || "—"}</td>
                           <td>{when(m.row.openAt)}</td>
@@ -271,8 +331,9 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
     acc.missing += r.missing.length;
     acc.fees.push(...r.matched.filter((m) => m.profitOff && m.feeMissing));
     acc.times.push(...r.matched.filter((m) => m.timeFields.length).map((m) => ({ m, syncTime: r.syncTime })));
+    acc.outcomes.push(...r.matched.filter((m) => m.outcome.changed).map((m) => ({ m, syncTime: r.syncTime })));
     return acc;
-  }, { matched: 0, missing: 0, fees: [], times: [] });
+  }, { matched: 0, missing: 0, fees: [], times: [], outcomes: [] });
 
   return (
     <div className="account-form">
@@ -296,6 +357,12 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
           <span className="rec-chip rec-chip-ok"><CheckCircle2 size={13} /> {totals.matched} khớp nhật ký</span>
           {totals.missing ? (
             <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {totals.missing} chưa ghi nhật ký</span>
+          ) : null}
+          {totals.outcomes.length > 1 ? (
+            <button type="button" className="btn"
+              onClick={() => onUpdateTrade(totals.outcomes.map((x) => withBrokerOutcome(x.m.trade, x.m.position, x.syncTime)))}>
+              <Flag size={13} /> Điền kết quả cho cả {totals.outcomes.length} lệnh (mọi file)
+            </button>
           ) : null}
           {totals.fees.length > 1 ? (
             <button type="button" className="btn" onClick={() => onUpdateTrade(totals.fees.map((m) => withBrokerFees(m.trade, m.row)))}>

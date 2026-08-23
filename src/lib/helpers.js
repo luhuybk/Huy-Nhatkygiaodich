@@ -37,7 +37,7 @@ export function emptyTrade() {
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
     partialExits: [],
-    exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "",
+    exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "", fees: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     tradeGrade: "", reviewNote: "", checklist: {},

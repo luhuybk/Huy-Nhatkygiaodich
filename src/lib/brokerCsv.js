@@ -1,7 +1,7 @@
 // Đối chiếu file CSV sàn xuất ra (Exness: Lịch sử giao dịch → Xuất CSV) với nhật ký, để
 // bắt những lệnh đã đánh mà quên ghi. Sàn là bằng chứng gốc — thiếu ở nhật ký thì gần như
 // chắc chắn là bỏ sót, chứ không phải sàn sai.
-import { computeResult, emptyTrade, partialExitsOf } from "./helpers.js";
+import { computeResult, emptyPartialExit, emptyTrade, partialExitsOf } from "./helpers.js";
 
 // Dấu phân cách tuỳ máy người xuất: máy dùng dấu phẩy thập phân thì Excel xuất ra ";".
 function sniffDelimiter(line) {
@@ -44,6 +44,7 @@ const FIELD_ALIASES = {
   closeAt: ["closing_time_utc", "closing_time", "close_time", "close"],
   type: ["type", "side", "direction"],
   lots: ["lots", "volume", "size"],
+  originalSize: ["original_position_size", "original_size", "position_size", "original_volume"],
   symbol: ["symbol", "instrument", "pair"],
   openPrice: ["opening_price", "open_price", "price_open"],
   closePrice: ["closing_price", "close_price", "price_close"],
@@ -127,6 +128,9 @@ export function parseBrokerCsv(text) {
       closeAt: parseUtc(get(r, "closeAt")),
       type: String(get(r, "type") || "").trim().toLowerCase(),
       lots: num(get(r, "lots")),
+      // Khối lượng ban đầu của vị thế. Nhỏ hơn lots nghĩa là dòng này chỉ đóng một phần —
+      // JNJ đóng 0.41/0.83 lot là chốt bớt 49%, lệnh vẫn còn chạy chứ chưa hề kết thúc.
+      originalSize: num(get(r, "originalSize")),
       symbol,
       symbolKey: normalizeSymbol(symbol),
       // Sàn tách làm hai phần: lãi lỗ theo giá, và phí (hoa hồng + qua đêm). Cổ phiếu giữ
@@ -140,6 +144,39 @@ export function parseBrokerCsv(text) {
   });
   if (!out.length) return { rows: [], error: "Đọc được file nhưng không có dòng lệnh nào." };
   return { rows: out.sort((a, b) => a.openAt - b.openAt), error: "" };
+}
+
+// Sàn tách một vị thế thành nhiều dòng khi bạn chốt bớt: cùng số ticket, khác giờ đóng.
+// Gom lại mới ra bức tranh thật — đóng hết chưa, tổng lãi lỗ và tổng phí bao nhiêu.
+function positionKey(row) {
+  return row.ticket || row.key;
+}
+
+export function buildPositions(rows) {
+  const groups = new Map();
+  (rows || []).forEach((r) => {
+    const k = positionKey(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+  const out = new Map();
+  groups.forEach((list, key) => {
+    const sorted = [...list].sort((a, b) => (a.closeAt ? a.closeAt.getTime() : 0) - (b.closeAt ? b.closeAt.getTime() : 0));
+    const closedLots = sorted.reduce((n, r) => n + (r.lots || 0), 0);
+    const originalSize = sorted.reduce((n, r) => Math.max(n, r.originalSize || 0), 0);
+    const profit = sorted.reduce((n, r) => n + (r.profit || 0), 0);
+    const fees = sorted.reduce((n, r) => n + (r.fees || 0), 0);
+    // Đóng hết = mọi dòng đều có giờ đóng VÀ tổng lot đã đóng đạt khối lượng ban đầu.
+    // Sai số nhỏ cho phép vì lot là số thập phân.
+    const fullyClosed = sorted.every((r) => r.closeAt) && (!originalSize || closedLots >= originalSize - 1e-6);
+    out.set(key, {
+      key, rows: sorted, first: sorted[0], closedLots, originalSize, profit, fees,
+      net: profit + fees, fullyClosed,
+      openLots: originalSize ? Math.max(0, Number((originalSize - closedLots).toFixed(4))) : 0,
+      lastClose: sorted[sorted.length - 1].closeAt,
+    });
+  });
+  return out;
 }
 
 function tradeOpenMs(t) {
@@ -173,6 +210,7 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
     });
   });
   pairs.sort((a, b) => a.gap - b.gap);
+  const positions = buildPositions(rows);
 
   const rowTaken = new Map();
   const tradeTaken = new Map();
@@ -184,35 +222,32 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
 
   const matched = [];
   const missing = [];
-  (rows || []).forEach((row) => {
-    const hit = rowTaken.get(row.key);
-    if (!hit) {
-      // Cùng số ticket với một dòng đã khớp thì chắc chắn là lần chốt bớt của chính vị thế
-      // đó, không phải lệnh bị quên; cùng symbol cùng ngày thì mới chỉ là khả năng.
-      const samePosition = !!row.ticket && (rows || []).some((r) => r.key !== row.key
-        && r.ticket === row.ticket && rowTaken.has(r.key));
-      missing.push({ ...row, samePosition, maybePartial: samePosition || matchedSameDay(rowTaken, rows, row) });
+  // Đối chiếu theo VỊ THẾ chứ không theo từng dòng: một lần chốt bớt là một dòng, mà cả ba
+  // thứ cần biết — đóng hết chưa, tổng lãi lỗ, tổng phí — chỉ đúng khi cộng cả vị thế lại.
+  positions.forEach((pos) => {
+    const hitRow = pos.rows.find((r) => rowTaken.has(r.key));
+    if (!hitRow) {
+      missing.push(pos);
       return;
     }
-    const net = row.net;
+    const hit = rowTaken.get(hitRow.key);
     const journal = computeResult(hit.trade).profit;
-    const diff = net === null || journal === null ? null : journal - net;
-    const split = partialExitsOf(hit.trade).length > 0;
-    // Phí chưa điền mà sàn có tính thì đó là lý do lệch — nói thẳng ra thay vì bắt người
-    // dùng tự ngồi trừ, vì cổ phiếu giữ qua đêm phí ăn hẳn vào kết quả.
-    const feeMissing = !split && row.fees !== null && row.fees !== 0
+    // Sàn còn để lệnh mở thì tổng của nó chưa phải tổng cuối — so tiền lúc này là so nhầm.
+    const diff = pos.fullyClosed && journal !== null ? journal - pos.net : null;
+    const feeMissing = pos.fees !== 0
       && (hit.trade.fees === "" || hit.trade.fees === undefined || hit.trade.fees === null);
     matched.push({
-      row, trade: hit.trade, gap: hit.gap,
-      // Lệnh có chốt bớt thì tổng nhật ký gồm nhiều dòng CSV, so một dòng sẽ luôn lệch.
-      profitDiff: split ? null : diff,
-      profitOff: diff !== null && !split && Math.abs(diff) > PROFIT_TOLERANCE,
+      row: hitRow, position: pos, trade: hit.trade, gap: hit.gap,
+      profitDiff: diff,
+      profitOff: diff !== null && Math.abs(diff) > PROFIT_TOLERANCE,
       feeMissing,
       // Giờ/ngày trên sàn (đã quy về giờ máy bạn) khác cái bạn ghi — vẫn là một lệnh, nhưng
       // lệch ngày thì lịch và thống kê theo ngày đếm sai chỗ, còn lệch giờ thì thời gian giữ
       // lệnh và phân tích theo phiên sai theo.
-      timeFields: timeFieldsToSync(hit.trade, row, syncTime),
-      dateOff: localDate(row.openAt) !== hit.trade.entryDate,
+      timeFields: timeFieldsToSync(hit.trade, hitRow, syncTime),
+      dateOff: localDate(hitRow.openAt) !== hit.trade.entryDate,
+      // Sàn đã có kết quả mà nhật ký còn bỏ ngỏ — lệnh đóng quên ghi, hoặc chốt bớt chưa điền.
+      outcome: brokerOutcomePlan(hit.trade, pos, syncTime),
     });
   });
 
@@ -229,16 +264,68 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
   return { matched, missing, extra, tolerance: PROFIT_TOLERANCE, syncTime };
 }
 
-function matchedSameDay(rowTaken, rows, row) {
-  const day = localDate(row.openAt);
-  return (rows || []).some((r) => r.key !== row.key && rowTaken.has(r.key)
-    && r.symbolKey === row.symbolKey && localDate(r.openAt) === day);
+// % vị thế của một lần đóng. Sàn ghi lot đóng và khối lượng ban đầu, chia ra là ra đúng
+// con số bạn vẫn tự gõ vào ô "% vị thế đóng".
+function closedPercent(row, originalSize) {
+  if (!originalSize || row.lots === null) return "";
+  const pct = (row.lots / originalSize) * 100;
+  return String(Number(pct.toFixed(pct >= 10 ? 1 : 2)));
+}
+
+function isFilled(v) {
+  return v !== "" && v !== null && v !== undefined;
+}
+
+// Sàn đã có kết quả mà nhật ký còn bỏ ngỏ. Hai kiểu bỏ ngỏ:
+//   - lệnh đã đóng hẳn trên sàn mà nhật ký chưa điền ngày thoát / lợi nhuận (AMZN);
+//   - đã chốt bớt vài lần mà nhật ký chưa ghi lần nào, lệnh vẫn đang chạy (JNJ, MDLZ).
+// Nhật ký đã điền lợi nhuận rồi thì KHÔNG đụng vào: lúc đó bảng "lệch tiền" mới là chỗ soi,
+// còn thêm chốt bớt vào một lệnh đã chốt sổ sẽ cộng dồn thành số khống.
+export function brokerOutcomePlan(trade, position, syncTime = true) {
+  const none = { changed: false, partials: [], close: null, fees: null };
+  if (!position || !position.rows.length) return none;
+  const closedRows = position.rows.filter((r) => r.closeAt);
+  if (!closedRows.length) return none;
+  if (isFilled(trade.profit)) return none;
+
+  const finalRow = position.fullyClosed ? closedRows[closedRows.length - 1] : null;
+  const partialRows = position.fullyClosed ? closedRows.slice(0, -1) : closedRows;
+  // Đã tự ghi chốt bớt thì không biết dòng nào của sàn ứng với lần nào — để nguyên.
+  const addPartials = !partialExitsOf(trade).length ? partialRows : [];
+
+  const partials = addPartials.map((r) => ({
+    ...emptyPartialExit(),
+    date: localDate(r.closeAt),
+    time: syncTime ? localTime(r.closeAt) : "",
+    percent: closedPercent(r, position.originalSize),
+    profit: r.profit === null ? "" : String(Number(r.profit.toFixed(2))),
+  }));
+
+  const close = finalRow && !trade.exitDate ? {
+    exitDate: localDate(finalRow.closeAt),
+    exitTime: syncTime ? localTime(finalRow.closeAt) : "",
+    profit: finalRow.profit === null ? "" : String(Number(finalRow.profit.toFixed(2))),
+  } : null;
+
+  const fees = position.fees !== 0 && !isFilled(trade.fees) ? String(Number(position.fees.toFixed(2))) : null;
+  return { changed: !!(partials.length || close || fees), partials, close, fees, position };
+}
+
+export function withBrokerOutcome(trade, position, syncTime = true) {
+  const plan = brokerOutcomePlan(trade, position, syncTime);
+  if (!plan.changed) return trade;
+  const next = { ...trade };
+  if (plan.partials.length) next.partialExits = [...partialExitsOf(trade), ...plan.partials];
+  if (plan.close) Object.assign(next, plan.close);
+  if (plan.fees !== null) next.fees = plan.fees;
+  return next;
 }
 
 // Những mốc thời gian mà file sàn nói khác nhật ký. Tài khoản tắt đồng bộ giờ (cổ phiếu —
 // chỉ cần đúng ngày) thì chỉ soi ngày, bỏ qua giờ. Lệnh có chốt bớt thì KHÔNG đụng tới thời
 // gian thoát: một vị thế chốt nhiều lần cho ra nhiều dòng, dòng khớp được chưa chắc là lần
-// đóng cuối. Lệnh chưa điền ngày thoát cũng để yên — điền hộ là tự tay đóng lệnh của bạn.
+// đóng cuối. Lệnh chưa điền ngày thoát cũng để yên — việc điền nó là của bảng "sàn đã có
+// kết quả", nơi nói rõ đang đóng lệnh hộ bạn.
 export function timeFieldsToSync(trade, row, syncTime = true) {
   const out = [];
   if (trade.entryDate !== localDate(row.openAt)) out.push("entryDate");
@@ -286,20 +373,19 @@ export function guessAccount(rows, trades, accounts) {
 // Dựng sẵn một lệnh từ dòng CSV để mở thẳng form — điền hộ đúng những gì sàn biết chắc,
 // phần đánh giá/tâm lý vẫn để trống cho bạn tự viết. Lãi lỗ và phí để riêng đúng như sàn
 // tách, để tổng cộng lại ra khớp con số cuối cùng.
-export function tradeFromBrokerRow(row, account, symbols) {
+export function tradeFromBrokerPosition(position, account, symbols, syncTime = true) {
+  const row = position.first;
   const known = (symbols || []).find((s) => normalizeSymbol(s) === row.symbolKey);
-  return {
+  const base = {
     ...emptyTrade(),
     account,
     symbol: known || row.symbol,
     direction: row.type === "sell" ? "sell" : "buy",
     entryDate: localDate(row.openAt),
-    entryTime: localTime(row.openAt),
-    exitDate: localDate(row.closeAt),
-    exitTime: localTime(row.closeAt),
-    profit: row.profit === null ? "" : String(Number(row.profit.toFixed(2))),
-    fees: row.fees === null || row.fees === 0 ? "" : String(Number(row.fees.toFixed(2))),
+    entryTime: syncTime ? localTime(row.openAt) : "",
   };
+  // Lệnh mới nên chưa có gì để giữ — cứ để plan điền hết chốt bớt, ngày thoát, lợi nhuận và phí.
+  return withBrokerOutcome(base, position, syncTime);
 }
 
 // Điền phí sàn vào một lệnh đã có. Giữ nguyên dấu của sàn: bị trừ là số âm.
