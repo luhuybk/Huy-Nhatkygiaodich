@@ -4,11 +4,11 @@ import { ACCENT_PRESETS } from "../lib/constants.js";
 import { BACKUP_KEEP } from "../lib/helpers.js";
 import { DangerConfirmButton, Field, StatCard } from "./ui.jsx";
 
-export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, symbolWatches, setupCheckLog, backups, onRestoreBackup, onBackupNow, inlineImageCount, imageMigration, onMigrateImages, onImportAll, onReset }) {
+export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, symbolWatches, setupCheckLog, backups, onRestoreBackup, onBackupNow, inlineImageCount, imageMigration, onMigrateImages, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
 
   const doExport = () => {
-    const payload = { trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, uiSettings, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog, exportedAt: new Date().toISOString() };
+    const payload = { trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, principles, setupLibrary, setupErrors, uiSettings, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

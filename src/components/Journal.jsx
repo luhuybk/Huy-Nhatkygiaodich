@@ -3,7 +3,7 @@ import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Fi
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 const RR_PRESETS = [
@@ -13,11 +13,21 @@ const RR_PRESETS = [
   { label: "Thắng từ 2R", from: "2", to: "" },
 ];
 
-export function JournalFilters({ trades, resources, filters, setFilters }) {
+export function JournalFilters({ trades, resources, setupErrors, filters, setFilters }) {
   const years = useMemo(() => {
     const set = new Set(trades.map((t) => yearKey(t.entryDate)).filter(Boolean));
     return Array.from(set).sort().reverse();
   }, [trades]);
+  // Gom lỗi theo setup để danh sách chọn không thành một đống phẳng khi mỗi setup có 5-6 lỗi.
+  const errorGroups = useMemo(() => {
+    const by = new Map();
+    (setupErrors || []).filter((e) => e && e.name).forEach((e) => {
+      const key = e.setup || "Chung (mọi setup)";
+      if (!by.has(key)) by.set(key, []);
+      by.get(key).push(e);
+    });
+    return Array.from(by, ([setup, items]) => ({ setup, items }));
+  }, [setupErrors]);
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => setFilters({});
 
@@ -39,6 +49,17 @@ export function JournalFilters({ trades, resources, filters, setFilters }) {
           <option value="bad">Giao dịch Tồi (cả thắng &amp; thua)</option>
           {GRADE_OPTIONS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
           <option value="none">Chưa chấm</option>
+        </select>
+        <select className="input" value={filters.setupError || ""} onChange={(e) => set("setupError")(e.target.value)}>
+          <option value="">Lỗi setup</option>
+          <option value="clean">Không lỗi (đã soi)</option>
+          <option value="any">Có lỗi (bất kỳ)</option>
+          <option value="unreviewed">Chưa soi lỗi</option>
+          {errorGroups.map((g) => (
+            <optgroup key={g.setup} label={g.setup}>
+              {g.items.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </optgroup>
+          ))}
         </select>
         <div className="filter-rr">
           <input className="input" type="text" inputMode="decimal" placeholder="RR từ" value={filters.rrFrom ?? ""} onChange={(e) => set("rrFrom")(e.target.value)} />
@@ -102,7 +123,7 @@ function tradeImageShots(t) {
   return shots;
 }
 
-export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
+export function TradeDetailModal({ trade, setupErrors, onClose, onEdit, onDelete }) {
   if (!trade) return null;
   const t = trade;
   const { rr, outcome, status, profit } = computeResult(t);
@@ -113,6 +134,10 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
   const checklistEntries = Object.entries(t.checklist || {});
   const completion = tradeCompletion(t);
   const shots = tradeImageShots(t);
+  const errorState = tradeErrorState(t);
+  const errorNames = (t.setupErrors || [])
+    .map((id) => ((setupErrors || []).find((e) => e.id === id) || {}).name)
+    .filter(Boolean);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -135,6 +160,9 @@ export function TradeDetailModal({ trade, onClose, onEdit, onDelete }) {
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
               <DetailRow label="Nhận xét Setup" value={t.setupNote} />
+              <DetailRow label="Lỗi setup"
+                tone={errorState === "clean" ? "win" : errorState === "errors" ? "loss" : ""}
+                value={errorState === "clean" ? "Không lỗi" : errorNames.length ? errorNames.join(", ") : "Chưa soi"} />
               <DetailRow label="Điểm cấu trúc (ĐCT)" value={t.structureScore !== "" ? t.structureScore : "—"} />
             </DetailGroup>
             <DetailGroup title="Quản trị vốn & Kết quả">
@@ -496,7 +524,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, ledger, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, setupErrors, ledger, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
@@ -560,7 +588,7 @@ export function JournalSection({ trades, resources, ledger, onEdit, onCreate, on
       ) : null}
       {tab === "list" ? (
         <div>
-          <JournalFilters trades={trades} resources={resources} filters={filters} setFilters={setFilters} />
+          <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
             <p className="field-hint" style={{ margin: 0 }}>{filtered.length} / {trades.length} lệnh{selected.size ? ` · Đã chọn ${selected.size}` : ""}</p>
             <div style={{ display: "flex", gap: 8 }}>

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Scissors } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitsOf, partialExitStats, sessionFromTime, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion } from "../lib/helpers.js";
 
 // Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
 const PERCENT_PRESETS = [25, 33, 50, 100];
@@ -119,7 +119,44 @@ function PartialExits({ trade, onChange }) {
   );
 }
 
-export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel }) {
+// Bộ lỗi của đúng setup đang chọn. "Không lỗi" và các lỗi loại trừ nhau — tick cái này thì cái kia tự bỏ.
+function SetupErrorPicker({ trade, catalog, onChange }) {
+  if (!trade.setup) return <p className="empty-note">Chọn setup ở trên trước, bộ lỗi sẽ hiện ra theo setup đó.</p>;
+  const available = errorsForSetup(catalog, trade.setup);
+  const selected = trade.setupErrors || [];
+  // Đổi setup của lệnh thì lỗi đã tick của setup cũ không còn trong danh sách — vẫn phải hiện ra,
+  // không thì lệnh mang một cái lỗi vô hình mà không có cách nào bỏ tick.
+  const strays = selected
+    .filter((id) => !available.some((e) => e.id === id))
+    .map((id) => (catalog || []).find((e) => e.id === id))
+    .filter(Boolean);
+  if (available.length === 0 && strays.length === 0) {
+    return <p className="empty-note">Setup "{trade.setup}" chưa khai lỗi nào — thêm ở tab "Lỗi theo setup".</p>;
+  }
+  return (
+    <div className="chip-group">
+      <button type="button" className={`chip-btn err-clean ${trade.setupClean ? "chip-active" : ""}`}
+        onClick={() => onChange(setTradeClean(trade, !trade.setupClean))}>
+        <Check size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Không lỗi
+      </button>
+      {available.map((e) => (
+        <button key={e.id} type="button" title={e.note || ""}
+          className={`chip-btn err-bad ${selected.includes(e.id) ? "chip-active" : ""}`}
+          onClick={() => onChange(toggleTradeError(trade, e.id))}>
+          {e.name}
+        </button>
+      ))}
+      {strays.map((e) => (
+        <button key={e.id} type="button" className="chip-btn err-bad chip-active"
+          onClick={() => onChange(toggleTradeError(trade, e.id))}>
+          {e.name} <span className="err-note">(setup {e.setup || "chung"})</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function TradeForm({ initial, resources, setupErrors, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
@@ -275,6 +312,9 @@ export function TradeForm({ initial, resources, trades, ledger, onSave, onCancel
             <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={STRUCTURE_SCORES} placeholder="Chọn điểm (0-7)" />
           </Field>
         </div>
+        <Field label="Lỗi của setup" hint="Soi lại lệnh: làm đúng thì chọn 'Không lỗi', mắc lỗi nào thì tick lỗi đó. Bỏ trống = chưa soi.">
+          <SetupErrorPicker trade={t} catalog={setupErrors} onChange={setT} />
+        </Field>
         <Field label="Lý do vào lệnh">
           <textarea className="input textarea" value={t.entryReason} onChange={(e) => set("entryReason")(e.target.value)} placeholder="Điền tay lý do vào lệnh..." />
         </Field>

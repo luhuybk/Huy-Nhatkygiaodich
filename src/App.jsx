@@ -3,13 +3,13 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
-  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks,
+  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
-  setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField,
+  setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
   shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch,
 } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
@@ -35,6 +35,7 @@ const TradeForm = lazy(() => import("./components/TradeForm.jsx").then((m) => ({
 const SetupHubSection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupHubSection })));
 const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.JourneySection })));
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
+const SetupErrorsPage = lazy(() => import("./components/SetupErrors.jsx").then((m) => ({ default: m.SetupErrorsPage })));
 
 const NAV_GROUPS = [
   {
@@ -63,6 +64,7 @@ const NAV_GROUPS = [
       { key: "reminders", label: "Thông báo", icon: Bell },
       { key: "accounts", label: "Tài khoản", icon: Wallet },
       { key: "setuplib", label: "Setup mẫu", icon: Layers },
+      { key: "setuperrors", label: "Lỗi theo setup", icon: Bug },
       { key: "notes", label: "Ghi chú", icon: StickyNote },
       { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
       { key: "principles", label: "Nguyên tắc", icon: ListChecks },
@@ -94,6 +96,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [missedSetups, setMissedSetups] = useState([]);
   const [skippedSetups, setSkippedSetups] = useState([]);
   const [setupVariants, setSetupVariants] = useState([]);
+  const [setupErrors, setSetupErrors] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [capitalAccounts, setCapitalAccounts] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
@@ -117,7 +120,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -142,6 +145,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("setupCheckLog", []),
         safeGet("slMutedTrades", []),
         safeGet("timelineDone", {}),
+        safeGet("setupErrors", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -156,6 +160,7 @@ function AppShell({ onSignOut, userEmail }) {
       setMissedSetups(ms);
       setSkippedSetups(ss);
       setSetupVariants(sv);
+      setSetupErrors(Array.isArray(se) ? se : []);
       setCapitalAccounts(ca);
       setCapitalEntries(ce);
       setCapitalFlows(cf);
@@ -228,6 +233,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); flashSaved(await safeSet("newsLogs", next)); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); flashSaved(await safeSet("principles", next)); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); flashSaved(await safeSet("setupLibrary", next)); }, []);
+  const persistSetupErrors = useCallback(async (next) => { setSetupErrors(next); flashSaved(await safeSet("setupErrors", next)); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); flashSaved(await safeSet("missedSetups", next)); }, []);
   const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); flashSaved(await safeSet("skippedSetups", next)); }, []);
@@ -347,7 +353,13 @@ function AppShell({ onSignOut, userEmail }) {
       const r = renameInArrayField(lessons, map.lessonArray, from, to);
       if (r.changed) await persistLessons(r.items);
     }
-  }, [trades, missedSetups, skippedSetups, setupVariants, lessons, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons]);
+    // Bộ lỗi gắn vào setup bằng TÊN, nên đổi tên setup mà quên chỗ này là cả bộ lỗi
+    // treo lại ở tên cũ, còn lệnh mang tên mới thì không thấy lỗi nào để tick.
+    if (rename.resourceKey === "setups") {
+      const r = renameSetupInErrors(setupErrors, from, to);
+      if (r.changed) await persistSetupErrors(r.items);
+    }
+  }, [trades, missedSetups, skippedSetups, setupVariants, lessons, setupErrors, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons, persistSetupErrors]);
 
   // Chuyển toàn bộ lệnh của một tài khoản sang tài khoản khác (hoặc bỏ trống) trước khi xóa tài khoản đó.
   const handleMoveTrades = useCallback(async (fromName, toName) => {
@@ -431,6 +443,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
     if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
+    if (data.setupErrors) persistSetupErrors(data.setupErrors);
   };
   // Ảnh cũ vẫn nằm dạng base64 trong dữ liệu. Đẩy hết lên Storage rồi thay bằng đường dẫn,
   // nếu không thì phần phình cũ còn nguyên, chỉ là không phình thêm.
@@ -478,7 +491,7 @@ function AppShell({ onSignOut, userEmail }) {
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs,
-      principles, setupLibrary, missedSetups, skippedSetups, setupVariants, reminders,
+      principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
     const next = pruneBackups([snap, ...backups]);
@@ -497,6 +510,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistNewsLogs([]);
     persistPrinciples(DEFAULT_PRINCIPLES);
     persistSetupLibrary([]);
+    persistSetupErrors([]);
     persistMissedSetups([]);
     persistSkippedSetups([]);
     persistSetupVariants([]);
@@ -590,7 +604,7 @@ function AppShell({ onSignOut, userEmail }) {
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
-              view === "journal" ? <JournalSection trades={trades} resources={resources} ledger={ledger} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
+              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} ledger={ledger} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
@@ -601,7 +615,7 @@ function AppShell({ onSignOut, userEmail }) {
                   onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
               ) :
               view === "form" ? (
-                <TradeForm initial={editing} resources={resources} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
+                <TradeForm initial={editing} resources={resources} setupErrors={setupErrors} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
               ) :
               view === "analysis" ? <Analysis trades={trades} resources={resources} onViewTrade={startEdit} /> :
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :
@@ -617,6 +631,9 @@ function AppShell({ onSignOut, userEmail }) {
                   fxRates={resources.fxRates} onFxRatesChange={(next) => persistResources({ ...resources, fxRates: next })} />
               ) :
               view === "setuplib" ? <SetupLibrarySection items={setupLibrary} onChange={persistSetupLibrary} /> :
+              view === "setuperrors" ? (
+                <SetupErrorsPage errors={setupErrors} trades={trades} resources={resources} onChange={persistSetupErrors} onTradesChange={persistTrades} />
+              ) :
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
               view === "lessons" ? (
                 <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
@@ -629,7 +646,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
@@ -654,6 +671,7 @@ function AppShell({ onSignOut, userEmail }) {
         <Suspense fallback={null}>
           <TradeDetailModal
             trade={viewingTrade}
+            setupErrors={setupErrors}
             onClose={() => setViewingTrade(null)}
             onEdit={(t) => { setViewingTrade(null); openEditForm(t); }}
             onDelete={handleDelete}

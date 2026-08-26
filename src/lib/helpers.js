@@ -40,6 +40,7 @@ export function emptyTrade() {
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "", fees: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
     psychology: "", ratingPsychology: 0, psychologyNote: "",
+    setupErrors: [], setupClean: false,
     tradeGrade: "", reviewNote: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
@@ -77,6 +78,110 @@ export function emptySetupDef() {
 
 export function emptySetupVariant() {
   return { id: null, name: "", note: "", link: "", image: "", checklist: [] };
+}
+
+// ——— Lỗi theo setup ———
+// Mỗi setup có một bộ lỗi riêng (DD: quá dốc, lỗi 2 nến... / BB: lỗi lỏng, lỗi xa...).
+// setup === "" nghĩa là lỗi dùng chung cho mọi setup.
+export function emptySetupError(setup) {
+  return { id: null, setup: setup || "", name: "", note: "" };
+}
+
+export function errorsForSetup(errors, setupName) {
+  // Không có setup thì chưa biết bộ lỗi nào — trả rỗng để nơi gọi hiện lời nhắc chọn setup,
+  // chứ không đổ hết mọi lỗi của mọi setup ra.
+  if (!setupName) return [];
+  return (errors || []).filter((e) => e && e.name && (!e.setup || e.setup === setupName));
+}
+
+export function allSetupErrors(errors) {
+  return (errors || []).filter((e) => e && e.name);
+}
+
+// Ba trạng thái, và phải phân biệt được "đã soi, sạch lỗi" với "chưa soi bao giờ" —
+// nếu gộp hai cái đó thì mẫu số của mọi tỷ trọng bên dưới đều sai.
+export function tradeErrorState(trade) {
+  if (!trade) return "unreviewed";
+  if ((trade.setupErrors || []).length > 0) return "errors";
+  if (trade.setupClean) return "clean";
+  return "unreviewed";
+}
+
+// Chọn "Không lỗi" thì bỏ hết lỗi đang tick, và ngược lại — hai thứ này loại trừ nhau.
+export function toggleTradeError(trade, errorId) {
+  const cur = trade.setupErrors || [];
+  const next = cur.includes(errorId) ? cur.filter((x) => x !== errorId) : [...cur, errorId];
+  return { ...trade, setupErrors: next, setupClean: next.length ? false : trade.setupClean };
+}
+
+export function setTradeClean(trade, clean) {
+  return { ...trade, setupClean: !!clean, setupErrors: clean ? [] : trade.setupErrors || [] };
+}
+
+// Xóa một lỗi khỏi bộ lỗi thì phải gỡ nó khỏi các lệnh đã tick, không thì lệnh đó
+// mãi mãi đứng ở nhóm "có lỗi" mà không hiện lỗi nào.
+export function stripSetupError(trades, errorId) {
+  let changed = false;
+  const items = (trades || []).map((t) => {
+    if (!(t.setupErrors || []).includes(errorId)) return t;
+    changed = true;
+    return { ...t, setupErrors: t.setupErrors.filter((x) => x !== errorId) };
+  });
+  return { items, changed };
+}
+
+function errorPerf(list, resources) {
+  const closed = list.filter((t) => computeResult(t).status === "closed");
+  const wins = closed.filter((t) => computeResult(t).outcome === "win").length;
+  const rrs = closed.map((t) => computeResult(t).rr).filter((v) => v !== null && Number.isFinite(v));
+  const profit = closed.reduce((sum, t) => sum + (tradeProfitUSD(t, resources) || 0), 0);
+  return {
+    count: list.length,
+    closed: closed.length,
+    wins,
+    winRate: closed.length ? (wins / closed.length) * 100 : null,
+    avgRR: rrs.length ? rrs.reduce((a, b) => a + b, 0) / rrs.length : null,
+    profit,
+  };
+}
+
+// Thống kê cho một setup (setupName rỗng = mọi setup). Mẫu số là số lệnh ĐÃ SOI,
+// nên tỷ trọng đọc được là "trong những lần đã ngồi soi lại, lỗi này chiếm bao nhiêu".
+// Một lệnh dính nhiều lỗi thì được đếm ở nhiều dòng — tổng các dòng vượt 100% là bình thường.
+export function setupErrorStats(trades, errors, setupName, resources) {
+  const items = (trades || []).filter((t) => t && (!setupName || t.setup === setupName));
+  const reviewed = items.filter((t) => tradeErrorState(t) !== "unreviewed");
+  const clean = items.filter((t) => tradeErrorState(t) === "clean");
+  const dirty = items.filter((t) => tradeErrorState(t) === "errors");
+  const catalog = setupName ? errorsForSetup(errors, setupName) : allSetupErrors(errors);
+  const rows = catalog.map((e) => {
+    const hit = items.filter((t) => (t.setupErrors || []).includes(e.id));
+    return {
+      ...e,
+      ...errorPerf(hit, resources),
+      share: reviewed.length ? (hit.length / reviewed.length) * 100 : null,
+    };
+  }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return {
+    total: items.length,
+    reviewed: reviewed.length,
+    unreviewed: items.length - reviewed.length,
+    clean: errorPerf(clean, resources),
+    dirty: errorPerf(dirty, resources),
+    rows,
+  };
+}
+
+// Đổi tên setup trong Tài nguyên thì bộ lỗi phải đi theo, không thì bộ lỗi của DD
+// vẫn treo ở cái tên cũ và lệnh mang tên mới sẽ không thấy lỗi nào để chọn.
+export function renameSetupInErrors(errors, from, to) {
+  let changed = false;
+  const items = (errors || []).map((e) => {
+    if (e.setup !== from) return e;
+    changed = true;
+    return { ...e, setup: to };
+  });
+  return { items, changed };
 }
 
 export const PROBLEM_MAX_IMAGES = 4;
@@ -1572,6 +1677,13 @@ export function applyFilters(trades, filters, resources) {
     if (filters.setup && t.setup !== filters.setup) return false;
     if (filters.psychology && t.psychology !== filters.psychology) return false;
     if (filters.grade && !gradeMatches(t.tradeGrade, filters.grade)) return false;
+    if (filters.setupError) {
+      const state = tradeErrorState(t);
+      if (filters.setupError === "clean" && state !== "clean") return false;
+      if (filters.setupError === "any" && state !== "errors") return false;
+      if (filters.setupError === "unreviewed" && state !== "unreviewed") return false;
+      if (!["clean", "any", "unreviewed"].includes(filters.setupError) && !(t.setupErrors || []).includes(filters.setupError)) return false;
+    }
     if (!rrInRange(r.rr, filters.rrFrom, filters.rrTo)) return false;
     if (filters.result) {
       if (filters.result === "open" && r.status !== "open") return false;
