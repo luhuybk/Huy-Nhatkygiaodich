@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
-  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug,
+  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -26,6 +26,7 @@ const Analysis = lazy(() => import("./components/Analysis.jsx").then((m) => ({ d
 const TradeAnalysisPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.TradeAnalysisPage })));
 const HeatmapPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.HeatmapPage })));
 const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").then((m) => ({ default: m.SystemQualityPage })));
+const StreakPage = lazy(() => import("./components/Streaks.jsx").then((m) => ({ default: m.StreakPage })));
 const AccountsSection = lazy(() => import("./components/Accounts.jsx").then((m) => ({ default: m.AccountsSection })));
 const EquityIndexPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.EquityIndexPage })));
 const CapitalTrackerPage = lazy(() => import("./components/CapitalTracker.jsx").then((m) => ({ default: m.CapitalTrackerPage })));
@@ -56,6 +57,7 @@ const NAV_GROUPS = [
       { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
       { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
       { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
+      { key: "streaks", label: "Chuỗi thắng / thua", icon: Activity },
       { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
     ]
   },
@@ -624,6 +626,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "structureperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="structure" onViewTrade={startEdit} /> :
               view === "weekdayperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="weekday" onViewTrade={startEdit} /> :
               view === "heatmap" ? <HeatmapPage trades={trades} resources={resources} /> :
+              view === "streaks" ? <StreakPage trades={trades} resources={resources} /> :
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}

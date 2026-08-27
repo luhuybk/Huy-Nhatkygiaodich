@@ -1233,6 +1233,119 @@ export function accountRiskAlert(account, ledger, trades) {
   };
 }
 
+// ——— Chuỗi thắng / thua liên tiếp ———
+// Lệnh hòa không làm đứt chuỗi và cũng không kéo dài nó: R của nó bằng 0 nên bỏ qua
+// hẳn cũng không mất gì, mà chuỗi thì đọc đúng như lúc ngồi trade.
+function sortedByCloseDate(closed) {
+  return [...closed].sort((a, b) =>
+    (dateKey(a.t) || "").localeCompare(dateKey(b.t) || "") || (a.t.createdAt || 0) - (b.t.createdAt || 0));
+}
+
+// Đường cong cộng dồn: mỗi lệnh thắng +1, mỗi lệnh thua -1. Mỗi đoạn đi lên hoặc đi
+// xuống liền mạch chính là một chuỗi, nên đỉnh và đáy của đường cong đúng là chỗ chuỗi
+// kết thúc — không cần dò lại lần nữa.
+export function buildStreakCurve(closed) {
+  const sorted = sortedByCloseDate(closed);
+  const points = [{ i: 0, date: "", symbol: "", net: 0, cumR: 0, outcome: "", streak: 0, streakType: "", rr: null }];
+  const streaks = [];
+  let net = 0;
+  let cumR = 0;
+  let cur = null;
+  let beCount = 0;
+  let rCovered = 0;
+
+  sorted.forEach((x) => {
+    const outcome = x.r.outcome;
+    if (outcome !== "win" && outcome !== "loss") { beCount += 1; return; }
+    const rr = x.r.rr !== null && Number.isFinite(x.r.rr) ? x.r.rr : null;
+    net += outcome === "win" ? 1 : -1;
+    if (rr !== null) { cumR += rr; rCovered += 1; }
+
+    if (!cur || cur.type !== outcome) {
+      cur = { type: outcome, length: 0, r: 0, rCount: 0, profit: 0, from: dateKey(x.t) || "", to: "", endIndex: 0 };
+      streaks.push(cur);
+    }
+    cur.length += 1;
+    if (rr !== null) { cur.r += rr; cur.rCount += 1; }
+    cur.profit += x.r.profit || 0;
+    cur.to = dateKey(x.t) || "";
+
+    points.push({
+      i: points.length, date: dateKey(x.t) || "", symbol: x.t.symbol || "", net, cumR,
+      outcome, streak: cur.length, streakType: cur.type, rr,
+    });
+    cur.endIndex = points.length - 1;
+  });
+
+  const wins = streaks.filter((s) => s.type === "win");
+  const losses = streaks.filter((s) => s.type === "loss");
+  const longest = (list) => list.reduce((best, s) => (!best || s.length > best.length ? s : best), null);
+  // Chuỗi thua tốn kém nhất tính theo R, chỉ xét những chuỗi có ghi rủi ro — dài nhất
+  // chưa chắc đã đắt nhất, và đó mới là điều đáng biết.
+  const costliest = losses
+    .filter((s) => s.rCount > 0)
+    .reduce((worst, s) => (!worst || s.r < worst.r ? s : worst), null);
+
+  return {
+    points, streaks, beCount,
+    total: points.length - 1,
+    rCovered,
+    longestWin: longest(wins),
+    longestLoss: longest(losses),
+    costliestLoss: costliest,
+    current: streaks.length ? streaks[streaks.length - 1] : null,
+  };
+}
+
+export const STREAK_LADDER_CAP = 3;
+
+export function streakLadderLabel(key) {
+  if (key === 0) return "Lệnh mở đầu (chưa có chuỗi)";
+  const n = Math.abs(key);
+  const plus = n >= STREAK_LADDER_CAP ? "+" : "";
+  return key > 0 ? `Sau ${n}${plus} lệnh thắng` : `Sau ${n}${plus} lệnh thua`;
+}
+
+// Ngưỡng tâm lý: cùng một người, nhưng chất lượng lệnh sau 3 lần thua liên tiếp thường
+// khác hẳn lúc vừa thắng. Xếp mọi lệnh theo trạng thái NGAY TRƯỚC khi vào lệnh đó.
+export function streakLadder(closed) {
+  const sorted = sortedByCloseDate(closed);
+  const buckets = new Map();
+  let run = 0;
+  sorted.forEach((x) => {
+    const outcome = x.r.outcome;
+    if (outcome !== "win" && outcome !== "loss") return;
+    const key = Math.max(-STREAK_LADDER_CAP, Math.min(STREAK_LADDER_CAP, run));
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(x);
+    run = outcome === "win" ? (run > 0 ? run + 1 : 1) : (run < 0 ? run - 1 : -1);
+  });
+
+  const rows = [];
+  for (let key = STREAK_LADDER_CAP; key >= -STREAK_LADDER_CAP; key--) {
+    const list = buckets.get(key) || [];
+    if (!list.length) continue;
+    const wins = list.filter((x) => x.r.outcome === "win").length;
+    const rrs = list.map((x) => x.r.rr).filter((v) => v !== null && Number.isFinite(v));
+    const psych = list.map((x) => Number(x.t.ratingPsychology) || 0).filter((v) => v > 0);
+    const graded = list.filter((x) => x.t.tradeGrade);
+    const bad = graded.filter((x) => {
+      const g = GRADE_OPTIONS.find((o) => o.id === x.t.tradeGrade);
+      return g && g.tone === "loss";
+    }).length;
+    rows.push({
+      key, label: streakLadderLabel(key), count: list.length,
+      winRate: (wins / list.length) * 100,
+      avgRR: rrs.length ? rrs.reduce((a, b) => a + b, 0) / rrs.length : null,
+      rCount: rrs.length,
+      avgPsych: psych.length ? psych.reduce((a, b) => a + b, 0) / psych.length : null,
+      badRate: graded.length ? (bad / graded.length) * 100 : null,
+      gradedCount: graded.length,
+    });
+  }
+  return rows;
+}
+
 export function computeRiskAlerts(resources, trades, ledger) {
   const accounts = (resources && resources.accounts) || [];
   return accounts
