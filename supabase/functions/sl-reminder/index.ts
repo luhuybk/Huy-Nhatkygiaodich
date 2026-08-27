@@ -473,20 +473,40 @@ Deno.serve(async () => {
 
         const closed = trades.filter((t) => inRange(t.exitDate as string | undefined));
         let win = 0, loss = 0, be = 0, totalR = 0, rCount = 0, usd = 0, usdCount = 0;
+        // Tách R thắng và R lỗ cho từng tài khoản: +2R do "thắng 3R lỗ 1R" khác hẳn
+        // +2R do "thắng 12R lỗ 10R", mà nhìn mỗi con số ròng thì không phân biệt được.
+        type AccR = { win: number; loss: number; rWin: number; rLoss: number; rCount: number };
+        const byAccount = new Map<string, AccR>();
         for (const t of closed) {
           const closingProfit = t.profit === "" || t.profit === null || t.profit === undefined ? null : Number(t.profit);
           if (closingProfit === null || Number.isNaN(closingProfit)) continue;
           // Lời/lỗ cả lệnh = các lần chốt bớt + lần đóng nốt, giống hệt bên web.
           const profit = closingProfit + partialProfitOf(t);
           if (profit > 0) win++; else if (profit < 0) loss++; else be++;
+
+          const name = (t.account as string | undefined) || "(chưa gán tài khoản)";
+          const acc = byAccount.get(name) || { win: 0, loss: 0, rWin: 0, rLoss: 0, rCount: 0 };
+          if (profit > 0) acc.win++; else if (profit < 0) acc.loss++;
+
           const risk = Number(t.riskAmount);
           if (t.riskAmount !== "" && t.riskAmount !== null && t.riskAmount !== undefined && risk && !Number.isNaN(risk)) {
-            totalR += profit / risk;
+            const rr = profit / risk;
+            totalR += rr;
             rCount++;
+            if (rr > 0) acc.rWin += rr; else acc.rLoss += rr;
+            acc.rCount++;
           }
+          byAccount.set(name, acc);
+
           const converted = toUSD(profit, currencyOf(t.account as string | undefined), fxRates);
           if (!Number.isNaN(converted)) { usd += converted; usdCount++; }
         }
+        const accountLines = [...byAccount.entries()]
+          .map(([name, a]) => ({ name, ...a, rNet: a.rWin + a.rLoss }))
+          .sort((a, b) => b.rNet - a.rNet)
+          .map((a) => a.rCount
+            ? `• ${a.name}: ${signed(a.rNet, 2)}R (thắng ${a.rWin.toFixed(2)}R | lỗ ${Math.abs(a.rLoss).toFixed(2)}R) · ${a.win}T/${a.loss}B`
+            : `• ${a.name}: ${a.win}T/${a.loss}B · chưa lệnh nào ghi risk`);
         const graded = win + loss + be;
         const opened = trades.filter((t) => inRange(t.entryDate as string | undefined)).length;
         const stillOpen = trades.filter((t) => t.entryDate && !t.exitDate).length;
@@ -525,6 +545,7 @@ Deno.serve(async () => {
         const lines = [
           `Lệnh đóng: ${graded}${graded ? ` (${win}T / ${loss}B${be ? ` / ${be}H` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
           rCount ? `Tổng R: ${signed(totalR, 2)}R (${rCount} lệnh có risk)` : "Tổng R: — (chưa lệnh nào điền risk)",
+          ...(accountLines.length ? ["", "R từng tài khoản:", ...accountLines, ""] : []),
           usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",
           `Lệnh mới mở: ${opened} · đang mở: ${stillOpen}`,
           `Setup: ${missCount} miss · ${skipCount} skip · ${variantCount} biến thể`,

@@ -445,6 +445,13 @@
         .err-share-bar { display:block; width:54px; height:5px; border-radius:3px; background:var(--surface-2);
           border:1px solid var(--border); overflow:hidden; flex-shrink:0; }
         .err-share-bar > span { display:block; height:100%; background:var(--loss); }
+        .btn:disabled { opacity:0.35; cursor:not-allowed; }
+        .week-title { font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; min-width:150px; text-align:center; }
+        .week-total-row td { border-top:1.5px solid var(--border-strong,var(--border)); background:var(--surface-2); }
+        .week-lines { display:flex; flex-direction:column; gap:5px; margin:14px 0 4px; }
+        .week-line { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:13px;
+          padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:7px; }
+        .week-line-name { font-weight:600; min-width:130px; }
         .principles-editor .resource-list { counter-reset:principle-counter; gap:10px; }
         .principles-editor .resource-item { counter-increment:principle-counter; padding:15px 16px; border-radius:10px; border-width:1.5px;
           font-size:14.5px; font-weight:600; background:var(--surface-2); box-shadow:0 1px 0 rgba(0,0,0,0.15); }

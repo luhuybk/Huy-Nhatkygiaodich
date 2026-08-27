@@ -1297,6 +1297,73 @@ export function buildStreakCurve(closed) {
   };
 }
 
+// ——— Báo cáo tuần theo tài khoản ———
+// Tuần tính từ Thứ 2 đến Chủ nhật, đúng nhịp làm việc — không phải 7 ngày trôi từ hôm nay.
+export function weekStart(dateStr) {
+  const d = new Date((dateStr || todayStr()) + "T00:00:00");
+  const offset = (d.getDay() + 6) % 7; // T2 = 0, CN = 6
+  return shiftDate(dateStr || todayStr(), -offset);
+}
+
+export function weekLabel(from, to) {
+  const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "");
+  return `${dm(from)} – ${dm(to)}/${(to || "").slice(0, 4)}`;
+}
+
+// Tách R thắng và R thua chứ không chỉ R ròng: +2R có thể là "thắng 3R thua 1R" (ổn)
+// hoặc "thắng 12R thua 10R" (đánh nhiều, giữ lại được ít) — hai chuyện hoàn toàn khác.
+function accountRTotals(items) {
+  let rWin = 0, rLoss = 0, rCount = 0, wins = 0, losses = 0, be = 0, profit = 0;
+  items.forEach((x) => {
+    const rr = x.r.rr;
+    if (rr !== null && Number.isFinite(rr)) {
+      rCount += 1;
+      if (rr > 0) rWin += rr; else rLoss += rr;
+    }
+    if (x.r.outcome === "win") wins += 1;
+    else if (x.r.outcome === "loss") losses += 1;
+    else be += 1;
+    profit += x.r.profit || 0;
+  });
+  return {
+    count: items.length, wins, losses, be, profit,
+    rWin, rLoss, rNet: rWin + rLoss, rCount,
+    winRate: wins + losses > 0 ? (wins / (wins + losses)) * 100 : null,
+  };
+}
+
+// Lệnh thuộc về tuần nào tính theo ngày ĐÓNG — đó là lúc kết quả thành hình.
+export function weeklyAccountReport(trades, resources, from, to) {
+  const inWeek = (trades || []).filter((t) => {
+    const d = t && t.exitDate;
+    return d && d >= from && d <= to;
+  });
+  const names = new Set(((resources && resources.accounts) || []).map((a) => a.name).filter(Boolean));
+  inWeek.forEach((t) => { if (t.account) names.add(t.account); });
+
+  const rows = Array.from(names).map((name) => {
+    const acc = ((resources && resources.accounts) || []).find((a) => a.name === name);
+    const items = closedOf(inWeek.filter((t) => t.account === name));
+    return { account: name, currency: (acc && acc.currency) || "USD", ...accountRTotals(items) };
+  }).filter((r) => r.count > 0).sort((a, b) => b.rNet - a.rNet || b.count - a.count);
+
+  // Tổng quy USD vì mỗi tài khoản một loại tiền; riêng R thì cộng thẳng được.
+  const total = { ...accountRTotals(closedOfUSD(inWeek, resources)), accounts: rows.length };
+  return { from, to, rows, total, opened: (trades || []).filter((t) => t.entryDate >= from && t.entryDate <= to).length };
+}
+
+// Vài tuần gần nhất để nhìn xu hướng — một tuần dương giữa bốn tuần âm thì chưa phải tin vui.
+export function weeklyRTrend(trades, resources, endWeekStart, weeks = 8) {
+  const out = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const from = shiftDate(endWeekStart, -7 * i);
+    const to = shiftDate(from, 6);
+    const rep = weeklyAccountReport(trades, resources, from, to);
+    out.push({ from, to, label: `${from.slice(8, 10)}/${from.slice(5, 7)}`, rNet: rep.total.rNet, count: rep.total.count });
+  }
+  return out;
+}
+
 export const STREAK_LADDER_CAP = 3;
 
 export function streakLadderLabel(key) {
