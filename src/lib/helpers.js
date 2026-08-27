@@ -1100,7 +1100,22 @@ function numOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// R của một lần chốt bớt = giá đã chạy được bao nhiêu R tại lúc chốt, không phải phần
+// đóng góp vào R tổng. Rủi ro chỉ ứng với đúng phần vị thế đã đóng: chốt 50% của lệnh
+// rủi ro 100$ thì phần đó chỉ gánh 50$, lãi 200$ nghĩa là giá đã chạy 4R. Chia cho cả
+// 100$ sẽ ra 2R và làm mọi lần chốt bớt trông tệ hơn thực tế đúng bằng tỷ lệ đã đóng.
+// Giả định SL của cả vị thế là một mức — rủi ro trên mỗi cổ phiếu/lot là như nhau.
 export function partialExitR(row, riskAmount) {
+  const profit = numOrNull(row && row.profit);
+  const risk = numOrNull(riskAmount);
+  const pct = numOrNull(row && row.percent);
+  if (profit === null || !risk || !pct || pct <= 0) return null;
+  return profit / (risk * (pct / 100));
+}
+
+// Phần đóng góp vào R tổng của lệnh. Cộng hết các lần chốt cộng với lần đóng cuối
+// thì đúng bằng R của cả lệnh — đây mới là con số ăn vào tài khoản.
+export function partialExitShareR(row, riskAmount) {
   const profit = numOrNull(row && row.profit);
   const risk = numOrNull(riskAmount);
   return profit === null || !risk ? null : profit / risk;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion } from "../lib/helpers.js";
 
 // Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
 const PERCENT_PRESETS = [25, 33, 50, 100];
@@ -44,17 +44,22 @@ function PartialExits({ trade, onChange }) {
 
       {rows.map((row, i) => {
         const rr = partialExitR(row, risk);
+        const share = partialExitShareR(row, risk);
         return (
           <div key={row.id} className="partial-row">
             <div className="partial-row-head">
               <span className="partial-row-num">Lần {i + 1}</span>
               {rr === null ? (
                 <span className="field-hint" style={{ margin: 0 }}>
-                  {row.profit === "" ? "Điền lợi nhuận để tính R" : "Điền Rủi ro (số tiền) ở mục 2 để tính R"}
+                  {row.profit === "" ? "Điền lợi nhuận để tính R"
+                    : !risk ? "Điền Rủi ro (số tiền) ở mục 2 để tính R"
+                    : "Điền % vị thế đã đóng để tính R"}
                 </span>
               ) : (
-                <span className={`partial-row-r ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}>
+                <span className={`partial-row-r ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}
+                  title={`Giá đã chạy ${rr.toFixed(2)}R lúc chốt · phần này góp ${share > 0 ? "+" : ""}${share.toFixed(2)}R vào R tổng của lệnh`}>
                   {rr > 0 ? "+" : ""}{rr.toFixed(2)}R
+                  <span className="partial-row-share">góp {share > 0 ? "+" : ""}{share.toFixed(2)}R</span>
                 </span>
               )}
               <ConfirmButton onConfirm={() => removeRow(row.id)} label="Xóa lần chốt bớt này" />
@@ -106,7 +111,7 @@ function PartialExits({ trade, onChange }) {
         <div className="partial-total">
           <span>Đã chốt {fmtPercent(stats.percent)} vị thế · còn lại {fmtRemaining(stats.remainingPercent)}</span>
           <strong className={stats.profit > 0 ? "text-win" : stats.profit < 0 ? "text-loss" : ""}>
-            {fmt(stats.profit)}{stats.rr === null ? "" : ` · ${stats.rr > 0 ? "+" : ""}${stats.rr.toFixed(2)}R`}
+            {fmt(stats.profit)}{stats.rr === null ? "" : ` · góp ${stats.rr > 0 ? "+" : ""}${stats.rr.toFixed(2)}R`}
           </strong>
         </div>
       ) : null}

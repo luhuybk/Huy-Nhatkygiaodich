@@ -3,7 +3,7 @@ import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, Fi
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 const RR_PRESETS = [
@@ -223,13 +223,15 @@ export function TradeDetailModal({ trade, setupErrors, onClose, onEdit, onDelete
             <DetailGroup title="Thoát lệnh từng phần">
               {partialRows.map((row, i) => {
                 const r = partialExitR(row, t.riskAmount);
+                const share = partialExitShareR(row, t.riskAmount);
+                const rText = r === null ? "" : ` · ${r > 0 ? "+" : ""}${r.toFixed(2)}R (góp ${share > 0 ? "+" : ""}${share.toFixed(2)}R)`;
                 return (
                   <DetailRow key={row.id || i} label={`Lần ${i + 1}${row.date ? ` · ${row.date}` : ""}${row.time ? ` ${row.time}` : ""}`}
-                    value={`${row.percent === "" ? "—" : `${row.percent}%`} · ${row.profit === "" ? "—" : fmt(Number(row.profit))}${r === null ? "" : ` · ${r > 0 ? "+" : ""}${r.toFixed(2)}R`}${row.note ? ` — ${row.note}` : ""}`}
+                    value={`${row.percent === "" ? "—" : `${row.percent}%`} · ${row.profit === "" ? "—" : fmt(Number(row.profit))}${rText}${row.note ? ` — ${row.note}` : ""}`}
                     tone={Number(row.profit) > 0 ? "text-win" : Number(row.profit) < 0 ? "text-loss" : ""} />
                 );
               })}
-              <DetailRow label="Tổng đã chốt bớt" value={`${Number(partial.percent.toFixed(2))}% vị thế · ${fmt(partial.profit)}${partial.rr === null ? "" : ` · ${partial.rr > 0 ? "+" : ""}${partial.rr.toFixed(2)}R`}`} />
+              <DetailRow label="Tổng đã chốt bớt" value={`${Number(partial.percent.toFixed(2))}% vị thế · ${fmt(partial.profit)}${partial.rr === null ? "" : ` · góp ${partial.rr > 0 ? "+" : ""}${partial.rr.toFixed(2)}R`}`} />
             </DetailGroup>
           ) : null}
 
