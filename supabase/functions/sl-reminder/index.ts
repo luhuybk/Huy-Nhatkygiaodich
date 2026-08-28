@@ -505,8 +505,8 @@ Deno.serve(async () => {
           .map(([name, a]) => ({ name, ...a, rNet: a.rWin + a.rLoss }))
           .sort((a, b) => b.rNet - a.rNet)
           .map((a) => a.rCount
-            ? `• ${a.name}: ${signed(a.rNet, 2)}R (thắng ${a.rWin.toFixed(2)}R | lỗ ${Math.abs(a.rLoss).toFixed(2)}R) · ${a.win}T/${a.loss}B`
-            : `• ${a.name}: ${a.win}T/${a.loss}B · chưa lệnh nào ghi risk`);
+            ? `• ${a.name}: ${signed(a.rNet, 2)}R (thắng ${a.rWin.toFixed(2)}R | lỗ ${Math.abs(a.rLoss).toFixed(2)}R) · ${a.win} thắng / ${a.loss} thua`
+            : `• ${a.name}: ${a.win} thắng / ${a.loss} thua · chưa lệnh nào ghi risk`);
         const graded = win + loss + be;
         const opened = trades.filter((t) => inRange(t.entryDate as string | undefined)).length;
         const stillOpen = trades.filter((t) => t.entryDate && !t.exitDate).length;
@@ -543,7 +543,7 @@ Deno.serve(async () => {
         const weekChecked = weekChecks.filter((e) => e.checkedAt).length;
 
         const lines = [
-          `Lệnh đóng: ${graded}${graded ? ` (${win}T / ${loss}B${be ? ` / ${be}H` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
+          `Lệnh đóng: ${graded}${graded ? ` (${win} thắng / ${loss} thua${be ? ` / ${be} hòa` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
           rCount ? `Tổng R: ${signed(totalR, 2)}R (${rCount} lệnh có risk)` : "Tổng R: — (chưa lệnh nào điền risk)",
           ...(accountLines.length ? ["", "R từng tài khoản:", ...accountLines, ""] : []),
           usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",

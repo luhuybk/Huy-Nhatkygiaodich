@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ChartCard, StatCard } from "./ui.jsx";
-import { GRID, LOSS, MUTED, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
+import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { fmt, fmtR, shiftDate, todayStr, weekLabel, weeklyAccountReport, weeklyRTrend, weekStart } from "../lib/helpers.js";
 
 const TREND_WEEKS = 8;
@@ -91,7 +91,7 @@ export function WeeklyReportPage({ trades, resources }) {
                   return (
                     <tr key={r.account}>
                       <td><b>{r.account}</b></td>
-                      <td>{r.count} <span className="err-note">({r.wins}T/{r.losses}B{r.be ? `/${r.be}H` : ""})</span></td>
+                      <td>{r.count} <span className="err-note">({r.wins} thắng / {r.losses} thua{r.be ? ` / ${r.be} hòa` : ""})</span></td>
                       <td>{r.winRate === null ? "—" : `${r.winRate.toFixed(0)}%`}</td>
                       <td className="text-win">{r.rCount ? fmtR(r.rWin) : "—"}</td>
                       <td className="text-loss">{r.rCount ? fmtR(r.rLoss) : "—"}</td>
@@ -133,7 +133,7 @@ export function WeeklyReportPage({ trades, resources }) {
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: MUTED }} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={44} />
-            <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
+            <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor}
               formatter={(v, _n, p) => [`${fmtR(v)} · ${p.payload.count} lệnh`, "R ròng"]} />
             <Bar dataKey="rNet" radius={[3, 3, 0, 0]}>
               {trend.map((w) => (

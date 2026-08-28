@@ -1262,10 +1262,11 @@ export function buildStreakCurve(closed) {
     if (rr !== null) { cumR += rr; rCovered += 1; }
 
     if (!cur || cur.type !== outcome) {
-      cur = { type: outcome, length: 0, r: 0, rCount: 0, profit: 0, from: dateKey(x.t) || "", to: "", endIndex: 0 };
+      cur = { type: outcome, length: 0, r: 0, rCount: 0, profit: 0, from: dateKey(x.t) || "", to: "", endIndex: 0, items: [] };
       streaks.push(cur);
     }
     cur.length += 1;
+    cur.items.push(x);
     if (rr !== null) { cur.r += rr; cur.rCount += 1; }
     cur.profit += x.r.profit || 0;
     cur.to = dateKey(x.t) || "";
@@ -1362,6 +1363,49 @@ export function weeklyRTrend(trades, resources, endWeekStart, weeks = 8) {
     out.push({ from, to, label: `${from.slice(8, 10)}/${from.slice(5, 7)}`, rNet: rep.total.rNet, count: rep.total.count });
   }
   return out;
+}
+
+// Chuỗi thua là "xui" hay có nguyên nhân? So tỷ lệ mắc từng lỗi ở các lệnh NẰM TRONG
+// chuỗi thua dài với các lệnh còn lại. Lỗi nào vọt lên hẳn trong chuỗi thua thì chuỗi đó
+// không phải xui — nó có một nguyên nhân lặp lại và sửa được.
+// Mẫu số hai bên đều là số lệnh ĐÃ SOI LỖI, nếu không thì bên nào soi kỹ hơn sẽ trông tệ hơn.
+export function streakErrorBreakdown(curve, errors, minLen) {
+  const inIds = new Set();
+  (curve.streaks || []).forEach((s) => {
+    if (s.type === "loss" && s.length >= minLen) (s.items || []).forEach((x) => inIds.add(x.t.id));
+  });
+  const all = (curve.streaks || []).flatMap((s) => s.items || []);
+  const inside = all.filter((x) => inIds.has(x.t.id));
+  const outside = all.filter((x) => !inIds.has(x.t.id));
+  const reviewed = (list) => list.filter((x) => tradeErrorState(x.t) !== "unreviewed");
+  const revIn = reviewed(inside);
+  const revOut = reviewed(outside);
+  const share = (hit, base) => (base.length ? (hit / base.length) * 100 : null);
+  const hits = (list, id) => list.filter((x) => (x.t.setupErrors || []).includes(id)).length;
+
+  const rows = allSetupErrors(errors).map((e) => {
+    const inHit = hits(revIn, e.id);
+    const outHit = hits(revOut, e.id);
+    const inShare = share(inHit, revIn);
+    const outShare = share(outHit, revOut);
+    return {
+      ...e, inHit, outHit, inShare, outShare,
+      lift: inShare === null || outShare === null ? null : inShare - outShare,
+    };
+  }).filter((r) => r.inHit > 0 || r.outHit > 0)
+    .sort((a, b) => (b.lift === null ? -Infinity : b.lift) - (a.lift === null ? -Infinity : a.lift) || b.inHit - a.inHit);
+
+  const cleanIn = revIn.filter((x) => tradeErrorState(x.t) === "clean").length;
+  const cleanOut = revOut.filter((x) => tradeErrorState(x.t) === "clean").length;
+  return {
+    rows,
+    inside: inside.length, outside: outside.length,
+    reviewedIn: revIn.length, reviewedOut: revOut.length,
+    clean: {
+      inHit: cleanIn, outHit: cleanOut,
+      inShare: share(cleanIn, revIn), outShare: share(cleanOut, revOut),
+    },
+  };
 }
 
 export const STREAK_LADDER_CAP = 3;

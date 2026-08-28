@@ -629,7 +629,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "weekdayperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="weekday" onViewTrade={startEdit} /> :
               view === "heatmap" ? <HeatmapPage trades={trades} resources={resources} /> :
               view === "weeklyreport" ? <WeeklyReportPage trades={trades} resources={resources} /> :
-              view === "streaks" ? <StreakPage trades={trades} resources={resources} /> :
+              view === "streaks" ? <StreakPage trades={trades} resources={resources} setupErrors={setupErrors} /> :
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}

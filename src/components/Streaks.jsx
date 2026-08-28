@@ -4,7 +4,7 @@ import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, 
 import { DashboardFilters } from "./Dashboard.jsx";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { ACCENT, GRID, LOSS, MUTED, WIN, tooltipStyle } from "../lib/constants.js";
-import { buildStreakCurve, closedOf, closedOfUSD, dateKey, fmt, fmtR, inRange, streakLadder } from "../lib/helpers.js";
+import { buildStreakCurve, closedOf, closedOfUSD, dateKey, fmt, fmtR, inRange, streakErrorBreakdown, streakLadder } from "../lib/helpers.js";
 
 const THRESHOLDS = [2, 3, 4, 5];
 
@@ -108,7 +108,64 @@ function LadderTable({ rows }) {
   );
 }
 
-export function StreakPage({ trades, resources }) {
+function pct(v) {
+  return v === null ? "—" : `${v.toFixed(0)}%`;
+}
+
+function ErrorInStreakTable({ data, minLen, hasCatalog }) {
+  if (!hasCatalog) {
+    return <p className="empty-note">Chưa khai lỗi nào cho setup — sang tab "Lỗi theo setup" để thêm, rồi tick lỗi khi soi lại lệnh.</p>;
+  }
+  if (data.inside === 0) {
+    return <p className="empty-note">Chưa có chuỗi thua nào dài từ {minLen} lệnh trong khoảng đang xem.</p>;
+  }
+  if (data.reviewedIn === 0) {
+    return <p className="empty-note">{data.inside} lệnh nằm trong chuỗi thua từ {minLen} lệnh, nhưng chưa lệnh nào được soi lỗi — lọc "Chưa soi lỗi" ở tab Nhật ký để soi trước.</p>;
+  }
+  const top = data.rows.find((r) => r.lift !== null && r.lift > 0 && r.inHit > 0);
+  return (
+    <>
+      <p className="field-hint" style={{ marginBottom: 10 }}>
+        {data.inside} lệnh nằm trong chuỗi thua từ {minLen} lệnh, đã soi {data.reviewedIn}.
+        So với {data.reviewedOut} lệnh đã soi ở ngoài chuỗi.
+        {top ? <> Nổi nhất: <b>{top.name}</b> — {pct(top.inShare)} trong chuỗi so với {pct(top.outShare)} ngoài chuỗi.</> : null}
+      </p>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr><th>Lỗi</th><th>Setup</th><th>Trong chuỗi thua</th><th>Ngoài chuỗi</th><th>Chênh lệch</th></tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr key={r.id}>
+                <td><b>{r.name}</b>{r.note ? <span className="err-note"> — {r.note}</span> : null}</td>
+                <td>{r.setup || "Chung"}</td>
+                <td>{r.inHit}/{data.reviewedIn} <span className="err-note">({pct(r.inShare)})</span></td>
+                <td>{r.outHit}/{data.reviewedOut} <span className="err-note">({pct(r.outShare)})</span></td>
+                <td className={r.lift > 0 ? "text-loss" : r.lift < 0 ? "text-win" : ""}>
+                  {r.lift === null ? "—" : `${r.lift > 0 ? "+" : ""}${r.lift.toFixed(0)} điểm %`}
+                </td>
+              </tr>
+            ))}
+            <tr className="week-total-row">
+              <td><b>Không mắc lỗi nào</b></td>
+              <td>—</td>
+              <td>{data.clean.inHit}/{data.reviewedIn} <span className="err-note">({pct(data.clean.inShare)})</span></td>
+              <td>{data.clean.outHit}/{data.reviewedOut} <span className="err-note">({pct(data.clean.outShare)})</span></td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="field-hint" style={{ marginTop: 8 }}>
+        Dòng "Không mắc lỗi nào" là phép thử ngược: nếu phần lớn lệnh trong chuỗi thua đều sạch lỗi thì
+        chuỗi đó không phải do bạn làm sai — đừng sửa cái đang đúng.
+      </p>
+    </>
+  );
+}
+
+export function StreakPage({ trades, resources, setupErrors }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
@@ -120,6 +177,7 @@ export function StreakPage({ trades, resources }) {
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const curve = useMemo(() => buildStreakCurve(closed), [closed]);
   const ladder = useMemo(() => streakLadder(closed), [closed]);
+  const errorSplit = useMemo(() => streakErrorBreakdown(curve, setupErrors, minLen), [curve, setupErrors, minLen]);
 
   // Nhãn gắn vào bản sao, không sửa dữ liệu gốc — đổi ngưỡng là vẽ lại chứ không tích tụ.
   const points = useMemo(() => {
@@ -178,13 +236,13 @@ export function StreakPage({ trades, resources }) {
       </div>
 
       <div className="scope-bar" style={{ marginTop: 12 }}>
-        <span className="field-label" style={{ marginRight: 4 }}>Chú thích chuỗi từ:</span>
+        <span className="field-label" style={{ marginRight: 4 }}>Chuỗi đáng chú ý từ:</span>
         {THRESHOLDS.map((n) => (
           <button key={n} type="button" className={`chip-btn ${minLen === n ? "chip-active" : ""}`} onClick={() => setMinLen(n)}>
             {n} lệnh
           </button>
         ))}
-        <span className="field-hint" style={{ margin: "0 0 0 6px" }}>Chuỗi dài nhất và tốn nhất luôn được chú thích.</span>
+        <span className="field-hint" style={{ margin: "0 0 0 6px" }}>Dùng cho cả chú thích trên biểu đồ lẫn bảng lỗi bên dưới. Chuỗi dài nhất và tốn nhất luôn được chú thích.</span>
       </div>
 
       <ChartCard title="Đường cong chuỗi thắng / thua"
@@ -203,7 +261,7 @@ export function StreakPage({ trades, resources }) {
               domain={[(min) => min - 1, (max) => max + 1]} />
             {showR ? <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10, fill: MUTED }} width={46} domain={["auto", "auto"]} /> : null}
             <ReferenceLine yAxisId="net" y={0} stroke={MUTED} strokeDasharray="4 4" />
-            <Tooltip content={<StreakTooltip />} />
+            <Tooltip content={<StreakTooltip />} cursor={{ stroke: MUTED, strokeWidth: 1, strokeDasharray: "3 3" }} />
             {showR ? <Line yAxisId="r" type="monotone" dataKey="cumR" stroke={MUTED} strokeWidth={1.5} strokeDasharray="5 3" dot={false} /> : null}
             <Line yAxisId="net" type="linear" dataKey="net" stroke={ACCENT} strokeWidth={2} dot={false} isAnimationActive={false}>
               <LabelList dataKey="label" content={labelRenderer(points)} />
@@ -218,6 +276,9 @@ export function StreakPage({ trades, resources }) {
         là ngưỡng nên dừng tay.
       </p>
       <LadderTable rows={ladder} />
+
+      <h4 className="rec-title" style={{ marginTop: 18 }}>Lỗi setup trong chuỗi thua</h4>
+      <ErrorInStreakTable data={errorSplit} minLen={minLen} hasCatalog={(setupErrors || []).some((e) => e && e.name)} />
 
       <h4 className="rec-title" style={{ marginTop: 18 }}>Các chuỗi dài nhất</h4>
       <StreakTable streaks={curve.streaks} currency={singleAccount ? singleAccount.currency : ""} />
