@@ -83,15 +83,70 @@ export function emptySetupVariant() {
 // ——— Lỗi theo setup ———
 // Mỗi setup có một bộ lỗi riêng (DD: quá dốc, lỗi 2 nến... / BB: lỗi lỏng, lỗi xa...).
 // setup === "" nghĩa là lỗi dùng chung cho mọi setup.
+// ---- Thứ tự thủ công, dùng chung cho bộ lỗi và kỹ năng ----
+// Dữ liệu cũ chưa có `order`: xếp sau các mục đã sắp, giữ nguyên thứ tự đã nhập.
+// Không tự đánh số hàng loạt vì như thế mỗi lần mở app lại ghi đè dữ liệu mà người dùng không làm gì.
+function orderKey(item, idx) {
+  return item && Number.isFinite(item.order) ? item.order : 1e6 + idx;
+}
+
+export function sortedByOrder(list) {
+  return (list || [])
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => orderKey(a.item, a.idx) - orderKey(b.item, b.idx) || a.idx - b.idx)
+    .map((x) => x.item);
+}
+
+export function nextOrder(group) {
+  const nums = (group || []).map((x) => x && x.order).filter((v) => Number.isFinite(v));
+  return nums.length ? Math.max(...nums) + 1 : (group || []).length;
+}
+
+// Đổi chỗ một mục với hàng xóm trong cùng nhóm, rồi đánh số lại cả nhóm. Phải đánh số lại
+// thì lần sau mới có mốc để so — chỉ ghi `order` cho một mục thì các mục cũ vẫn trôi về cuối.
+export function moveByOrder(list, id, delta, groupOf = () => "") {
+  const all = list || [];
+  const target = all.find((x) => x && x.id === id);
+  if (!target) return { items: all, changed: false };
+  const key = groupOf(target);
+  const group = sortedByOrder(all.filter((x) => x && groupOf(x) === key));
+  const at = group.findIndex((x) => x.id === id);
+  const to = at + delta;
+  if (at < 0 || to < 0 || to >= group.length) return { items: all, changed: false };
+  const next = [...group];
+  [next[at], next[to]] = [next[to], next[at]];
+  const orderById = new Map(next.map((x, i) => [x.id, i]));
+  return {
+    items: all.map((x) => (x && orderById.has(x.id) ? { ...x, order: orderById.get(x.id) } : x)),
+    changed: true,
+  };
+}
+
 export function emptySetupError(setup) {
-  return { id: null, setup: setup || "", name: "", note: "" };
+  return { id: null, setup: setup || "", name: "", note: "", order: null };
+}
+
+const errorGroupOf = (e) => (e && e.setup) || "";
+
+export function sortSetupErrors(list) {
+  return sortedByOrder(list);
+}
+
+export function moveSetupError(errors, id, delta) {
+  return moveByOrder(errors, id, delta, errorGroupOf);
 }
 
 export function errorsForSetup(errors, setupName) {
   // Không có setup thì chưa biết bộ lỗi nào — trả rỗng để nơi gọi hiện lời nhắc chọn setup,
   // chứ không đổ hết mọi lỗi của mọi setup ra.
   if (!setupName) return [];
-  return (errors || []).filter((e) => e && e.name && (!e.setup || e.setup === setupName));
+  const named = (errors || []).filter((e) => e && e.name);
+  // Lỗi riêng của setup lên trước, lỗi dùng chung xuống sau — mỗi nhóm theo thứ tự đã sắp.
+  // Trộn chung rồi sắp một lượt thì hai nhóm đánh số từ 0 sẽ cài răng lược vào nhau.
+  return [
+    ...sortedByOrder(named.filter((e) => e.setup === setupName)),
+    ...sortedByOrder(named.filter((e) => !e.setup)),
+  ];
 }
 
 export function allSetupErrors(errors) {
@@ -182,6 +237,64 @@ export function renameSetupInErrors(errors, from, to) {
     return { ...e, setup: to };
   });
   return { items, changed };
+}
+
+// ---- Kỹ năng ----
+// Kỹ năng là thứ đem ra thực thi ngay tại bàn, nên phần "cách làm" tách thành từng bước rời
+// chứ không phải một đoạn văn — lúc đang có lệnh chạy thì không ai đọc hết đoạn văn.
+export const SKILL_MAX_IMAGES = 8;
+
+export const SKILL_LEVELS = [
+  { id: "learning", label: "Đang học", tone: "" },
+  { id: "practicing", label: "Đang luyện", tone: "warn" },
+  { id: "solid", label: "Thành thạo", tone: "win" },
+];
+
+export function skillLevel(id) {
+  return SKILL_LEVELS.find((x) => x.id === id) || SKILL_LEVELS[0];
+}
+
+export function emptySkill() {
+  return {
+    id: null, name: "", level: "learning", setups: [],
+    summary: "", steps: [], watchOut: "",
+    images: [{ link: "", image: "" }], order: null,
+  };
+}
+
+export function skillAttachments(skill) {
+  return ((skill && skill.images) || []).filter((it) => it && ((it.link && it.link.trim()) || it.image));
+}
+
+export function moveSkill(skills, id, delta) {
+  return moveByOrder(skills, id, delta);
+}
+
+export function applySkillFilters(items, filters) {
+  const f = filters || {};
+  const q = (f.q || "").trim().toLowerCase();
+  return (items || []).filter((s) => {
+    if (f.level && (s.level || "learning") !== f.level) return false;
+    if (f.setup && !(s.setups || []).includes(f.setup)) return false;
+    if (q) {
+      const hay = [s.name, s.summary, s.watchOut, ...(s.steps || [])].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+export function skillStats(items) {
+  const list = items || [];
+  const by = (id) => list.filter((s) => (s.level || "learning") === id).length;
+  return {
+    total: list.length,
+    learning: by("learning"),
+    practicing: by("practicing"),
+    solid: by("solid"),
+    // Kỹ năng khai ra mà chưa ghi bước thực thi thì mới là ý định, chưa dùng được.
+    noSteps: list.filter((s) => !(s.steps || []).length).length,
+  };
 }
 
 export const PROBLEM_MAX_IMAGES = 4;

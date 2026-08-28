@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Bug, Check, Pencil, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bug, Check, Pencil, Plus, X } from "lucide-react";
 import { ConfirmButton, StatCard } from "./ui.jsx";
-import { emptySetupError, fmt, fmtR, setupErrorStats, stripSetupError, uid } from "../lib/helpers.js";
+import { emptySetupError, fmt, fmtR, moveSetupError, nextOrder, setupErrorStats, sortSetupErrors, stripSetupError, uid } from "../lib/helpers.js";
 
 const SHARED = "__chung__";
 const SHARED_LABEL = "Chung (mọi setup)";
@@ -26,7 +26,7 @@ function SetupPicker({ names, value, onChange }) {
   );
 }
 
-function ErrorRow({ item, usedCount, showSetup, onSave, onRemove }) {
+function ErrorRow({ item, usedCount, showSetup, rank, canUp, canDown, onMove, onSave, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
   const [note, setNote] = useState(item.note || "");
@@ -53,6 +53,7 @@ function ErrorRow({ item, usedCount, showSetup, onSave, onRemove }) {
   }
   return (
     <div className="resource-item">
+      <span className="err-rank">{rank}</span>
       <span style={{ flex: 1, cursor: "text", minWidth: 0 }} onClick={start}>
         <b>{item.name}</b>
         {showSetup ? <span className="err-note"> · {item.setup || "chung"}</span> : null}
@@ -60,6 +61,14 @@ function ErrorRow({ item, usedCount, showSetup, onSave, onRemove }) {
       </span>
       <span className="err-used">{usedCount ? `${usedCount} lệnh` : "chưa dùng"}</span>
       <span style={{ display: "flex", gap: 4 }}>
+        {onMove ? (
+          <>
+            <button type="button" className="row-btn" disabled={!canUp} onClick={() => onMove(item.id, -1)}
+              title="Đưa lên trên" aria-label="Đưa lên trên"><ArrowUp size={13} /></button>
+            <button type="button" className="row-btn" disabled={!canDown} onClick={() => onMove(item.id, 1)}
+              title="Đưa xuống dưới" aria-label="Đưa xuống dưới"><ArrowDown size={13} /></button>
+          </>
+        ) : null}
         <button type="button" className="row-btn" onClick={start} aria-label="Sửa"><Pencil size={13} /></button>
         <ConfirmButton onConfirm={() => onRemove(item)} />
       </span>
@@ -67,11 +76,18 @@ function ErrorRow({ item, usedCount, showSetup, onSave, onRemove }) {
   );
 }
 
-function CatalogTab({ errors, trades, resources, setup, onSetup, onChange, onRemove }) {
+const SORT_MODES = [
+  { id: "manual", label: "Thứ tự của bạn", hint: "Bạn tự xếp — thứ tự này cũng là thứ tự chip lỗi hiện ra khi ghi lệnh." },
+  { id: "count", label: "Hay mắc nhất", hint: "Xếp theo số lệnh đã dính lỗi. Đây là thực tế đo được, không phải cảm nhận." },
+  { id: "loss", label: "Lỗ nhiều nhất", hint: "Xếp theo tiền mất ở các lệnh dính lỗi (quy đổi USD). Lỗi ít gặp mà mỗi lần mất to vẫn lên đầu." },
+];
+
+function CatalogTab({ errors, trades, resources, setup, onSetup, onChange, onMove, onRemove }) {
   const names = setupNames(resources, errors);
   const showAll = setup === "";
   const target = setup === SHARED ? "" : setup;
   const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState("manual");
 
   const own = showAll ? (errors || []) : (errors || []).filter((e) => (e.setup || "") === target);
   const shared = showAll || !target ? [] : (errors || []).filter((e) => !e.setup);
@@ -80,15 +96,44 @@ function CatalogTab({ errors, trades, resources, setup, onSetup, onChange, onRem
     (trades || []).forEach((t) => (t.setupErrors || []).forEach((id) => { map[id] = (map[id] || 0) + 1; }));
     return map;
   }, [trades]);
+  // Xếp theo "hay mắc" / "lỗ nhiều" thì lấy đúng con số của tab Thống kê, không đếm lại một kiểu khác.
+  const perf = useMemo(() => {
+    const rows = setupErrorStats(trades, errors, showAll || setup === SHARED ? "" : target, resources).rows;
+    return new Map(rows.map((r) => [r.id, r]));
+  }, [trades, errors, resources, setup, showAll, target]);
+
+  // Thứ tự thủ công là thứ tự TRONG TỪNG SETUP, nên ở chế độ "Xem tất cả" phải chia thành
+  // từng khối có tên setup. Đổ chung một danh sách thì số thứ tự nhảy 1, 1, 2, 3, 1 — trông như lỗi.
+  const sections = useMemo(() => {
+    const stat = (e) => perf.get(e.id) || { count: 0, profit: 0 };
+    if (mode === "count") return [{ key: "flat", label: "", items: [...own].sort((a, b) => stat(b).count - stat(a).count || a.name.localeCompare(b.name)) }];
+    if (mode === "loss") return [{ key: "flat", label: "", items: [...own].sort((a, b) => stat(a).profit - stat(b).profit || stat(b).count - stat(a).count) }];
+    if (!showAll) return [{ key: "flat", label: "", items: sortSetupErrors(own) }];
+    const groups = new Map();
+    own.forEach((e) => {
+      const k = e.setup || "";
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    });
+    return [...groups.keys()]
+      .sort((a, b) => (a === "" ? 1 : 0) - (b === "" ? 1 : 0) || a.localeCompare(b))
+      .map((k) => ({ key: k || SHARED, label: k || SHARED_LABEL, items: sortSetupErrors(groups.get(k)) }));
+  }, [own, perf, mode, showAll]);
+
+  const count = sections.reduce((n, sec) => n + sec.items.length, 0);
+  const grouped = sections.length > 1 || (sections[0] && sections[0].label);
 
   const add = () => {
     const v = draft.trim();
     if (!v) return;
     if (own.some((e) => e.name.toLowerCase() === v.toLowerCase())) { setDraft(""); return; }
-    onChange([...(errors || []), { ...emptySetupError(target), id: uid(), name: v }]);
+    // Lỗi mới xuống cuối bộ lỗi của setup đó, không chen lên trên thứ tự người dùng đã xếp.
+    const group = (errors || []).filter((e) => (e.setup || "") === target);
+    onChange([...(errors || []), { ...emptySetupError(target), id: uid(), name: v, order: nextOrder(group) }]);
     setDraft("");
   };
   const save = (item) => onChange((errors || []).map((e) => (e.id === item.id ? item : e)));
+  const modeDef = SORT_MODES.find((m) => m.id === mode) || SORT_MODES[0];
 
   return (
     <div>
@@ -108,19 +153,36 @@ function CatalogTab({ errors, trades, resources, setup, onSetup, onChange, onRem
         </div>
       )}
 
-      <div className="resource-list">
-        {own.length === 0 ? <p className="empty-note">Chưa có lỗi nào cho mục này.</p> : null}
-        {own.map((e) => (
-          <ErrorRow key={e.id} item={e} usedCount={usage[e.id] || 0} showSetup={showAll} onSave={save} onRemove={onRemove} />
-        ))}
+      <div className="err-sort">
+        <span className="err-sort-label">Xếp theo:</span>
+        <div className="chip-group">
+          {SORT_MODES.map((m) => (
+            <button key={m.id} type="button" className={`chip-btn ${mode === m.id ? "chip-active" : ""}`} onClick={() => setMode(m.id)}>{m.label}</button>
+          ))}
+        </div>
       </div>
+      <p className="field-hint" style={{ margin: "0 0 12px" }}>{modeDef.hint}</p>
+
+      {count === 0 ? <p className="empty-note">Chưa có lỗi nào cho mục này.</p> : null}
+      {sections.map((sec) => (
+        <div key={sec.key} className="resource-list" style={{ marginBottom: grouped ? 14 : 0 }}>
+          {sec.label ? <h4 className="err-group">{sec.label}</h4> : null}
+          {sec.items.map((e, i) => (
+            <ErrorRow key={e.id} item={e} usedCount={usage[e.id] || 0} showSetup={showAll && !grouped}
+              rank={`${i + 1}.`}
+              canUp={i > 0} canDown={i < sec.items.length - 1}
+              onMove={mode === "manual" ? onMove : null}
+              onSave={save} onRemove={onRemove} />
+          ))}
+        </div>
+      ))}
 
       {shared.length ? (
         <div style={{ marginTop: 16 }}>
           <h4 className="rec-title">Kèm theo bộ lỗi dùng chung</h4>
           <p className="field-hint" style={{ marginBottom: 8 }}>Những lỗi này cũng hiện khi ghi lệnh {target}. Sửa chúng ở mục "{SHARED_LABEL}".</p>
           <div className="chip-group">
-            {shared.map((e) => <span key={e.id} className="err-chip-static">{e.name}</span>)}
+            {sortSetupErrors(shared).map((e) => <span key={e.id} className="err-chip-static">{e.name}</span>)}
           </div>
         </div>
       ) : null}
@@ -227,6 +289,10 @@ export function SetupErrorsPage({ errors, trades, resources, onChange, onTradesC
     const r = stripSetupError(trades, item.id);
     if (r.changed) onTradesChange(r.items);
   };
+  const moveError = (id, delta) => {
+    const r = moveSetupError(errors, id, delta);
+    if (r.changed) onChange(r.items);
+  };
 
   return (
     <div>
@@ -237,7 +303,7 @@ export function SetupErrorsPage({ errors, trades, resources, onChange, onTradesC
         <button className={`subtab ${tab === "stats" ? "subtab-active" : ""}`} onClick={() => setTab("stats")}>Thống kê</button>
       </div>
       {tab === "catalog"
-        ? <CatalogTab errors={errors} trades={trades} resources={resources} setup={setup} onSetup={setSetup} onChange={onChange} onRemove={removeError} />
+        ? <CatalogTab errors={errors} trades={trades} resources={resources} setup={setup} onSetup={setSetup} onChange={onChange} onMove={moveError} onRemove={removeError} />
         : <StatsTab errors={errors} trades={trades} resources={resources} setup={setup} onSetup={setSetup} />}
     </div>
   );

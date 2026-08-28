@@ -95,6 +95,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [processImprovements, setProcessImprovements] = useState([]);
   const [problemLogs, setProblemLogs] = useState([]);
   const [newsLogs, setNewsLogs] = useState([]);
+  const [skills, setSkills] = useState([]);
   const [principles, setPrinciples] = useState(DEFAULT_PRINCIPLES);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
@@ -124,7 +125,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -150,6 +151,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("slMutedTrades", []),
         safeGet("timelineDone", {}),
         safeGet("setupErrors", []),
+        safeGet("skills", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -159,6 +161,7 @@ function AppShell({ onSignOut, userEmail }) {
       setProcessImprovements(pi);
       setProblemLogs(pl);
       setNewsLogs(nl);
+      setSkills(sk);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
       setSetupLibrary(sl);
       setMissedSetups(ms);
@@ -207,7 +210,7 @@ function AppShell({ onSignOut, userEmail }) {
       if (shouldSnapshot(currentBackups, Date.now())) {
         const snap = makeSnapshot({
           trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
-          processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr,
+          processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr, skills: sk,
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
@@ -235,6 +238,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); flashSaved(await safeSet("processImprovements", next)); }, []);
   const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); flashSaved(await safeSet("problemLogs", next)); }, []);
   const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); flashSaved(await safeSet("newsLogs", next)); }, []);
+  const persistSkills = useCallback(async (next) => { setSkills(next); flashSaved(await safeSet("skills", next)); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); flashSaved(await safeSet("principles", next)); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); flashSaved(await safeSet("setupLibrary", next)); }, []);
   const persistSetupErrors = useCallback(async (next) => { setSetupErrors(next); flashSaved(await safeSet("setupErrors", next)); }, []);
@@ -362,8 +366,10 @@ function AppShell({ onSignOut, userEmail }) {
     if (rename.resourceKey === "setups") {
       const r = renameSetupInErrors(setupErrors, from, to);
       if (r.changed) await persistSetupErrors(r.items);
+      const rs = renameInArrayField(skills, ["setups"], from, to);
+      if (rs.changed) await persistSkills(rs.items);
     }
-  }, [trades, missedSetups, skippedSetups, setupVariants, lessons, setupErrors, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons, persistSetupErrors]);
+  }, [trades, missedSetups, skippedSetups, setupVariants, lessons, setupErrors, skills, persistResources, persistTrades, persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons, persistSetupErrors, persistSkills]);
 
   // Chuyển toàn bộ lệnh của một tài khoản sang tài khoản khác (hoặc bỏ trống) trước khi xóa tài khoản đó.
   const handleMoveTrades = useCallback(async (fromName, toName) => {
@@ -448,6 +454,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
     if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
     if (data.setupErrors) persistSetupErrors(data.setupErrors);
+    if (data.skills) persistSkills(data.skills);
   };
   // Ảnh cũ vẫn nằm dạng base64 trong dữ liệu. Đẩy hết lên Storage rồi thay bằng đường dẫn,
   // nếu không thì phần phình cũ còn nguyên, chỉ là không phình thêm.
@@ -457,6 +464,7 @@ function AppShell({ onSignOut, userEmail }) {
     ["setupLibrary", setupLibrary, persistSetupLibrary],
     ["problemLogs", problemLogs, persistProblemLogs],
     ["newsLogs", newsLogs, persistNewsLogs],
+    ["skills", skills, persistSkills],
     ["missedSetups", missedSetups, persistMissedSetups],
     ["skippedSetups", skippedSetups, persistSkippedSetups],
     ["setupVariants", setupVariants, persistSetupVariants],
@@ -494,7 +502,7 @@ function AppShell({ onSignOut, userEmail }) {
   };
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
-      trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs,
+      trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
       principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
@@ -512,6 +520,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistProcessImprovements([]);
     persistProblemLogs([]);
     persistNewsLogs([]);
+    persistSkills([]);
     persistPrinciples(DEFAULT_PRINCIPLES);
     persistSetupLibrary([]);
     persistSetupErrors([]);
@@ -646,13 +655,14 @@ function AppShell({ onSignOut, userEmail }) {
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
+                  skills={skills} onChangeSkills={persistSkills}
                   avoidPrinciples={principles.avoid || []} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} skills={skills} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
