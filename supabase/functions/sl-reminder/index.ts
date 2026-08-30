@@ -542,20 +542,35 @@ Deno.serve(async () => {
         const weekChecks = checkLog.filter((e) => inRange(e.date));
         const weekChecked = weekChecks.filter((e) => e.checkedAt).length;
 
-        const lines = [
-          `Lệnh đóng: ${graded}${graded ? ` (${win} thắng / ${loss} thua${be ? ` / ${be} hòa` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
-          rCount ? `Tổng R: ${signed(totalR, 2)}R (${rCount} lệnh có risk)` : "Tổng R: — (chưa lệnh nào điền risk)",
-          ...(accountLines.length ? ["", "R từng tài khoản:", ...accountLines, ""] : []),
-          usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",
-          `Lệnh mới mở: ${opened} · đang mở: ${stillOpen}`,
-          `Setup: ${missCount} miss · ${skipCount} skip · ${variantCount} biến thể`,
-          weekChecks.length
-            ? `Kiểm tra setup: ${weekChecked}/${weekChecks.length} (${Math.round((weekChecked / weekChecks.length) * 100)}%) · chuỗi ${streak} ngày`
-            : "",
-          incompleteCount ? `Còn ${incompleteCount} lệnh chưa điền xong` : "Mọi lệnh đã điền đủ 100% 🎯",
-        ].filter(Boolean);
+        // Chín dòng số liệu dính liền nhau thì đọc trên điện thoại rất mệt — mắt không biết
+        // dừng ở đâu. Chia theo chủ đề: kết quả → R từng tài khoản → hoạt động → kỷ luật.
+        // Khối nào rỗng thì bỏ luôn cả vạch ngăn, không thì có tuần hiện ra hai vạch dính nhau.
+        const blocks: string[][] = [
+          [
+            `Lệnh đóng: ${graded}${graded ? ` (${win} thắng / ${loss} thua${be ? ` / ${be} hòa` : ""}) · ${Math.round((win / graded) * 100)}% thắng` : ""}`,
+            rCount ? `Tổng R: ${signed(totalR, 2)}R (${rCount} lệnh có risk)` : "Tổng R: — (chưa lệnh nào điền risk)",
+          ],
+          [
+            ...(accountLines.length ? ["R từng tài khoản:", ...accountLines] : []),
+            usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",
+          ],
+          [
+            `Lệnh mới mở: ${opened} · đang mở: ${stillOpen}`,
+            `Setup: ${missCount} miss · ${skipCount} skip · ${variantCount} biến thể`,
+          ],
+          [
+            weekChecks.length
+              ? `Kiểm tra setup: ${weekChecked}/${weekChecks.length} (${Math.round((weekChecked / weekChecks.length) * 100)}%) · chuỗi ${streak} ngày`
+              : "",
+            incompleteCount ? `Còn ${incompleteCount} lệnh chưa điền xong` : "Mọi lệnh đã điền đủ 100% 🎯",
+          ],
+        ];
+        const body = blocks
+          .map((b) => b.filter(Boolean).join("\n"))
+          .filter(Boolean)
+          .join("\n----\n");
 
-        const text = buildMessage("📊", "TỔNG KẾT TUẦN", "⭐", `${ddmm(from)} – ${ddmm(today)}`, undefined, lines.join("\n"));
+        const text = buildMessage("📊", "TỔNG KẾT TUẦN", "⭐", `${ddmm(from)} – ${ddmm(today)}`, undefined, body);
         if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, ws.threadId)) {
           log[logKey] = true;
           logChanged = true;
