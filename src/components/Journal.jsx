@@ -1,9 +1,70 @@
 import { useState, useMemo, useEffect } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download } from "lucide-react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, cleanFilters, countActiveFilters, filterFingerprint, saveFilterPreset, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+
+// Các ô chọn và phần mô tả bộ lọc đã lưu dùng chung một nguồn nhãn. Tách đôi thì sớm muộn
+// cũng lệch nhau, và cái chip hiện tên bộ lọc sẽ mô tả sai thứ nó đang lọc.
+const GRADE_FILTERS = [
+  { id: "good", label: "Giao dịch Tốt (cả thắng & thua)", short: "Giao dịch Tốt" },
+  { id: "bad", label: "Giao dịch Tồi (cả thắng & thua)", short: "Giao dịch Tồi" },
+  ...GRADE_OPTIONS.map((g) => ({ id: g.id, label: g.label, short: g.label })),
+  { id: "none", label: "Chưa chấm", short: "Chưa chấm" },
+];
+const ERROR_FILTERS = [
+  { id: "clean", label: "Không lỗi (đã soi)" },
+  { id: "any", label: "Có lỗi (bất kỳ)" },
+  { id: "unreviewed", label: "Chưa soi lỗi" },
+];
+const SCORE_FILTERS = [
+  { id: "low", label: "Thấp (≤ 2 sao)" },
+  { id: "mid", label: "Trung bình (2-4 sao)" },
+  { id: "high", label: "Cao (≥ 4 sao)" },
+];
+const CHECKLIST_FILTERS = [
+  { id: "complete", label: "Đã hoàn thành đủ" },
+  { id: "partial", label: "Đang làm dở" },
+  { id: "none", label: "Chưa làm gì" },
+];
+const LESSON_FILTERS = [
+  { id: "yes", label: "Có bài học" },
+  { id: "no", label: "Không có bài học" },
+];
+const COMPLETION_FILTERS = [
+  { id: "low", label: "Thấp (< 40%)" },
+  { id: "mid", label: "Trung bình (40-79%)" },
+  { id: "high", label: "Sắp xong (80-99%)" },
+  { id: "full", label: "Đã hoàn thành đủ (100%)" },
+];
+const pick = (list, id) => { const x = list.find((o) => o.id === id); return x ? (x.short || x.label) : id; };
+
+// Bộ lọc đã lưu chỉ hiện cái tên do bạn đặt. Vài tuần sau "Cần soi lại" nghĩa là gì thì
+// không ai nhớ, nên rê chuột vào chip là thấy đúng những gì nó đang lọc.
+export function describeFilters(filters, resources, setupErrors) {
+  const f = cleanFilters(filters);
+  const errName = (id) => {
+    const e = (setupErrors || []).find((x) => x.id === id);
+    return e ? `Lỗi "${e.name}"` : "Lỗi setup đã xóa";
+  };
+  const parts = [];
+  if (f.q) parts.push(`Symbol chứa "${f.q}"`);
+  if (f.account) parts.push(`Tài khoản ${f.account}`);
+  if (f.year) parts.push(`Năm ${f.year}`);
+  if (f.month) parts.push(`Tháng ${f.month}`);
+  if (f.setup) parts.push(`Setup ${f.setup}`);
+  if (f.psychology) parts.push(`Tâm lý ${f.psychology}`);
+  if (f.result) parts.push(pick(RESULT_FILTERS, f.result));
+  if (f.grade) parts.push(pick(GRADE_FILTERS, f.grade));
+  if (f.setupError) parts.push(ERROR_FILTERS.some((o) => o.id === f.setupError) ? pick(ERROR_FILTERS, f.setupError) : errName(f.setupError));
+  if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
+  if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
+  if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
+  if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
+  if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);
+  return parts.length ? parts.join(" · ") : "Không lọc gì — hiện mọi lệnh";
+}
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 const RR_PRESETS = [
@@ -13,7 +74,68 @@ const RR_PRESETS = [
   { label: "Thắng từ 2R", from: "2", to: "" },
 ];
 
-export function JournalFilters({ trades, resources, setupErrors, filters, setFilters }) {
+function PresetBar({ trades, resources, setupErrors, filters, setFilters, presets, onPresetsChange }) {
+  const [naming, setNaming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const list = presets || [];
+  const activeCount = countActiveFilters(filters);
+  const current = filterFingerprint(filters);
+  // Số lệnh mỗi bộ lọc sẽ ra — bấm vào rồi mới biết nó rỗng thì mất công một nhịp.
+  const counts = useMemo(
+    () => new Map(list.map((p) => [p.id, applyFilters(trades, p.filters || {}, resources).length])),
+    [list, trades, resources]
+  );
+
+  const commit = () => {
+    const r = saveFilterPreset(list, draft, filters);
+    if (r.saved) onPresetsChange(r.items);
+    setNaming(false);
+    setDraft("");
+  };
+  const startNaming = () => { setDraft(""); setNaming(true); };
+  const dupName = list.some((p) => (p.name || "").trim().toLowerCase() === draft.trim().toLowerCase());
+
+  return (
+    <div className="filter-presets">
+      <span className="filter-foot-label"><Bookmark size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Bộ lọc đã lưu:</span>
+      {list.length === 0 && !naming ? (
+        <span className="preset-empty">Chưa lưu bộ lọc nào — chọn vài mục bên dưới rồi bấm "Lưu bộ lọc này".</span>
+      ) : null}
+      {list.map((p) => {
+        const on = filterFingerprint(p.filters) === current;
+        const n = counts.get(p.id);
+        return (
+          <span key={p.id} className={`preset-chip ${on ? "preset-on" : ""}`} title={describeFilters(p.filters, resources, setupErrors)}>
+            <button type="button" className="preset-apply" onClick={() => setFilters(cleanFilters(p.filters))}>
+              {p.name}<span className="preset-count">{n}</span>
+            </button>
+            <ConfirmButton className="preset-x" icon={X} label={`Xóa bộ lọc ${p.name}`}
+              onConfirm={() => onPresetsChange(list.filter((x) => x.id !== p.id))} />
+          </span>
+        );
+      })}
+      {naming ? (
+        <span className="preset-save">
+          <input className="input" autoFocus value={draft} placeholder="Tên bộ lọc..."
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setNaming(false); }} />
+          <button type="button" className="btn btn-primary" disabled={!draft.trim()} onClick={commit}>
+            {dupName ? "Ghi đè" : "Lưu"}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setNaming(false)}>Hủy</button>
+          {dupName ? <span className="preset-empty">Trùng tên — bấm Ghi đè là thay bộ lọc cũ.</span> : null}
+        </span>
+      ) : (
+        <button type="button" className="btn btn-ghost" disabled={!activeCount} onClick={startNaming}
+          title={activeCount ? `Lưu ${activeCount} mục đang lọc thành một bộ lọc có tên` : "Chọn vài mục lọc bên dưới trước đã"}>
+          <BookmarkPlus size={13} /> Lưu bộ lọc này{activeCount ? ` (${activeCount} mục)` : ""}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function JournalFilters({ trades, resources, setupErrors, filters, setFilters, presets, onPresetsChange }) {
   const years = useMemo(() => {
     const set = new Set(trades.map((t) => yearKey(t.entryDate)).filter(Boolean));
     return Array.from(set).sort().reverse();
@@ -33,6 +155,8 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
 
   return (
     <div className="filter-panel">
+      <PresetBar trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters}
+        presets={presets} onPresetsChange={onPresetsChange} />
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <ResourceSelect value={filters.account || ""} onChange={set("account")} options={resources.accounts.map((a) => a.name)} placeholder="Tài khoản" />
@@ -45,16 +169,11 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
         </select>
         <select className="input" value={filters.grade || ""} onChange={(e) => set("grade")(e.target.value)}>
           <option value="">Chất lượng lệnh</option>
-          <option value="good">Giao dịch Tốt (cả thắng &amp; thua)</option>
-          <option value="bad">Giao dịch Tồi (cả thắng &amp; thua)</option>
-          {GRADE_OPTIONS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-          <option value="none">Chưa chấm</option>
+          {GRADE_FILTERS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
         </select>
         <select className="input" value={filters.setupError || ""} onChange={(e) => set("setupError")(e.target.value)}>
           <option value="">Lỗi setup</option>
-          <option value="clean">Không lỗi (đã soi)</option>
-          <option value="any">Có lỗi (bất kỳ)</option>
-          <option value="unreviewed">Chưa soi lỗi</option>
+          {ERROR_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           {errorGroups.map((g) => (
             <optgroup key={g.setup} label={g.setup}>
               {g.items.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -68,27 +187,19 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
         </div>
         <select className="input" value={filters.score || ""} onChange={(e) => set("score")(e.target.value)}>
           <option value="">Chấm điểm</option>
-          <option value="low">Thấp (≤ 2 sao)</option>
-          <option value="mid">Trung bình (2-4 sao)</option>
-          <option value="high">Cao (≥ 4 sao)</option>
+          {SCORE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         <select className="input" value={filters.checklist || ""} onChange={(e) => set("checklist")(e.target.value)}>
           <option value="">Checklist</option>
-          <option value="complete">Đã hoàn thành đủ</option>
-          <option value="partial">Đang làm dở</option>
-          <option value="none">Chưa làm gì</option>
+          {CHECKLIST_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         <select className="input" value={filters.hasLesson || ""} onChange={(e) => set("hasLesson")(e.target.value)}>
           <option value="">Bài học</option>
-          <option value="yes">Có bài học</option>
-          <option value="no">Không có bài học</option>
+          {LESSON_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         <select className="input" value={filters.completion || ""} onChange={(e) => set("completion")(e.target.value)}>
           <option value="">Tiến độ hoàn thành</option>
-          <option value="low">Thấp (&lt; 40%)</option>
-          <option value="mid">Trung bình (40-79%)</option>
-          <option value="high">Sắp xong (80-99%)</option>
-          <option value="full">Đã hoàn thành đủ (100%)</option>
+          {COMPLETION_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </div>
       <div className="filter-foot">
@@ -526,7 +637,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, setupErrors, ledger, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, setupErrors, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
@@ -590,7 +701,8 @@ export function JournalSection({ trades, resources, setupErrors, ledger, onEdit,
       ) : null}
       {tab === "list" ? (
         <div>
-          <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters} />
+          <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters}
+            presets={filterPresets} onPresetsChange={onFilterPresetsChange} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
             <p className="field-hint" style={{ margin: 0 }}>{filtered.length} / {trades.length} lệnh{selected.size ? ` · Đã chọn ${selected.size}` : ""}</p>
             <div style={{ display: "flex", gap: 8 }}>

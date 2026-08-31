@@ -541,6 +541,24 @@
         .detail-row span:last-child { text-align:right; }
         @media (max-width:640px) { .detail-cols { grid-template-columns:1fr; } }
         .filter-panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:14px; }
+        .filter-presets { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+          padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--border); }
+        .filter-presets .btn { padding:5px 10px; font-size:11.5px; }
+        .preset-empty { font-size:11.5px; color:var(--text-dim); }
+        .preset-chip { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:20px;
+          background:var(--surface-2); overflow:hidden; }
+        .preset-chip:hover { border-color:var(--accent); }
+        .preset-apply { display:inline-flex; align-items:center; gap:6px; padding:5px 4px 5px 11px; border:0; background:none;
+          color:var(--text-dim); font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .preset-count { font-weight:500; opacity:.7; font-variant-numeric:tabular-nums; }
+        .preset-on { border-color:var(--accent); background:rgba(212,162,78,0.12); }
+        .preset-on .preset-apply { color:var(--accent); }
+        .preset-x { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; margin-right:4px;
+          border:0; border-radius:50%; background:none; color:var(--text-dim); cursor:pointer; flex-shrink:0; }
+        .preset-x:hover { color:var(--loss); background:rgba(224,97,90,0.12); }
+        .preset-save { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+        .preset-save .input { width:auto; flex:0 0 auto; padding:5px 9px; font-size:12px; min-width:170px; }
+        .preset-save .btn { padding:5px 12px; font-size:11.5px; }
         .filter-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin-bottom:10px; }
         .filter-panel .input { padding:7px 9px; font-size:12.5px; }
         .filter-rr { display:flex; align-items:center; gap:6px; grid-column:span 2; }

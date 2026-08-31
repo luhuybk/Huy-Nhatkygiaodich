@@ -2019,6 +2019,42 @@ export function rrInRange(rr, fromRaw, toRaw) {
   return true;
 }
 
+// ---- Bộ lọc đã lưu ở Nhật ký ----
+// Chỉ giữ những mục thật sự đang lọc. Ô rỗng lẫn vào thì hai bộ lọc y hệt nhau lại so ra
+// khác nhau, và chip "đang dùng" sẽ không bao giờ sáng lên.
+export function cleanFilters(filters) {
+  const out = {};
+  Object.entries(filters || {}).forEach(([k, v]) => {
+    if (v === "" || v === null || v === undefined) return;
+    out[k] = v;
+  });
+  return out;
+}
+
+export function filterFingerprint(filters) {
+  const c = cleanFilters(filters);
+  return JSON.stringify(Object.keys(c).sort().map((k) => [k, c[k]]));
+}
+
+export function countActiveFilters(filters) {
+  return Object.keys(cleanFilters(filters)).length;
+}
+
+// Trùng tên thì ghi đè bộ lọc cũ. Cho phép hai bộ lọc cùng tên là tự chuốc lấy một danh sách
+// chip không phân biệt nổi cái nào ra cái nào.
+export function saveFilterPreset(presets, name, filters) {
+  const clean = (name || "").trim();
+  if (!clean) return { items: presets || [], saved: null, replaced: false };
+  const list = presets || [];
+  const existing = list.find((p) => (p.name || "").trim().toLowerCase() === clean.toLowerCase());
+  const payload = { id: existing ? existing.id : uid(), name: clean, filters: cleanFilters(filters) };
+  return {
+    items: existing ? list.map((p) => (p.id === existing.id ? payload : p)) : [...list, payload],
+    saved: payload,
+    replaced: !!existing,
+  };
+}
+
 export function applyFilters(trades, filters, resources) {
   return trades.filter((t) => {
     const r = computeResult(t);

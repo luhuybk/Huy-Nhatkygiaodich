@@ -96,6 +96,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [problemLogs, setProblemLogs] = useState([]);
   const [newsLogs, setNewsLogs] = useState([]);
   const [skills, setSkills] = useState([]);
+  const [filterPresets, setFilterPresets] = useState([]);
   const [principles, setPrinciples] = useState(DEFAULT_PRINCIPLES);
   const [setupLibrary, setSetupLibrary] = useState([]);
   const [missedSetups, setMissedSetups] = useState([]);
@@ -125,7 +126,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk, fp] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -152,6 +153,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("timelineDone", {}),
         safeGet("setupErrors", []),
         safeGet("skills", []),
+        safeGet("journalFilterPresets", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -162,6 +164,7 @@ function AppShell({ onSignOut, userEmail }) {
       setProblemLogs(pl);
       setNewsLogs(nl);
       setSkills(sk);
+      setFilterPresets(fp);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
       setSetupLibrary(sl);
       setMissedSetups(ms);
@@ -210,7 +213,7 @@ function AppShell({ onSignOut, userEmail }) {
       if (shouldSnapshot(currentBackups, Date.now())) {
         const snap = makeSnapshot({
           trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
-          processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr, skills: sk,
+          processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr, skills: sk, journalFilterPresets: fp,
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
@@ -239,6 +242,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); flashSaved(await safeSet("problemLogs", next)); }, []);
   const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); flashSaved(await safeSet("newsLogs", next)); }, []);
   const persistSkills = useCallback(async (next) => { setSkills(next); flashSaved(await safeSet("skills", next)); }, []);
+  const persistFilterPresets = useCallback(async (next) => { setFilterPresets(next); flashSaved(await safeSet("journalFilterPresets", next)); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); flashSaved(await safeSet("principles", next)); }, []);
   const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); flashSaved(await safeSet("setupLibrary", next)); }, []);
   const persistSetupErrors = useCallback(async (next) => { setSetupErrors(next); flashSaved(await safeSet("setupErrors", next)); }, []);
@@ -455,6 +459,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
     if (data.setupErrors) persistSetupErrors(data.setupErrors);
     if (data.skills) persistSkills(data.skills);
+    if (data.journalFilterPresets) persistFilterPresets(data.journalFilterPresets);
   };
   // Ảnh cũ vẫn nằm dạng base64 trong dữ liệu. Đẩy hết lên Storage rồi thay bằng đường dẫn,
   // nếu không thì phần phình cũ còn nguyên, chỉ là không phình thêm.
@@ -503,6 +508,7 @@ function AppShell({ onSignOut, userEmail }) {
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
+      journalFilterPresets: filterPresets,
       principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
@@ -521,6 +527,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistProblemLogs([]);
     persistNewsLogs([]);
     persistSkills([]);
+    persistFilterPresets([]);
     persistPrinciples(DEFAULT_PRINCIPLES);
     persistSetupLibrary([]);
     persistSetupErrors([]);
@@ -617,7 +624,7 @@ function AppShell({ onSignOut, userEmail }) {
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
-              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} ledger={ledger} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
+              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
@@ -662,7 +669,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} skills={skills} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} skills={skills} journalFilterPresets={filterPresets} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
