@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus } from "lucide-react";
-import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, ResourceSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { applyFilters, avgPillarScore, cleanFilters, countActiveFilters, filterFingerprint, saveFilterPreset, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, cleanFilters, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Các ô chọn và phần mô tả bộ lọc đã lưu dùng chung một nguồn nhãn. Tách đôi thì sớm muộn
 // cũng lệch nhau, và cái chip hiện tên bộ lọc sẽ mô tả sai thứ nó đang lọc.
@@ -51,13 +51,14 @@ export function describeFilters(filters, resources, setupErrors) {
     const e = (setupErrors || []).find((x) => x.id === id);
     return e ? `Lỗi "${e.name}"` : "Lỗi setup đã xóa";
   };
+  const many = (v) => toFilterList(v).join(", ");
   const parts = [];
   if (f.q) parts.push(`Symbol chứa "${f.q}"`);
-  if (f.account) parts.push(`Tài khoản ${f.account}`);
-  if (f.year) parts.push(`Năm ${f.year}`);
-  if (f.month) parts.push(`Tháng ${f.month}`);
-  if (f.setup) parts.push(`Setup ${f.setup}`);
-  if (f.psychology) parts.push(`Tâm lý ${f.psychology}`);
+  if (f.account) parts.push(`Tài khoản ${many(f.account)}`);
+  if (f.year) parts.push(`Năm ${many(f.year)}`);
+  if (f.month) parts.push(`Tháng ${many(f.month)}`);
+  if (f.setup) parts.push(`Setup ${many(f.setup)}`);
+  if (f.psychology) parts.push(`Tâm lý ${many(f.psychology)}`);
   if (f.result) parts.push(pick(RESULT_FILTERS, f.result));
   if (f.grade) parts.push(pick(GRADE_FILTERS, f.grade));
   if (f.setupError) parts.push(ERROR_FILTERS.some((o) => o.id === f.setupError) ? pick(ERROR_FILTERS, f.setupError) : errName(f.setupError));
@@ -154,7 +155,10 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
     return Array.from(by, ([setup, items]) => ({ setup, items }));
   }, [setupErrors]);
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
-  const clear = () => setFilters({});
+  const clear = () => { setOpenMenu(""); setFilters({}); };
+  // Mỗi lúc chỉ một bảng chọn được mở.
+  const [openMenu, setOpenMenu] = useState("");
+  const menu = (key) => ({ open: openMenu === key, onOpenChange: (v) => setOpenMenu(v ? key : "") });
 
   return (
     <div className="filter-panel">
@@ -162,11 +166,11 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
         presets={presets} onPresetsChange={onPresetsChange} />
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <ResourceSelect value={filters.account || ""} onChange={set("account")} options={resources.accounts.map((a) => a.name)} placeholder="Tài khoản" />
-        <ResourceSelect value={filters.year || ""} onChange={set("year")} options={years} placeholder="Năm" />
-        <ResourceSelect value={filters.month || ""} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
-        <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
-        <ResourceSelect value={filters.psychology || ""} onChange={set("psychology")} options={resources.psychologies} placeholder="Tâm lý" />
+        <MultiFilterSelect {...menu("account")} value={filters.account} onChange={set("account")} options={resources.accounts.map((a) => a.name)} placeholder="Tài khoản" />
+        <MultiFilterSelect {...menu("year")} value={filters.year} onChange={set("year")} options={years} placeholder="Năm" />
+        <MultiFilterSelect {...menu("month")} value={filters.month} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
+        <MultiFilterSelect {...menu("setup")} value={filters.setup} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
+        <MultiFilterSelect {...menu("psychology")} value={filters.psychology} onChange={set("psychology")} options={resources.psychologies} placeholder="Tâm lý" />
         <select className="input" value={filters.result || ""} onChange={(e) => set("result")(e.target.value)}>
           {RESULT_FILTERS.map((r) => <option key={r.id} value={r.id}>{r.id === "" ? "Kết quả" : r.label}</option>)}
         </select>
@@ -218,6 +222,39 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
         })}
         <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
       </div>
+    </div>
+  );
+}
+
+// Lọc xong thì phải trả lời được ngay "tập lệnh này ăn hay thua". Trước đây chỗ này chỉ có
+// "12 / 47 lệnh", muốn biết thêm gì cũng phải tự nhẩm qua từng dòng.
+function SummaryItem({ label, value, tone }) {
+  return (
+    <span className="fsum-item">
+      <span className="fsum-label">{label}</span>
+      <span className={`fsum-value ${tone || ""}`}>{value}</span>
+    </span>
+  );
+}
+
+function FilteredSummary({ list, total, resources, selected }) {
+  const s = useMemo(() => tradeSetSummary(list, resources), [list, resources]);
+  const rTone = (v) => (v > 0 ? "text-win" : v < 0 ? "text-loss" : "");
+  return (
+    <div className="filter-summary">
+      <SummaryItem label="Lệnh" value={`${s.total} / ${total}`} />
+      {selected ? <SummaryItem label="Đã chọn" value={selected} /> : null}
+      {s.open ? <SummaryItem label="Đang mở" value={s.open} /> : null}
+      {s.closed ? (
+        <SummaryItem label="Winrate" value={`${s.winRate.toFixed(0)}% · ${s.win} thắng / ${s.loss} thua${s.be ? ` / ${s.be} hòa` : ""}`} />
+      ) : null}
+      {s.rCount ? <SummaryItem label="Tổng R" value={fmtR(s.totalR)} tone={rTone(s.totalR)} /> : null}
+      {s.rCount ? <SummaryItem label="RR trung bình" value={fmtR(s.avgR)} tone={rTone(s.avgR)} /> : null}
+      {s.closed ? <SummaryItem label="Lãi/lỗ (USD)" value={fmt(s.profit)} tone={rTone(s.profit)} /> : null}
+      {s.rCount && s.rCount < s.closed ? (
+        <SummaryItem label="Chưa ghi risk" value={`${s.closed - s.rCount} lệnh`} />
+      ) : null}
+      {s.awaitingProfit ? <SummaryItem label="Đã thoát, chưa điền lợi nhuận" value={`${s.awaitingProfit} lệnh`} tone="text-loss" /> : null}
     </div>
   );
 }
@@ -707,7 +744,7 @@ export function JournalSection({ trades, resources, setupErrors, ledger, filterP
           <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters}
             presets={filterPresets} onPresetsChange={onFilterPresetsChange} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
-            <p className="field-hint" style={{ margin: 0 }}>{filtered.length} / {trades.length} lệnh{selected.size ? ` · Đã chọn ${selected.size}` : ""}</p>
+            <FilteredSummary list={filtered} total={trades.length} resources={resources} selected={selected.size} />
             <div style={{ display: "flex", gap: 8 }}>
               {selected.size > 0 ? (
                 <>

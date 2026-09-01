@@ -1707,6 +1707,35 @@ export function weekdayIndex(d) {
   try { return new Date(d + "T00:00:00").getDay(); } catch (e) { return null; }
 }
 
+// Lọc ra một tập lệnh rồi thì câu hỏi tiếp theo luôn là "tập này ăn hay thua". Trả lời ngay
+// tại chỗ chứ không bắt người dùng tự nhẩm qua từng dòng.
+export function tradeSetSummary(list, resources) {
+  const all = list || [];
+  const res = resources && resources.accounts ? resources : { accounts: [] };
+  const opens = all.filter((t) => computeResult(t).status === "open");
+  // App coi "đã đóng" là ĐÃ ĐIỀN LỢI NHUẬN. Lệnh đã thoát ngoài sàn mà chưa điền số vẫn nằm
+  // ở nhóm đang mở và kéo mọi con số bên dưới xuống — đếm riêng để biết còn thiếu chỗ nào.
+  const awaitingProfit = opens.filter((t) => t.exitDate).length;
+  const closed = closedOfUSD(all, res);
+  const win = closed.filter((x) => x.r.outcome === "win").length;
+  const loss = closed.filter((x) => x.r.outcome === "loss").length;
+  const be = closed.filter((x) => x.r.outcome === "be").length;
+  const rs = closed.map((x) => x.r.rr).filter((v) => v !== null && Number.isFinite(v));
+  const sumR = rs.reduce((a, b) => a + b, 0);
+  return {
+    total: all.length,
+    open: opens.length,
+    closed: closed.length,
+    awaitingProfit,
+    win, loss, be,
+    winRate: closed.length ? (win / closed.length) * 100 : null,
+    rCount: rs.length,
+    totalR: rs.length ? sumR : null,
+    avgR: rs.length ? sumR / rs.length : null,
+    profit: closed.length ? closed.reduce((sum, x) => sum + (x.r.profit || 0), 0) : null,
+  };
+}
+
 export function closedOf(trades) {
   return trades
     .map((t) => ({ t, r: computeResult(t) }))
@@ -2026,9 +2055,30 @@ export function cleanFilters(filters) {
   const out = {};
   Object.entries(filters || {}).forEach(([k, v]) => {
     if (v === "" || v === null || v === undefined) return;
+    if (Array.isArray(v) && v.length === 0) return;
     out[k] = v;
   });
   return out;
+}
+
+// Ô lọc chọn nhiều giá trị lưu thành mảng, nhưng dữ liệu cũ (và bộ lọc đã lưu từ trước)
+// vẫn là chuỗi đơn — phải nhận cả hai, không thì mọi bộ lọc cũ chết ngay khi mở app.
+export function filterMatches(value, want) {
+  if (want === "" || want === null || want === undefined) return true;
+  if (Array.isArray(want)) return want.length === 0 || want.includes(value);
+  return value === want;
+}
+
+// Chuẩn hóa về mảng đã sắp: ["BB","DD"] và ["DD","BB"] là cùng một bộ lọc, nếu không sắp
+// thì dấu vân tay khác nhau và chip "đang dùng" không sáng lên.
+export function toFilterList(want) {
+  if (want === "" || want === null || want === undefined) return [];
+  return (Array.isArray(want) ? want : [want]).filter(Boolean);
+}
+
+export function setFilterList(list) {
+  const clean = Array.from(new Set((list || []).filter(Boolean))).sort();
+  return clean.length ? clean : "";
 }
 
 export function filterFingerprint(filters) {
@@ -2059,11 +2109,11 @@ export function applyFilters(trades, filters, resources) {
   return trades.filter((t) => {
     const r = computeResult(t);
     if (filters.q && !t.symbol.toLowerCase().includes(filters.q.toLowerCase())) return false;
-    if (filters.account && t.account !== filters.account) return false;
-    if (filters.year && yearKey(t.entryDate) !== filters.year) return false;
-    if (filters.month && (t.entryDate || "").slice(5, 7) !== filters.month) return false;
-    if (filters.setup && t.setup !== filters.setup) return false;
-    if (filters.psychology && t.psychology !== filters.psychology) return false;
+    if (!filterMatches(t.account, filters.account)) return false;
+    if (!filterMatches(yearKey(t.entryDate), filters.year)) return false;
+    if (!filterMatches((t.entryDate || "").slice(5, 7), filters.month)) return false;
+    if (!filterMatches(t.setup, filters.setup)) return false;
+    if (!filterMatches(t.psychology, filters.psychology)) return false;
     if (filters.grade && !gradeMatches(t.tradeGrade, filters.grade)) return false;
     if (filters.setupError) {
       const state = tradeErrorState(t);

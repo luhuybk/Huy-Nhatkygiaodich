@@ -1,6 +1,6 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
-import { formatVN, readLocalUi, writeLocalUi } from "../lib/helpers.js";
+import { formatVN, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
@@ -133,6 +133,59 @@ export function ResourceSelect({ value, onChange, options, placeholder }) {
       <option value="">{placeholder || "— Chọn —"}</option>
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
+  );
+}
+
+// Ô lọc chọn nhiều giá trị. Không dùng chip như các nơi khác vì hàng lọc có 13 ô — bung chip
+// ra là vỡ hết lưới; nút thu gọn rồi mở bảng chọn ra mới giữ được đúng một dòng.
+export function MultiFilterSelect({ value, onChange, options, placeholder, open: openProp, onOpenChange }) {
+  // Đóng/mở do bên ngoài giữ khi có `onOpenChange`: hàng lọc có năm ô kiểu này, mỗi ô tự giữ
+  // trạng thái thì mở được cả năm bảng chọn cùng lúc, chồng lên nhau.
+  const [openSelf, setOpenSelf] = useState(false);
+  const controlled = typeof onOpenChange === "function";
+  const open = controlled ? !!openProp : openSelf;
+  const setOpen = (v) => (controlled ? onOpenChange(v) : setOpenSelf(v));
+  const ref = useRef(null);
+  const selected = toFilterList(value);
+  const list = options || [];
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+
+  const toggle = (o) => onChange(setFilterList(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o]));
+  // Chọn hết cũng bằng không lọc gì — trả về rỗng để bộ lọc không bị tính là "đang lọc".
+  const label = selected.length === 0 ? placeholder
+    : selected.length === 1 ? selected[0]
+    : `${placeholder}: ${selected.length} mục`;
+
+  return (
+    <div className="msel" ref={ref}>
+      <button type="button" className={`input msel-btn ${selected.length ? "msel-on" : ""}`} onClick={() => setOpen(!open)}
+        title={selected.length > 1 ? selected.join(", ") : undefined}>
+        <span className="msel-label">{label}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open ? (
+        <div className="msel-pop">
+          {list.length === 0 ? <p className="empty-note" style={{ margin: 0 }}>Chưa có tùy chọn nào.</p> : null}
+          {list.map((o) => (
+            <button key={o} type="button" className={`msel-opt ${selected.includes(o) ? "msel-opt-on" : ""}`} onClick={() => toggle(o)}>
+              <span className="msel-box">{selected.includes(o) ? <Check size={11} /> : null}</span>
+              <span className="msel-opt-label">{o}</span>
+            </button>
+          ))}
+          {selected.length ? (
+            <button type="button" className="msel-clear" onClick={() => onChange("")}>Bỏ chọn tất cả</button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
