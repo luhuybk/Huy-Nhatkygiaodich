@@ -2075,14 +2075,19 @@ export function applyFilters(trades, filters, resources) {
     if (!rrInRange(r.rr, filters.rrFrom, filters.rrTo)) return false;
     if (filters.result) {
       if (filters.result === "open" && r.status !== "open") return false;
+      if (filters.result === "closed" && r.status !== "closed") return false;
       if (["win", "loss", "be"].includes(filters.result) && r.outcome !== filters.result) return false;
     }
     if (filters.score) {
       const s = avgPillarScore(t);
-      if (s === null) return false;
-      if (filters.score === "low" && s > 2) return false;
-      if (filters.score === "mid" && (s <= 2 || s >= 4)) return false;
-      if (filters.score === "high" && s < 4) return false;
+      // "Chưa chấm" phải xét trước, không thì cái chốt chặn null bên dưới loại sạch đúng
+      // những lệnh mà nó cần tìm.
+      if (filters.score === "none") { if (s !== null) return false; }
+      else if (s === null) return false;
+      else if (filters.score === "under5" && s >= 5) return false;
+      else if (filters.score === "low" && s > 2) return false;
+      else if (filters.score === "mid" && (s <= 2 || s >= 4)) return false;
+      else if (filters.score === "high" && s < 4) return false;
     }
     if (filters.checklist) {
       const cp = checklistProgress(t, resources);
@@ -2095,6 +2100,7 @@ export function applyFilters(trades, filters, resources) {
     if (filters.hasLesson === "no" && t.hasLesson) return false;
     if (filters.completion) {
       const percent = tradeCompletion(t).percent;
+      if (filters.completion === "under100" && percent >= 100) return false;
       if (filters.completion === "low" && percent >= 40) return false;
       if (filters.completion === "mid" && (percent < 40 || percent >= 80)) return false;
       if (filters.completion === "high" && (percent < 80 || percent >= 100)) return false;

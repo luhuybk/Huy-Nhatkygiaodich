@@ -178,6 +178,7 @@ export const tooltipCursor = { fill: "rgba(212,162,78,0.08)" };
 export const RESULT_FILTERS = [
   { id: "", label: "Tất cả" },
   { id: "open", label: "Đang mở" },
+  { id: "closed", label: "Đã hoàn thành (thắng/thua/hòa)" },
   { id: "win", label: "Thắng" },
   { id: "loss", label: "Thua" },
   { id: "be", label: "Hòa" },

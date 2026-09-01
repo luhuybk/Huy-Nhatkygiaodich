@@ -19,9 +19,11 @@ const ERROR_FILTERS = [
   { id: "unreviewed", label: "Chưa soi lỗi" },
 ];
 const SCORE_FILTERS = [
+  { id: "under5", label: "Chưa đạt 5 sao" },
   { id: "low", label: "Thấp (≤ 2 sao)" },
   { id: "mid", label: "Trung bình (2-4 sao)" },
   { id: "high", label: "Cao (≥ 4 sao)" },
+  { id: "none", label: "Chưa chấm điểm" },
 ];
 const CHECKLIST_FILTERS = [
   { id: "complete", label: "Đã hoàn thành đủ" },
@@ -33,6 +35,7 @@ const LESSON_FILTERS = [
   { id: "no", label: "Không có bài học" },
 ];
 const COMPLETION_FILTERS = [
+  { id: "under100", label: "Chưa xong (< 100%)" },
   { id: "low", label: "Thấp (< 40%)" },
   { id: "mid", label: "Trung bình (40-79%)" },
   { id: "high", label: "Sắp xong (80-99%)" },
