@@ -5,7 +5,7 @@ import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradeSkillState, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 const RR_PRESETS = [
@@ -130,7 +130,7 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
           {SKILL_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           {skillOptions.length ? (
             <optgroup label="Từng kỹ năng">
-              {skillOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {skillOptions.map((s) => <option key={s.id} value={s.id}>{skillLabel(s)}</option>)}
             </optgroup>
           ) : null}
         </select>
@@ -236,9 +236,8 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
   const errorNames = (t.setupErrors || [])
     .map((id) => ((setupErrors || []).find((e) => e.id === id) || {}).name)
     .filter(Boolean);
-  const skillState = tradeSkillState(t);
   const skillNames = (t.skills || [])
-    .map((id) => ((skills || []).find((x) => x.id === id) || {}).name)
+    .map((id) => skillLabel((skills || []).find((x) => x.id === id)))
     .filter(Boolean);
 
   return (
@@ -265,8 +264,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
               <DetailRow label="Lỗi setup"
                 tone={errorState === "clean" ? "win" : errorState === "errors" ? "loss" : ""}
                 value={errorState === "clean" ? "Không lỗi" : errorNames.length ? errorNames.join(", ") : "Chưa soi"} />
-              <DetailRow label="Kỹ năng đã dùng"
-                value={skillState === "none" ? "Không dùng kỹ năng nào" : skillNames.length ? skillNames.join(", ") : "Chưa soi"} />
+              <DetailRow label="Kỹ năng đã dùng" value={skillNames.length ? skillNames.join(", ") : "Không dùng kỹ năng nào"} />
               <DetailRow label="Điểm cấu trúc (ĐCT)" value={t.structureScore !== "" ? t.structureScore : "—"} />
             </DetailGroup>
             <DetailGroup title="Quản trị vốn & Kết quả">

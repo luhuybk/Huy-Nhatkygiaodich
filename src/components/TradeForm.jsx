@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, setTradeSkillsNone, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
 const PERCENT_PRESETS = [25, 33, 50, 100];
@@ -131,19 +131,16 @@ function SkillPicker({ trade, catalog, onChange }) {
   if (!primary.length && !others.length) {
     return <p className="empty-note">Chưa khai kỹ năng nào — thêm ở Hành trình giao dịch → Kỹ năng.</p>;
   }
+  // Chip hiện tên ngắn; tên đầy đủ và phần diễn giải để ở tooltip, không làm vỡ hàng chip.
   const chip = (s, dim) => (
-    <button key={s.id} type="button" title={s.summary || ""}
+    <button key={s.id} type="button" title={[s.name, s.summary].filter(Boolean).join(" — ")}
       className={`chip-btn skill-chip ${dim ? "skill-chip-dim" : ""} ${selected.includes(s.id) ? "chip-active" : ""}`}
       onClick={() => onChange(toggleTradeSkill(trade, s.id))}>
-      {s.name}
+      {skillLabel(s)}
     </button>
   );
   return (
     <div className="chip-group">
-      <button type="button" className={`chip-btn err-clean ${trade.skillsNone ? "chip-active" : ""}`}
-        onClick={() => onChange(setTradeSkillsNone(trade, !trade.skillsNone))}>
-        <Check size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Không dùng kỹ năng nào
-      </button>
       {primary.map((s) => chip(s, false))}
       {others.length ? <span className="skill-chip-sep" title="Những kỹ năng khai cho setup khác — vẫn tick được">khác</span> : null}
       {others.map((s) => chip(s, true))}
@@ -425,7 +422,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
 
       <Section num="4" title="Kỹ năng" subtitle="Vào lệnh · Trong lệnh · Thoát lệnh">
         <Field label="Kỹ năng đã dùng trong lệnh này"
-          hint="Tick những kỹ năng bạn thực sự đem ra dùng — để sau này đo được kỹ năng nào ăn tiền. Không dùng cái nào thì bấm ô đầu tiên, đừng bỏ trống.">
+          hint="Tick những kỹ năng bạn thực sự đem ra dùng — để sau này đo được kỹ năng nào ăn tiền. Không tick gì nghĩa là lệnh này không dùng kỹ năng nào.">
           <SkillPicker trade={t} catalog={skills} onChange={setT} />
         </Field>
         <div className="grid-3">

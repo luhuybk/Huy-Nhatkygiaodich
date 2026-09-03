@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Filter, Gauge, Pencil, Plus } from "lucide-react";
 import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
-import { applySkillFilters, emptySkill, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
+import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLabel, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
   const lv = skillLevel(id);
@@ -92,8 +92,11 @@ export function SkillsSection({ items, resources, onChange }) {
 
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa kỹ năng" : "Thêm kỹ năng"} onClose={closeModal}>
-          <Field label="Tên kỹ năng" required>
-            <input className="input" value={form.name} autoFocus onChange={(e) => setF("name")(e.target.value)} placeholder="VD: Bóp StopLoss, Re-entry sau khi quét râu..." />
+          <Field label="Tên kỹ năng" required hint="Viết cho đủ ý — đây là tên bạn đọc lại ở trang này">
+            <input className="input" value={form.name} autoFocus onChange={(e) => setF("name")(e.target.value)} placeholder="VD: Bóp StopLoss khi giá quét thanh khoản rồi đóng nến ngoài vùng" />
+          </Field>
+          <Field label="Tên ngắn" hint="Hiện trên chip trong nhật ký giao dịch — để trống thì lấy tên đầy đủ. Tên đầy đủ vẫn thấy khi rê chuột.">
+            <input className="input" value={form.shortName || ""} onChange={(e) => setF("shortName")(e.target.value)} placeholder="VD: Bóp SL | LQS" />
           </Field>
           <div className="grid-2">
             <Field label="Mức thành thạo">
@@ -145,7 +148,10 @@ export function SkillsSection({ items, resources, onChange }) {
             <div key={s.id} className="note-card" onClick={() => toggleExpand(s.id)}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
-                <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>{s.name}</span>
+                <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>
+                  {s.name}
+                  {(s.shortName || "").trim() ? <span className="skill-short">{s.shortName.trim()}</span> : null}
+                </span>
                 <LevelBadge id={s.level} />
                 <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 4 }}>
                   <button type="button" className="row-btn" disabled={filtering || at === 0} onClick={() => move(s.id, -1)}
@@ -197,28 +203,38 @@ const pct = (v) => (v === null ? "—" : `${v.toFixed(0)}%`);
 const signedPct = (v) => (v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(0)} điểm %`);
 
 function EffectivenessTab({ items, trades, resources }) {
-  const data = useMemo(() => skillEffectiveness(trades, items, resources), [trades, items, resources]);
+  // Mặc định lấy mốc là ngày đầu tiên bạn bắt đầu tick kỹ năng. Không có mốc này thì toàn bộ
+  // lịch sử cũ — hàng trăm lệnh ghi từ trước khi có tính năng — bị xếp vào nhóm "không dùng"
+  // và dìm mọi so sánh xuống.
+  const auto = useMemo(() => firstSkillDate(trades), [trades]);
+  const [from, setFrom] = useState(auto);
+  useEffect(() => { setFrom(auto); }, [auto]);
+  const data = useMemo(() => skillEffectiveness(trades, items, resources, from), [trades, items, resources, from]);
   const rows = data.rows.filter((r) => r.used.total > 0);
   const top = [...rows].sort((a, b) => (b.gapR === null ? -Infinity : b.gapR) - (a.gapR === null ? -Infinity : a.gapR))[0];
 
   if (!(items || []).length) {
     return <p className="empty-note" style={{ padding: "24px 0" }}>Chưa khai kỹ năng nào — sang tab "Danh sách" để thêm.</p>;
   }
-  if (data.reviewed === 0) {
+  if (data.inRange === 0 || !auto) {
     return (
       <p className="empty-note" style={{ padding: "24px 0" }}>
-        Chưa lệnh nào được tick kỹ năng. Mở một lệnh ở Nhật ký, tới mục 4 "Kỹ năng" và tick những kỹ năng bạn đã dùng —
-        hoặc bấm "Không dùng kỹ năng nào". Lọc nhanh bằng bộ lọc "Kỹ năng → Chưa soi kỹ năng" ở tab Nhật ký.
+        Chưa lệnh nào được tick kỹ năng. Mở một lệnh ở Nhật ký, tới mục 4 "Kỹ năng" và tick những kỹ năng bạn đã dùng.
       </p>
     );
   }
 
   return (
     <div>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Đã tick kỹ năng cho <b>{data.reviewed}</b> / {data.total} lệnh
-        {data.unreviewed ? ` · còn ${data.unreviewed} lệnh chưa soi (không tính vào bảng dưới)` : ""}
-        {data.none ? ` · ${data.none} lệnh không dùng kỹ năng nào` : ""}.
+      <div className="skill-range">
+        <span className="filter-foot-label">Chỉ tính lệnh từ ngày:</span>
+        <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} />
+        {from !== auto ? <button type="button" className="btn btn-ghost" onClick={() => setFrom(auto)}>Về mặc định</button> : null}
+      </div>
+      <p className="field-hint" style={{ margin: "0 0 12px" }}>
+        Đang tính trên <b>{data.inRange}</b> / {data.total} lệnh
+        {data.skipped ? ` · bỏ qua ${data.skipped} lệnh trước mốc (ghi từ khi chưa có mục kỹ năng nên không tick gì)` : ""}
+        {data.none ? ` · trong đó ${data.none} lệnh không dùng kỹ năng nào` : ""}.
       </p>
 
       {top && top.gapR !== null ? (
@@ -228,7 +244,7 @@ function EffectivenessTab({ items, trades, resources }) {
       ) : null}
 
       {rows.length === 0 ? (
-        <p className="empty-note">Đã soi {data.reviewed} lệnh nhưng chưa lệnh nào tick một kỹ năng cụ thể.</p>
+        <p className="empty-note">Có {data.inRange} lệnh trong khoảng này nhưng chưa lệnh nào tick một kỹ năng cụ thể.</p>
       ) : (
         <>
           <div className="table-wrap">
@@ -248,7 +264,8 @@ function EffectivenessTab({ items, trades, resources }) {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td>
-                      <b>{r.name}</b>
+                      <b title={r.name}>{r.label}</b>
+                      {r.label !== r.name ? <span className="err-note"> — {r.name}</span> : null}
                       {r.used.closed > 0 && r.used.closed < 10 ? <span className="cmp-thin">mẫu nhỏ</span> : null}
                     </td>
                     <td>{r.used.total}{r.used.closed !== r.used.total ? <span className="err-note"> ({r.used.closed} đã đóng)</span> : null}</td>
@@ -266,8 +283,9 @@ function EffectivenessTab({ items, trades, resources }) {
             </table>
           </div>
           <p className="field-hint" style={{ marginTop: 10 }}>
-            Cột cuối so với chính các lệnh <b>đã soi mà không dùng</b> kỹ năng đó — không so với toàn bộ nhật ký,
-            vì phần lớn nhật ký chưa soi thì đem so là so với một tập không biết gì về kỹ năng này.
+            Cột cuối so với chính các lệnh <b>trong cùng khoảng thời gian mà không dùng</b> kỹ năng đó.
+            Mốc ngày ở trên quan trọng: lệnh ghi từ trước khi bạn bắt đầu tick kỹ năng đều trống, gộp vào
+            sẽ thổi phồng nhóm "không dùng" bằng những lệnh chẳng nói lên điều gì.
           </p>
           <p className="field-hint" style={{ marginTop: 4, color: "var(--loss)" }}>
             Đọc bảng này như một manh mối, không phải bằng chứng: bạn chọn dùng kỹ năng ở những lệnh nhất định

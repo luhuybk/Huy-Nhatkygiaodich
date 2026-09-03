@@ -1,7 +1,7 @@
 // Nhãn cho các ô lọc của Nhật ký. Để riêng ra vì cả bảng lọc lẫn bảng so sánh đều cần —
 // để trong Journal.jsx thì hai file phải import chéo nhau.
 import { GRADE_OPTIONS, RESULT_FILTERS } from "./constants.js";
-import { cleanFilters, toFilterList } from "./helpers.js";
+import { cleanFilters, skillLabel, toFilterList } from "./helpers.js";
 
 // Các ô chọn và phần mô tả bộ lọc đã lưu dùng chung một nguồn nhãn. Tách đôi thì sớm muộn
 // cũng lệch nhau, và cái chip hiện tên bộ lọc sẽ mô tả sai thứ nó đang lọc.
@@ -14,7 +14,6 @@ export const GRADE_FILTERS = [
 export const SKILL_FILTERS = [
   { id: "any", label: "Có dùng kỹ năng (bất kỳ)" },
   { id: "none", label: "Không dùng kỹ năng nào" },
-  { id: "unreviewed", label: "Chưa soi kỹ năng" },
 ];
 export const ERROR_FILTERS = [
   { id: "clean", label: "Không lỗi (đã soi)" },
@@ -67,7 +66,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.setupError) parts.push(ERROR_FILTERS.some((o) => o.id === f.setupError) ? pick(ERROR_FILTERS, f.setupError) : errName(f.setupError));
   if (f.skill) {
     const s = (skills || []).find((x) => x.id === f.skill);
-    parts.push(SKILL_FILTERS.some((o) => o.id === f.skill) ? pick(SKILL_FILTERS, f.skill) : s ? `Kỹ năng "${s.name}"` : "Kỹ năng đã xóa");
+    parts.push(SKILL_FILTERS.some((o) => o.id === f.skill) ? pick(SKILL_FILTERS, f.skill) : s ? `Kỹ năng "${skillLabel(s)}"` : "Kỹ năng đã xóa");
   }
   if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
   if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
