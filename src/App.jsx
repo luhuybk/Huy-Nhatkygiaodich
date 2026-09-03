@@ -624,7 +624,7 @@ function AppShell({ onSignOut, userEmail }) {
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
-              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
+              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
@@ -635,7 +635,7 @@ function AppShell({ onSignOut, userEmail }) {
                   onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
               ) :
               view === "form" ? (
-                <TradeForm initial={editing} resources={resources} setupErrors={setupErrors} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
+                <TradeForm initial={editing} resources={resources} setupErrors={setupErrors} skills={skills} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
               ) :
               view === "analysis" ? <Analysis trades={trades} resources={resources} onViewTrade={startEdit} /> :
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :
@@ -662,7 +662,7 @@ function AppShell({ onSignOut, userEmail }) {
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
-                  skills={skills} onChangeSkills={persistSkills}
+                  skills={skills} onChangeSkills={persistSkills} onChangeTrades={persistTrades}
                   avoidPrinciples={principles.avoid || []} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
@@ -695,6 +695,7 @@ function AppShell({ onSignOut, userEmail }) {
           <TradeDetailModal
             trade={viewingTrade}
             setupErrors={setupErrors}
+            skills={skills}
             onClose={() => setViewingTrade(null)}
             onEdit={(t) => { setViewingTrade(null); openEditForm(t); }}
             onDelete={handleDelete}

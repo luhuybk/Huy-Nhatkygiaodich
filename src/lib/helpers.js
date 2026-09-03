@@ -41,6 +41,7 @@ export function emptyTrade() {
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
+    skills: [], skillsNone: false,
     tradeGrade: "", reviewNote: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
@@ -264,6 +265,45 @@ export function emptySkill() {
 
 export function skillAttachments(skill) {
   return ((skill && skill.images) || []).filter((it) => it && ((it.link && it.link.trim()) || it.image));
+}
+
+// Ba trạng thái y như bộ lỗi setup, và vì đúng cái lý do đó: "đã soi, không dùng kỹ năng nào"
+// phải khác "chưa soi bao giờ", không thì mẫu số của mọi tỷ lệ bên dưới đều sai.
+export function tradeSkillState(trade) {
+  if (!trade) return "unreviewed";
+  if ((trade.skills || []).length > 0) return "skills";
+  if (trade.skillsNone) return "none";
+  return "unreviewed";
+}
+
+export function toggleTradeSkill(trade, skillId) {
+  const cur = trade.skills || [];
+  const next = cur.includes(skillId) ? cur.filter((x) => x !== skillId) : [...cur, skillId];
+  return { ...trade, skills: next, skillsNone: next.length ? false : trade.skillsNone };
+}
+
+export function setTradeSkillsNone(trade, none) {
+  return { ...trade, skillsNone: !!none, skills: none ? [] : trade.skills || [] };
+}
+
+// Xóa kỹ năng khỏi danh mục thì gỡ luôn khỏi các lệnh đã tick — bỏ sót là lệnh đó kẹt ở
+// nhóm "có dùng kỹ năng" mà rỗng, kéo lệch mọi con số.
+export function stripSkill(trades, skillId) {
+  let changed = false;
+  const items = (trades || []).map((t) => {
+    if (!(t.skills || []).includes(skillId)) return t;
+    changed = true;
+    return { ...t, skills: t.skills.filter((x) => x !== skillId) };
+  });
+  return { items, changed };
+}
+
+// Kỹ năng khai "áp dụng cho setup nào" thì lên trước, còn lại vẫn hiện chứ không giấu —
+// bạn hoàn toàn có thể dùng Re-entry ở một setup chưa gắn nhãn cho nó.
+export function skillsForSetup(skills, setupName) {
+  const list = sortedByOrder((skills || []).filter((s) => s && s.name));
+  const fits = (s) => !(s.setups || []).length || (setupName && (s.setups || []).includes(setupName));
+  return { primary: list.filter(fits), others: list.filter((s) => !fits(s)) };
 }
 
 export function moveSkill(skills, id, delta) {
@@ -1736,6 +1776,34 @@ export function tradeSetSummary(list, resources) {
   };
 }
 
+// Hiệu quả một kỹ năng = tập lệnh CÓ dùng nó so với tập lệnh ĐÃ SOI mà KHÔNG dùng nó.
+// So với "toàn bộ nhật ký" thì sai: phần lớn nhật ký chưa soi kỹ năng, đem so là so với
+// một tập chưa biết gì về nó.
+export function skillEffectiveness(trades, skills, resources) {
+  const all = trades || [];
+  const reviewed = all.filter((t) => tradeSkillState(t) !== "unreviewed");
+  const rows = sortedByOrder((skills || []).filter((s) => s && s.name)).map((s) => {
+    const used = reviewed.filter((t) => (t.skills || []).includes(s.id));
+    const notUsed = reviewed.filter((t) => !(t.skills || []).includes(s.id));
+    const a = tradeSetSummary(used, resources);
+    const b = tradeSetSummary(notUsed, resources);
+    return {
+      id: s.id, name: s.name, level: s.level, setups: s.setups || [],
+      used: a, notUsed: b,
+      // Chênh lệch RR trung bình: dương nghĩa là lệnh có dùng kỹ năng này chạy tốt hơn.
+      gapR: a.avgR === null || b.avgR === null ? null : a.avgR - b.avgR,
+      gapWin: a.winRate === null || b.winRate === null ? null : a.winRate - b.winRate,
+    };
+  });
+  return {
+    total: all.length,
+    reviewed: reviewed.length,
+    unreviewed: all.length - reviewed.length,
+    none: reviewed.filter((t) => tradeSkillState(t) === "none").length,
+    rows,
+  };
+}
+
 export function closedOf(trades) {
   return trades
     .map((t) => ({ t, r: computeResult(t) }))
@@ -2121,6 +2189,13 @@ export function applyFilters(trades, filters, resources) {
       if (filters.setupError === "any" && state !== "errors") return false;
       if (filters.setupError === "unreviewed" && state !== "unreviewed") return false;
       if (!["clean", "any", "unreviewed"].includes(filters.setupError) && !(t.setupErrors || []).includes(filters.setupError)) return false;
+    }
+    if (filters.skill) {
+      const state = tradeSkillState(t);
+      if (filters.skill === "any" && state !== "skills") return false;
+      if (filters.skill === "none" && state !== "none") return false;
+      if (filters.skill === "unreviewed" && state !== "unreviewed") return false;
+      if (!["any", "none", "unreviewed"].includes(filters.skill) && !(t.skills || []).includes(filters.skill)) return false;
     }
     if (!rrInRange(r.rr, filters.rrFrom, filters.rrTo)) return false;
     if (filters.result) {

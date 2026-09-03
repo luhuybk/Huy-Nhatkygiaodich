@@ -4,8 +4,8 @@ import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmBut
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, avgPillarScore, cleanFilters, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
+import { applyFilters, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, tradeCurrency, tradeErrorState, tradeProfitUSD, tradeSkillState, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 const RR_PRESETS = [
@@ -15,7 +15,7 @@ const RR_PRESETS = [
   { label: "Thắng từ 2R", from: "2", to: "" },
 ];
 
-function PresetBar({ trades, resources, setupErrors, filters, setFilters, presets, onPresetsChange }) {
+function PresetBar({ trades, resources, setupErrors, skills, filters, setFilters, presets, onPresetsChange }) {
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState("");
   const list = presets || [];
@@ -46,7 +46,7 @@ function PresetBar({ trades, resources, setupErrors, filters, setFilters, preset
         const on = filterFingerprint(p.filters) === current;
         const n = counts.get(p.id);
         return (
-          <span key={p.id} className={`preset-chip ${on ? "preset-on" : ""}`} title={describeFilters(p.filters, resources, setupErrors)}>
+          <span key={p.id} className={`preset-chip ${on ? "preset-on" : ""}`} title={describeFilters(p.filters, resources, setupErrors, skills)}>
             <button type="button" className="preset-apply" onClick={() => setFilters(cleanFilters(p.filters))}>
               {p.name}<span className="preset-count">{n}</span>
             </button>
@@ -76,7 +76,7 @@ function PresetBar({ trades, resources, setupErrors, filters, setFilters, preset
   );
 }
 
-export function JournalFilters({ trades, resources, setupErrors, filters, setFilters, presets, onPresetsChange }) {
+export function JournalFilters({ trades, resources, setupErrors, skills, filters, setFilters, presets, onPresetsChange }) {
   const years = useMemo(() => {
     const set = new Set(trades.map((t) => yearKey(t.entryDate)).filter(Boolean));
     return Array.from(set).sort().reverse();
@@ -91,6 +91,7 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
     });
     return Array.from(by, ([setup, items]) => ({ setup, items }));
   }, [setupErrors]);
+  const skillOptions = useMemo(() => sortedByOrder((skills || []).filter((s) => s && s.name)), [skills]);
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => { setOpenMenu(""); setFilters({}); };
   // Mỗi lúc chỉ một bảng chọn được mở.
@@ -99,7 +100,7 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
 
   return (
     <div className="filter-panel">
-      <PresetBar trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters}
+      <PresetBar trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} filters={filters} setFilters={setFilters}
         presets={presets} onPresetsChange={onPresetsChange} />
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
@@ -123,6 +124,15 @@ export function JournalFilters({ trades, resources, setupErrors, filters, setFil
               {g.items.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
             </optgroup>
           ))}
+        </select>
+        <select className="input" value={filters.skill || ""} onChange={(e) => set("skill")(e.target.value)}>
+          <option value="">Kỹ năng đã dùng</option>
+          {SKILL_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          {skillOptions.length ? (
+            <optgroup label="Từng kỹ năng">
+              {skillOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </optgroup>
+          ) : null}
         </select>
         <div className="filter-rr">
           <input className="input" type="text" inputMode="decimal" placeholder="RR từ" value={filters.rrFrom ?? ""} onChange={(e) => set("rrFrom")(e.target.value)} />
@@ -211,7 +221,7 @@ function tradeImageShots(t) {
   return shots;
 }
 
-export function TradeDetailModal({ trade, setupErrors, onClose, onEdit, onDelete }) {
+export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, onDelete }) {
   if (!trade) return null;
   const t = trade;
   const { rr, outcome, status, profit } = computeResult(t);
@@ -225,6 +235,10 @@ export function TradeDetailModal({ trade, setupErrors, onClose, onEdit, onDelete
   const errorState = tradeErrorState(t);
   const errorNames = (t.setupErrors || [])
     .map((id) => ((setupErrors || []).find((e) => e.id === id) || {}).name)
+    .filter(Boolean);
+  const skillState = tradeSkillState(t);
+  const skillNames = (t.skills || [])
+    .map((id) => ((skills || []).find((x) => x.id === id) || {}).name)
     .filter(Boolean);
 
   return (
@@ -251,6 +265,8 @@ export function TradeDetailModal({ trade, setupErrors, onClose, onEdit, onDelete
               <DetailRow label="Lỗi setup"
                 tone={errorState === "clean" ? "win" : errorState === "errors" ? "loss" : ""}
                 value={errorState === "clean" ? "Không lỗi" : errorNames.length ? errorNames.join(", ") : "Chưa soi"} />
+              <DetailRow label="Kỹ năng đã dùng"
+                value={skillState === "none" ? "Không dùng kỹ năng nào" : skillNames.length ? skillNames.join(", ") : "Chưa soi"} />
               <DetailRow label="Điểm cấu trúc (ĐCT)" value={t.structureScore !== "" ? t.structureScore : "—"} />
             </DetailGroup>
             <DetailGroup title="Quản trị vốn & Kết quả">
@@ -614,7 +630,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
   );
 }
 
-export function JournalSection({ trades, resources, setupErrors, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
@@ -675,14 +691,14 @@ export function JournalSection({ trades, resources, setupErrors, ledger, filterP
         <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu sàn</button>
       </div>
       {tab === "compare" ? (
-        <FilterCompare trades={trades} resources={resources} setupErrors={setupErrors} presets={filterPresets} currentFilters={filters} />
+        <FilterCompare trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} presets={filterPresets} currentFilters={filters} />
       ) : null}
       {tab === "reconcile" ? (
         <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} onUpdateTrade={onUpdate} />
       ) : null}
       {tab === "list" ? (
         <div>
-          <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} filters={filters} setFilters={setFilters}
+          <JournalFilters trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} filters={filters} setFilters={setFilters}
             presets={filterPresets} onPresetsChange={onFilterPresetsChange} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
             <FilteredSummary list={filtered} total={trades.length} resources={resources} selected={selected.size} />

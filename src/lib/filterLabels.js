@@ -11,6 +11,11 @@ export const GRADE_FILTERS = [
   ...GRADE_OPTIONS.map((g) => ({ id: g.id, label: g.label, short: g.label })),
   { id: "none", label: "Chưa chấm", short: "Chưa chấm" },
 ];
+export const SKILL_FILTERS = [
+  { id: "any", label: "Có dùng kỹ năng (bất kỳ)" },
+  { id: "none", label: "Không dùng kỹ năng nào" },
+  { id: "unreviewed", label: "Chưa soi kỹ năng" },
+];
 export const ERROR_FILTERS = [
   { id: "clean", label: "Không lỗi (đã soi)" },
   { id: "any", label: "Có lỗi (bất kỳ)" },
@@ -43,7 +48,7 @@ const pick = (list, id) => { const x = list.find((o) => o.id === id); return x ?
 
 // Bộ lọc đã lưu chỉ hiện cái tên do bạn đặt. Vài tuần sau "Cần soi lại" nghĩa là gì thì
 // không ai nhớ, nên rê chuột vào chip là thấy đúng những gì nó đang lọc.
-export function describeFilters(filters, resources, setupErrors) {
+export function describeFilters(filters, resources, setupErrors, skills) {
   const f = cleanFilters(filters);
   const errName = (id) => {
     const e = (setupErrors || []).find((x) => x.id === id);
@@ -60,6 +65,10 @@ export function describeFilters(filters, resources, setupErrors) {
   if (f.result) parts.push(pick(RESULT_FILTERS, f.result));
   if (f.grade) parts.push(pick(GRADE_FILTERS, f.grade));
   if (f.setupError) parts.push(ERROR_FILTERS.some((o) => o.id === f.setupError) ? pick(ERROR_FILTERS, f.setupError) : errName(f.setupError));
+  if (f.skill) {
+    const s = (skills || []).find((x) => x.id === f.skill);
+    parts.push(SKILL_FILTERS.some((o) => o.id === f.skill) ? pick(SKILL_FILTERS, f.skill) : s ? `Kỹ năng "${s.name}"` : "Kỹ năng đã xóa");
+  }
   if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
   if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);

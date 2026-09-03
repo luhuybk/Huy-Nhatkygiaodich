@@ -5,7 +5,7 @@ import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
-const SkillsSection = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsSection })));
+const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
 
 export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
@@ -974,7 +974,7 @@ export function NewsLogSection({ items, onChange }) {
   );
 }
 
-export function JourneySection({ lessons, resources, trades, onChangeLessons, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples }) {
+export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples }) {
   const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["skills", "lessons", "process", "problems", "news"]);
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
@@ -1008,7 +1008,7 @@ export function JourneySection({ lessons, resources, trades, onChangeLessons, sk
       </div>
       {tab === "skills" ? (
         <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
-          <SkillsSection items={skills} resources={resources} onChange={onChangeSkills} />
+          <SkillsPage items={skills} trades={trades} resources={resources} onChange={onChangeSkills} onTradesChange={onChangeTrades} />
         </Suspense>
       ) : tab === "lessons" ? (
         <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />

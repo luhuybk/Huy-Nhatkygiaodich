@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Filter, Pencil, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Filter, Gauge, Pencil, Plus } from "lucide-react";
 import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
-import { applySkillFilters, emptySkill, moveSkill, nextOrder, skillAttachments, skillLevel, skillStats, sortedByOrder, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
+import { applySkillFilters, emptySkill, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
   const lv = skillLevel(id);
@@ -188,6 +188,122 @@ export function SkillsSection({ items, resources, onChange }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const gapTone = (v) => (v > 0 ? "text-win" : v < 0 ? "text-loss" : "");
+const pct = (v) => (v === null ? "—" : `${v.toFixed(0)}%`);
+const signedPct = (v) => (v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(0)} điểm %`);
+
+function EffectivenessTab({ items, trades, resources }) {
+  const data = useMemo(() => skillEffectiveness(trades, items, resources), [trades, items, resources]);
+  const rows = data.rows.filter((r) => r.used.total > 0);
+  const top = [...rows].sort((a, b) => (b.gapR === null ? -Infinity : b.gapR) - (a.gapR === null ? -Infinity : a.gapR))[0];
+
+  if (!(items || []).length) {
+    return <p className="empty-note" style={{ padding: "24px 0" }}>Chưa khai kỹ năng nào — sang tab "Danh sách" để thêm.</p>;
+  }
+  if (data.reviewed === 0) {
+    return (
+      <p className="empty-note" style={{ padding: "24px 0" }}>
+        Chưa lệnh nào được tick kỹ năng. Mở một lệnh ở Nhật ký, tới mục 4 "Kỹ năng" và tick những kỹ năng bạn đã dùng —
+        hoặc bấm "Không dùng kỹ năng nào". Lọc nhanh bằng bộ lọc "Kỹ năng → Chưa soi kỹ năng" ở tab Nhật ký.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Đã tick kỹ năng cho <b>{data.reviewed}</b> / {data.total} lệnh
+        {data.unreviewed ? ` · còn ${data.unreviewed} lệnh chưa soi (không tính vào bảng dưới)` : ""}
+        {data.none ? ` · ${data.none} lệnh không dùng kỹ năng nào` : ""}.
+      </p>
+
+      {top && top.gapR !== null ? (
+        <p className="field-hint" style={{ margin: "0 0 12px" }}>
+          Chênh lệch lớn nhất: <b>{top.name}</b> — lệnh có dùng đạt {fmtR(top.used.avgR)}/lệnh so với {fmtR(top.notUsed.avgR)} khi không dùng.
+        </p>
+      ) : null}
+
+      {rows.length === 0 ? (
+        <p className="empty-note">Đã soi {data.reviewed} lệnh nhưng chưa lệnh nào tick một kỹ năng cụ thể.</p>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Kỹ năng</th>
+                  <th>Lệnh có dùng</th>
+                  <th>Winrate</th>
+                  <th>RR trung bình</th>
+                  <th>Tổng R</th>
+                  <th>Lãi/lỗ (USD)</th>
+                  <th>So với khi không dùng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <b>{r.name}</b>
+                      {r.used.closed > 0 && r.used.closed < 10 ? <span className="cmp-thin">mẫu nhỏ</span> : null}
+                    </td>
+                    <td>{r.used.total}{r.used.closed !== r.used.total ? <span className="err-note"> ({r.used.closed} đã đóng)</span> : null}</td>
+                    <td>{pct(r.used.winRate)}</td>
+                    <td className={gapTone(r.used.avgR)}>{fmtR(r.used.avgR)}</td>
+                    <td className={gapTone(r.used.totalR)}>{fmtR(r.used.totalR)}</td>
+                    <td className={gapTone(r.used.profit)}>{r.used.profit === null ? "—" : fmt(r.used.profit)}</td>
+                    <td className={gapTone(r.gapR)}>
+                      {r.gapR === null ? "—" : `${r.gapR > 0 ? "+" : ""}${r.gapR.toFixed(2)}R/lệnh`}
+                      <span className="err-note"> · winrate {signedPct(r.gapWin)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="field-hint" style={{ marginTop: 10 }}>
+            Cột cuối so với chính các lệnh <b>đã soi mà không dùng</b> kỹ năng đó — không so với toàn bộ nhật ký,
+            vì phần lớn nhật ký chưa soi thì đem so là so với một tập không biết gì về kỹ năng này.
+          </p>
+          <p className="field-hint" style={{ marginTop: 4, color: "var(--loss)" }}>
+            Đọc bảng này như một manh mối, không phải bằng chứng: bạn chọn dùng kỹ năng ở những lệnh nhất định
+            chứ không bốc thăm, nên một phần chênh lệch đến từ việc lệnh đó vốn đã đẹp sẵn. Bóp SL thường chỉ
+            bóp khi lệnh đang chạy đúng hướng — nó ăn theo lệnh tốt chứ chưa chắc tạo ra lệnh tốt.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function SkillsPage({ items, trades, resources, onChange, onTradesChange }) {
+  const [tab, setTab] = useState("list");
+  // Xóa kỹ năng thì gỡ khỏi mọi lệnh đã tick, không thì lệnh treo một id không còn tồn tại.
+  const handleChange = (next) => {
+    const gone = (items || []).filter((s) => !(next || []).some((x) => x.id === s.id));
+    onChange(next);
+    let cur = trades;
+    let changed = false;
+    gone.forEach((s) => { const r = stripSkill(cur, s.id); if (r.changed) { cur = r.items; changed = true; } });
+    if (changed) onTradesChange(cur);
+  };
+  return (
+    <div>
+      <div className="subtabs">
+        <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}>
+          <Dumbbell size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Danh sách
+        </button>
+        <button className={`subtab ${tab === "perf" ? "subtab-active" : ""}`} onClick={() => setTab("perf")}>
+          <Gauge size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Hiệu quả
+        </button>
+      </div>
+      {tab === "list"
+        ? <SkillsSection items={items} resources={resources} onChange={handleChange} />
+        : <EffectivenessTab items={items} trades={trades} resources={resources} />}
     </div>
   );
 }
