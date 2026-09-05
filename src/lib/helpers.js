@@ -1343,39 +1343,88 @@ export function computeResult(trade) {
   };
 }
 
-export function accountBalance(account, ledger, trades) {
-  let bal = Number(account.initialBalance) || 0;
+export function accountsInFamily(accounts, name) {
+  const names = accountFamily(accounts, name);
+  return (accounts || []).filter((a) => a && a.name && names.has(a.name));
+}
+
+// Phạm vi tính toán của một tài khoản: mặc định là chính nó, nhưng nếu nó là tài khoản tổng
+// thì gồm cả các tài khoản bên dưới. Mọi hàm tính số dư/đường cong/rủi ro đều nhận phạm vi này,
+// nhờ vậy thẻ "Forex" không còn hiện 0 lệnh trong khi bên dưới có hàng trăm.
+export function familyScope(account, accounts, fxRates) {
+  const members = accounts ? accountsInFamily(accounts, account && account.name) : [];
+  const list = members.length ? members : [account].filter(Boolean);
+  const currencies = new Set(list.map((a) => a.currency || "USD"));
+  // Nhóm trộn nhiều loại tiền thì quy hết về USD — cộng thẳng số khác đơn vị là vô nghĩa.
+  const mixed = currencies.size > 1;
+  const currency = mixed ? "USD" : (list[0] && list[0].currency) || "USD";
+  const conv = (amount, name) => {
+    if (!mixed) return amount;
+    const a = list.find((x) => x.name === name);
+    return toUSD(amount, a && a.currency, fxRates);
+  };
+  return {
+    members: list,
+    isGroup: list.length > 1,
+    ids: new Set(list.map((a) => a.id)),
+    names: new Set(list.map((a) => a.name)),
+    initial: list.reduce((sum, a) => sum + conv(Number(a.initialBalance) || 0, a.name), 0),
+    currency, mixed,
+    convId: (amount, id) => conv(amount, (list.find((x) => x.id === id) || {}).name),
+    convName: conv,
+  };
+}
+
+function ownScope(account) {
+  return {
+    members: [account], isGroup: false,
+    ids: new Set([account.id]), names: new Set([account.name]),
+    initial: Number(account.initialBalance) || 0,
+    currency: account.currency || "USD", mixed: false,
+    convId: (x) => x, convName: (x) => x,
+  };
+}
+
+export function accountBalance(account, ledger, trades, scope) {
+  const sc = scope || ownScope(account);
+  let bal = sc.initial;
   ledger.forEach((e) => {
     const amt = Number(e.amount) || 0;
-    if (e.accountId === account.id) {
-      if (e.type === "deposit") bal += amt;
-      else if (e.type === "withdraw") bal -= amt;
-      else if (e.type === "transfer") bal -= amt;
+    if (sc.ids.has(e.accountId)) {
+      const v = sc.convId(amt, e.accountId);
+      if (e.type === "deposit") bal += v;
+      else if (e.type === "withdraw") bal -= v;
+      else if (e.type === "transfer") bal -= v;
     }
-    if (e.type === "transfer" && e.toAccountId === account.id) bal += amt;
+    // Chuyển vốn giữa hai tài khoản trong cùng nhóm thì trừ bên này cộng bên kia, tự triệt tiêu.
+    if (e.type === "transfer" && sc.ids.has(e.toAccountId)) bal += sc.convId(amt, e.toAccountId);
   });
   trades.forEach((t) => {
-    if (t.account === account.name) {
+    if (sc.names.has(t.account)) {
       const r = computeResult(t);
-      if (r.profit) bal += r.profit;
+      if (r.profit) bal += sc.convName(r.profit, t.account);
     }
   });
   return bal;
 }
 
-export function accountOpenRisk(account, ledger, trades) {
-  const openTrades = trades.filter((t) => t.account === account.name && computeResult(t).status === "open");
+export function accountOpenRisk(account, ledger, trades, scope) {
+  const sc = scope || ownScope(account);
+  const openTrades = trades.filter((t) => sc.names.has(t.account) && computeResult(t).status === "open");
   if (!openTrades.length) return { pct: 0, count: 0 };
-  const balance = accountBalance(account, ledger, trades);
-  let pct = 0;
+  const balance = accountBalance(account, ledger, trades, sc);
+  // Với một nhóm, KHÔNG cộng thẳng % của từng tài khoản con: 3% của tài khoản 1.000$ và 3% của
+  // tài khoản 10.000$ không phải 6% của cả nhóm. Quy về tiền rồi mới chia cho vốn cả nhóm.
+  let money = 0;
   openTrades.forEach((t) => {
-    if (t.riskPercent !== "" && t.riskPercent !== null && t.riskPercent !== undefined && !Number.isNaN(Number(t.riskPercent))) {
-      pct += Number(t.riskPercent);
-    } else if (t.riskAmount !== "" && t.riskAmount !== null && t.riskAmount !== undefined && balance && !Number.isNaN(Number(t.riskAmount))) {
-      pct += (Number(t.riskAmount) / balance) * 100;
-    }
+    const amt = numOrNull(t.riskAmount);
+    if (amt !== null) { money += sc.convName(amt, t.account); return; }
+    const pct = numOrNull(t.riskPercent);
+    if (pct === null) return;
+    const own = sc.members.find((a) => a.name === t.account);
+    if (own) money += sc.convName((accountBalance(own, ledger, trades) * pct) / 100, t.account);
   });
-  return { pct, count: openTrades.length };
+  return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length };
 }
 
 const RISK_ALERT_LOSS_STREAK = 10;
@@ -2043,50 +2092,54 @@ export function formatVN(n) {
   return num.toLocaleString("vi-VN", { maximumFractionDigits: 4 });
 }
 
-export function buildBalanceCurve(account, ledger, trades) {
+export function buildBalanceCurve(account, ledger, trades, scope) {
+  const sc = scope || ownScope(account);
   const events = [];
   ledger.forEach((e) => {
     const amt = Number(e.amount) || 0;
-    if (e.accountId === account.id) {
-      if (e.type === "deposit") events.push({ date: e.date, delta: amt });
-      else if (e.type === "withdraw") events.push({ date: e.date, delta: -amt });
-      else if (e.type === "transfer") events.push({ date: e.date, delta: -amt });
+    if (sc.ids.has(e.accountId)) {
+      const v = sc.convId(amt, e.accountId);
+      if (e.type === "deposit") events.push({ date: e.date, delta: v });
+      else if (e.type === "withdraw") events.push({ date: e.date, delta: -v });
+      else if (e.type === "transfer") events.push({ date: e.date, delta: -v });
     }
-    if (e.type === "transfer" && e.toAccountId === account.id) events.push({ date: e.date, delta: amt });
+    if (e.type === "transfer" && sc.ids.has(e.toAccountId)) events.push({ date: e.date, delta: sc.convId(amt, e.toAccountId) });
   });
   trades.forEach((t) => {
-    if (t.account === account.name) {
+    if (sc.names.has(t.account)) {
       const r = computeResult(t);
-      if (r.profit) events.push({ date: dateKey(t), delta: r.profit });
+      if (r.profit) events.push({ date: dateKey(t), delta: sc.convName(r.profit, t.account) });
     }
   });
   events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-  let bal = Number(account.initialBalance) || 0;
+  let bal = sc.initial;
   const points = [{ date: "Bắt đầu", balance: Number(bal.toFixed(2)) }];
   events.forEach((e) => { bal += e.delta; points.push({ date: e.date || "—", balance: Number(bal.toFixed(2)) }); });
   return points;
 }
 
-export function buildTWRCurve(account, ledger, trades) {
+export function buildTWRCurve(account, ledger, trades, scope) {
+  const sc = scope || ownScope(account);
   const events = [];
   ledger.forEach((e) => {
     const amt = Number(e.amount) || 0;
-    if (e.accountId === account.id) {
-      if (e.type === "deposit") events.push({ date: e.date, cashflow: amt });
-      else if (e.type === "withdraw") events.push({ date: e.date, cashflow: -amt });
-      else if (e.type === "transfer") events.push({ date: e.date, cashflow: -amt });
+    if (sc.ids.has(e.accountId)) {
+      const v = sc.convId(amt, e.accountId);
+      if (e.type === "deposit") events.push({ date: e.date, cashflow: v });
+      else if (e.type === "withdraw") events.push({ date: e.date, cashflow: -v });
+      else if (e.type === "transfer") events.push({ date: e.date, cashflow: -v });
     }
-    if (e.type === "transfer" && e.toAccountId === account.id) events.push({ date: e.date, cashflow: amt });
+    if (e.type === "transfer" && sc.ids.has(e.toAccountId)) events.push({ date: e.date, cashflow: sc.convId(amt, e.toAccountId) });
   });
   trades.forEach((t) => {
-    if (t.account === account.name) {
+    if (sc.names.has(t.account)) {
       const r = computeResult(t);
-      if (r.profit) events.push({ date: dateKey(t), pnl: r.profit });
+      if (r.profit) events.push({ date: dateKey(t), pnl: sc.convName(r.profit, t.account) });
     }
   });
   events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
-  let periodStartBalance = Number(account.initialBalance) || 0;
+  let periodStartBalance = sc.initial;
   let periodStartIndex = 100;
   let runningBalance = periodStartBalance;
   const points = [{ date: "Bắt đầu", index: 100, balance: Number(runningBalance.toFixed(2)) }];

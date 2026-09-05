@@ -3,7 +3,7 @@ import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
-import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
+import { familyScope, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
 
 export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
   const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true };
@@ -49,19 +49,29 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
 
   const roots = accounts.filter((a) => !a.parentId);
   const childrenOf = (id) => accounts.filter((a) => a.parentId === id);
-  const leaves = accounts.filter((a) => !accounts.some((x) => x.parentId === a.id));
   const missingFx = missingFxAccounts({ accounts, fxRates }, null);
-  const leafBalanceSumUSD = leaves.reduce((s, a) => s + toUSD(accountBalance(a, ledger, trades), a.currency, fxRates), 0);
-  const leafInitialSumUSD = leaves.reduce((s, a) => s + toUSD(Number(a.initialBalance) || 0, a.currency, fxRates), 0);
+  // Cộng theo các tài khoản GỐC (mỗi gốc đã gộp cả nhánh của nó) thay vì chỉ cộng tài khoản lá:
+  // tiền nằm ngay trên một tài khoản tổng trước đây bị bỏ sót khỏi tổng vốn.
+  const leafBalanceSumUSD = roots.reduce((s, a) => {
+    const sc = familyScope(a, accounts, fxRates);
+    return s + toUSD(accountBalance(a, ledger, trades, sc), sc.currency, fxRates);
+  }, 0);
+  const leafInitialSumUSD = roots.reduce((s, a) => {
+    const sc = familyScope(a, accounts, fxRates);
+    return s + toUSD(sc.initial, sc.currency, fxRates);
+  }, 0);
   const usedCurrencies = Array.from(new Set(accounts.map((a) => a.currency).filter((c) => c && c !== "USD")));
 
   const renderCard = (a, parent) => {
-    const bal = accountBalance(a, ledger, trades);
-    const initial = Number(a.initialBalance) || 0;
-    const accountTrades = trades.filter((t) => t.account === a.name);
-    const pnl = closedOf(accountTrades).reduce((s, x) => s + x.r.profit, 0);
+    // Tài khoản tổng không có lệnh nào gắn thẳng vào nó — mọi số phải cộng từ các tài khoản
+    // bên dưới, không thì thẻ "Forex" hiện 0 lệnh và 0 P&L dù bên dưới chạy hàng trăm lệnh.
+    const sc = familyScope(a, accounts, fxRates);
+    const bal = accountBalance(a, ledger, trades, sc);
+    const initial = sc.initial;
+    const accountTrades = trades.filter((t) => sc.names.has(t.account));
+    const pnl = closedOf(accountTrades).reduce((s, x) => s + sc.convName(x.r.profit, x.t.account), 0);
     const growth = initial ? ((bal - initial) / Math.abs(initial)) * 100 : null;
-    const openRisk = accountOpenRisk(a, ledger, trades);
+    const openRisk = accountOpenRisk(a, ledger, trades, sc);
     // Thẻ không thể là <button> vì bên trong đã có nút sửa/xóa — button lồng button là HTML sai.
     return (
       <div key={a.id} className="account-card" role="button" tabIndex={0} onClick={() => onView(a.id)}
@@ -72,13 +82,15 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
         }}>
         <div className="account-card-head">
           <strong>{a.name}</strong>
+          {sc.isGroup ? <span className="account-group-tag" title={`Gộp ${sc.members.length} tài khoản: ${sc.members.map((x) => x.name).join(", ")}`}>nhóm · {sc.members.length}</span> : null}
           <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 4 }}>
             <button type="button" className="row-btn" aria-label="Sửa tài khoản" onClick={() => { setForm({ ...blank, ...a }); setError(""); }}><Pencil size={13} /></button>
             <ConfirmButton onConfirm={() => remove(a.id)} />
           </span>
         </div>
         {parent ? <span className="account-card-parent">thuộc nhóm {parent.name}</span> : null}
-        <div className={`account-card-balance ${bal >= initial ? "text-win" : "text-loss"}`}>{fmt(bal)} <span className="mono" style={{ fontSize: 13 }}>{a.currency}</span></div>
+        <div className={`account-card-balance ${bal >= initial ? "text-win" : "text-loss"}`}>{fmt(bal)} <span className="mono" style={{ fontSize: 13 }}>{sc.currency}</span></div>
+        {sc.mixed ? <span className="field-hint">Nhóm gồm nhiều loại tiền — quy về USD</span> : null}
         <div className="account-card-rows">
           <div><span>Số dư ban đầu</span><span className="mono">{fmt(initial)}</span></div>
           <div><span>Trading P&L</span><span className={`mono ${pnl >= 0 ? "text-win" : "text-loss"}`}>{pnl >= 0 ? "+" : ""}{fmt(pnl)}</span></div>
@@ -98,7 +110,7 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
         <StatCard label="Tổng vốn hiện tại (quy đổi USD)" value={fmtMoney(leafBalanceSumUSD, "USD")} tone={leafBalanceSumUSD >= leafInitialSumUSD ? "win" : "loss"} />
       </div>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Gộp nhóm bằng cách chọn "Thuộc nhóm" (VD: Forex H3 / H8 / D thuộc nhóm Forex). Tổng vốn phía trên chỉ tính trên các tài khoản không có tài khoản con, quy đổi theo tỷ giá bên dưới. Bấm vào một thẻ để xem phân tích chi tiết.
+        Gộp nhóm bằng cách chọn "Thuộc nhóm" (VD: Forex H3 / H8 / D thuộc nhóm Forex). Thẻ của một tài khoản tổng hiện số liệu <b>gộp cả nhóm</b> — số dư, lệnh, P&amp;L và rủi ro đang mở đều cộng từ các tài khoản bên dưới. Tổng vốn phía trên cộng theo từng nhóm nên không đếm trùng. Bấm vào một thẻ để xem phân tích chi tiết.
       </p>
       {usedCurrencies.length > 0 ? (
         <div className="fx-panel">
@@ -263,31 +275,33 @@ export function CashFlowList({ accounts, ledger, onChange }) {
   );
 }
 
-export function AccountDetail({ account, ledger, trades, onBack, onEdit, onDelete }) {
+export function AccountDetail({ account, accounts, fxRates, ledger, trades, onBack, onEdit, onDelete }) {
   const [granularity, setGranularity] = useState("month");
-  const accountTrades = trades.filter((t) => t.account === account.name);
+  const sc = familyScope(account, accounts, fxRates);
+  const accountTrades = trades.filter((t) => sc.names.has(t.account));
   const closedAccountTrades = closedOf(accountTrades);
   const m = computeAdvancedMetrics(closedAccountTrades);
-  const deposits = ledger.filter((e) => e.accountId === account.id && e.type === "deposit").reduce((s, e) => s + (Number(e.amount) || 0), 0)
-    + ledger.filter((e) => e.type === "transfer" && e.toAccountId === account.id).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const withdrawals = ledger.filter((e) => e.accountId === account.id && e.type === "withdraw").reduce((s, e) => s + (Number(e.amount) || 0), 0)
-    + ledger.filter((e) => e.type === "transfer" && e.accountId === account.id).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const tradingPnl = closedAccountTrades.reduce((s, x) => s + x.r.profit, 0);
-  const currentBalance = accountBalance(account, ledger, trades);
-  const initial = Number(account.initialBalance) || 0;
+  const deposits = ledger.filter((e) => sc.ids.has(e.accountId) && e.type === "deposit").reduce((s, e) => s + sc.convId(Number(e.amount) || 0, e.accountId), 0)
+    + ledger.filter((e) => e.type === "transfer" && sc.ids.has(e.toAccountId)).reduce((s, e) => s + sc.convId(Number(e.amount) || 0, e.toAccountId), 0);
+  const withdrawals = ledger.filter((e) => sc.ids.has(e.accountId) && e.type === "withdraw").reduce((s, e) => s + sc.convId(Number(e.amount) || 0, e.accountId), 0)
+    + ledger.filter((e) => e.type === "transfer" && sc.ids.has(e.accountId)).reduce((s, e) => s + sc.convId(Number(e.amount) || 0, e.accountId), 0);
+  const tradingPnl = closedAccountTrades.reduce((s, x) => s + sc.convName(x.r.profit, x.t.account), 0);
+  const currentBalance = accountBalance(account, ledger, trades, sc);
+  const initial = sc.initial;
   const growthPct = initial !== 0 ? ((currentBalance - initial) / Math.abs(initial)) * 100 : null;
   const winrate = closedAccountTrades.length ? (closedAccountTrades.filter((x) => x.r.outcome === "win").length / closedAccountTrades.length) * 100 : 0;
-  const openRisk = accountOpenRisk(account, ledger, trades);
+  const openRisk = accountOpenRisk(account, ledger, trades, sc);
 
-  const curve = buildBalanceCurve(account, ledger, trades);
+  const curve = buildBalanceCurve(account, ledger, trades, sc);
   const growthSeries = buildGrowthSeries(curve, initial, granularity);
-  const accountLedger = ledger.filter((e) => e.accountId === account.id || e.toAccountId === account.id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const accountLedger = ledger.filter((e) => sc.ids.has(e.accountId) || sc.ids.has(e.toAccountId)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   return (
     <div>
       <div className="detail-header">
         <button type="button" className="btn btn-ghost" onClick={onBack}><ChevronLeft size={14} /> Tất cả tài khoản</button>
         <h3 style={{ margin: "0 0 0 6px" }}>{account.name}</h3>
+        {sc.isGroup ? <span className="account-group-tag" title={sc.members.map((x) => x.name).join(", ")}>gộp {sc.members.length} tài khoản</span> : null}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button type="button" className="btn btn-ghost" onClick={() => onEdit(account)}>Sửa tài khoản</button>
           <DangerConfirmButton label="Xóa tài khoản" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => onDelete(account.id)} />
@@ -374,6 +388,8 @@ export function AccountsSection({ accounts, ledger, trades, onAccountsChange, on
     return (
       <AccountDetail
         account={viewing}
+        accounts={accounts}
+        fxRates={fxRates}
         ledger={ledger}
         trades={trades}
         onBack={() => setViewingId("")}

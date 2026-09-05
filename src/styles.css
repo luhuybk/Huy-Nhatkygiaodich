@@ -614,6 +614,8 @@
         .msel-box { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; flex-shrink:0;
           border:1px solid var(--border); border-radius:4px; }
         .msel-opt-on .msel-box { border-color:var(--accent); background:rgba(var(--accent-rgb),0.16); }
+        .account-group-tag { padding:1px 8px; border-radius:20px; background:rgba(var(--accent-rgb),0.14);
+          color:var(--accent); font-size:10.5px; font-weight:700; letter-spacing:.2px; white-space:nowrap; }
         .msel-group-tag { margin-left:auto; padding:0 6px; border-radius:20px; background:var(--surface-2);
           border:1px solid var(--border); color:var(--text-dim); font-size:9.5px; letter-spacing:.3px; text-transform:uppercase; }
         .msel-clear { width:100%; margin-top:3px; padding:6px 8px; border:0; border-top:1px solid var(--border); border-radius:0;
