@@ -1845,6 +1845,122 @@ export function skillEffectiveness(trades, skills, resources, fromDate) {
   };
 }
 
+// ---- Kiểm tra sức khỏe nhật ký ----
+// Mỗi mục là một cách dữ liệu tự mâu thuẫn, kèm đúng những lệnh dính phải. Nhắc "còn 13 lệnh
+// chưa điền xong" mà không chỉ ra lệnh nào thiếu gì thì không ai đi sửa.
+const HEALTH_RR_TOLERANCE = 0.02;
+
+// Những trường của lệnh trỏ vào một danh sách trong Tài nguyên. Xóa/đổi tên trong Tài nguyên
+// mà lệnh cũ còn giữ tên cũ thì lệnh đó rơi khỏi mọi bộ lọc và thống kê theo chiều đó.
+const HEALTH_REF_FIELDS = [
+  { field: "account", key: "accounts", label: "Tài khoản" },
+  { field: "setup", key: "setups", label: "Setup" },
+  { field: "psychology", key: "psychologies", label: "Tâm lý" },
+  { field: "timeframe", key: "timeframes", label: "Khung thời gian" },
+];
+
+function resourceValues(resources, key) {
+  const list = (resources && resources[key]) || [];
+  return new Set(list.map((v) => (v && typeof v === "object" ? v.name : v)).filter(Boolean));
+}
+
+export function journalHealth(trades, resources, setupErrors, presets, skills) {
+  const all = trades || [];
+  const checks = [];
+  const add = (c) => { if (c.ids.length || c.always) checks.push(c); };
+
+  const closed = all.filter((t) => computeResult(t).status === "closed");
+  const open = all.filter((t) => computeResult(t).status === "open");
+
+  add({
+    id: "exitedNoProfit", tone: "loss",
+    label: "Đã thoát nhưng chưa điền lợi nhuận",
+    hint: 'App chỉ coi lệnh là "đã đóng" khi có lợi nhuận. Những lệnh này vẫn bị đếm là đang mở và nằm ngoài winrate, tổng R, lãi/lỗ.',
+    ids: open.filter((t) => t.exitDate).map((t) => t.id),
+    filter: { result: "open" },
+  });
+
+  add({
+    id: "closedNoRisk", tone: "loss",
+    label: "Lệnh đã đóng nhưng thiếu Rủi ro (số tiền)",
+    hint: "Không có risk thì không tính được R. Những lệnh này biến mất khỏi tổng R, RR trung bình, SQN và báo cáo tuần.",
+    ids: closed.filter((t) => !numOrNull(t.riskAmount)).map((t) => t.id),
+    filter: { result: "closed" },
+  });
+
+  add({
+    id: "overStop", tone: "loss",
+    label: "Lệnh thua vượt mức −1R",
+    hint: "Thua quá mức đã định nghĩa là SL không giữ đúng — trượt giá, gap, hoặc đã nới/gỡ. Mỗi lệnh ở đây là phần lỗ ngoài kế hoạch.",
+    ids: closed.filter((t) => { const r = computeResult(t).rr; return r !== null && Number.isFinite(r) && r < -1 - HEALTH_RR_TOLERANCE; }).map((t) => t.id),
+    filter: { result: "closed", rrFrom: "", rrTo: "-1" },
+  });
+
+  const orphanIds = new Set();
+  const orphanDetail = [];
+  HEALTH_REF_FIELDS.forEach(({ field, key, label }) => {
+    const known = resourceValues(resources, key);
+    const bad = new Map();
+    all.forEach((t) => {
+      const v = t && t[field];
+      if (!v || known.has(v)) return;
+      orphanIds.add(t.id);
+      if (!bad.has(v)) bad.set(v, 0);
+      bad.set(v, bad.get(v) + 1);
+    });
+    bad.forEach((count, value) => orphanDetail.push(`${label} "${value}" (${count} lệnh)`));
+  });
+  add({
+    id: "orphan", tone: "loss",
+    label: "Lệnh trỏ tới giá trị không còn trong Tài nguyên",
+    hint: `Giá trị đã bị xóa hoặc đổi tên: ${orphanDetail.join(" · ")}. Lệnh giữ tên cũ sẽ rơi khỏi bộ lọc và mọi thống kê theo chiều đó.`,
+    ids: Array.from(orphanIds),
+  });
+
+  add({
+    id: "incomplete", tone: "warn",
+    label: "Lệnh chưa điền xong",
+    hint: "Chưa đạt 100% các mục của lệnh. Không sai số liệu, nhưng những chiều còn trống thì không phân tích được.",
+    ids: all.filter((t) => tradeCompletion(t).percent < 100).map((t) => t.id),
+    filter: { completion: "under100" },
+  });
+
+  add({
+    id: "unreviewedErrors", tone: "warn",
+    label: "Lệnh đã đóng nhưng chưa soi lỗi setup",
+    hint: "Chưa soi thì không vào được mẫu số của bảng Lỗi theo setup — càng nhiều lệnh chưa soi, con số ở đó càng mỏng.",
+    ids: (setupErrors || []).length ? closed.filter((t) => tradeErrorState(t) === "unreviewed").map((t) => t.id) : [],
+    filter: { setupError: "unreviewed" },
+  });
+
+  // Bộ lọc đã lưu trỏ tới thứ không còn tồn tại thì bấm vào ra danh sách rỗng mà không rõ vì sao.
+  const errIds = new Set((setupErrors || []).map((e) => e && e.id));
+  const skillIds = new Set((skills || []).map((s) => s && s.id));
+  const stale = [];
+  (presets || []).forEach((p) => {
+    const f = cleanFilters(p.filters);
+    const bad = [];
+    if (f.setupError && !["clean", "any", "unreviewed"].includes(f.setupError) && !errIds.has(f.setupError)) bad.push("lỗi setup đã xóa");
+    if (f.skill && !["any", "none"].includes(f.skill) && !skillIds.has(f.skill)) bad.push("kỹ năng đã xóa");
+    HEALTH_REF_FIELDS.forEach(({ field, key, label }) => {
+      const known = resourceValues(resources, key);
+      toFilterList(f[field]).forEach((v) => { if (!known.has(v)) bad.push(`${label} "${v}" không còn`); });
+    });
+    if (bad.length) stale.push(`${p.name}: ${bad.join(", ")}`);
+  });
+
+  const fx = missingFxAccounts(resources, null);
+
+  return {
+    total: all.length,
+    closed: closed.length,
+    checks,
+    stale,
+    fx,
+    problems: checks.reduce((n, c) => n + c.ids.length, 0) + stale.length + fx.length,
+  };
+}
+
 export function closedOf(trades) {
   return trades
     .map((t) => ({ t, r: computeResult(t) }))

@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
-  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange,
+  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -38,6 +38,7 @@ const SetupHubSection = lazy(() => import("./components/LessonsAndSetups.jsx").t
 const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.JourneySection })));
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
 const SetupErrorsPage = lazy(() => import("./components/SetupErrors.jsx").then((m) => ({ default: m.SetupErrorsPage })));
+const HealthCheckPage = lazy(() => import("./components/HealthCheck.jsx").then((m) => ({ default: m.HealthCheckPage })));
 
 const NAV_GROUPS = [
   {
@@ -73,6 +74,7 @@ const NAV_GROUPS = [
       { key: "lessons", label: "Hành trình giao dịch", icon: GraduationCap },
       { key: "principles", label: "Nguyên tắc", icon: ListChecks },
       { key: "resources", label: "Tài nguyên", icon: Database },
+      { key: "health", label: "Kiểm tra dữ liệu", icon: Stethoscope },
     ]
   },
   { label: "Hệ thống", items: [{ key: "settings", label: "Cài đặt", icon: Settings }] },
@@ -664,6 +666,11 @@ function AppShell({ onSignOut, userEmail }) {
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
                   skills={skills} onChangeSkills={persistSkills} onChangeTrades={persistTrades}
                   avoidPrinciples={principles.avoid || []} />
+              ) :
+              view === "health" ? (
+                <HealthCheckPage trades={trades} resources={resources} setupErrors={setupErrors} skills={skills}
+                  filterPresets={filterPresets} onOpenTrade={setViewingTrade}
+                  onGoToJournal={(f) => { persistUiSettings({ ...uiSettings, journalFilters: f }); setView("journal"); }} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
               view === "resources" ? (
