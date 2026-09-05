@@ -18,7 +18,7 @@ const ROWS = [
   { key: "profit", label: "Lãi/lỗ (USD)", get: (s) => s.profit, fmt: (v) => (v === null ? "—" : fmt(v)), tone: true, better: "high" },
 ];
 
-export function FilterCompare({ trades, resources, setupErrors, presets, currentFilters }) {
+export function FilterCompare({ trades, resources, setupErrors, skills, presets, currentFilters }) {
   const list = presets || [];
   const [picked, setPicked] = useState(() => new Set(list.slice(0, 2).map((p) => p.id)));
   const current = cleanFilters(currentFilters);
@@ -36,14 +36,14 @@ export function FilterCompare({ trades, resources, setupErrors, presets, current
     // phải có mốc để biết tập đó khá hơn hay tệ hơn mặt bằng chung.
     const cols = [{ id: "__all", name: "Tất cả lệnh", desc: "Mốc so sánh — toàn bộ nhật ký", list: trades }];
     if (hasCurrent && useCurrent) {
-      cols.push({ id: "__current", name: "Bộ lọc đang dùng", desc: describeFilters(current, resources, setupErrors), list: applyFilters(trades, current, resources) });
+      cols.push({ id: "__current", name: "Bộ lọc đang dùng", desc: describeFilters(current, resources, setupErrors, skills), list: applyFilters(trades, current, resources) });
     }
     list.forEach((p) => {
       if (!picked.has(p.id)) return;
-      cols.push({ id: p.id, name: p.name, desc: describeFilters(p.filters, resources, setupErrors), list: applyFilters(trades, p.filters || {}, resources) });
+      cols.push({ id: p.id, name: p.name, desc: describeFilters(p.filters, resources, setupErrors, skills), list: applyFilters(trades, p.filters || {}, resources) });
     });
     return cols.map((c) => ({ ...c, s: tradeSetSummary(c.list, resources) }));
-  }, [trades, resources, setupErrors, list, picked, hasCurrent, useCurrent, current]);
+  }, [trades, resources, setupErrors, skills, list, picked, hasCurrent, useCurrent, current]);
 
   const bestOf = (row) => {
     if (!row.better || columns.length < 2) return null;
@@ -79,13 +79,13 @@ export function FilterCompare({ trades, resources, setupErrors, presets, current
             <span className="filter-foot-label"><Bookmark size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Chọn để so:</span>
             {hasCurrent ? (
               <button type="button" className={`chip-btn ${useCurrent ? "chip-active" : ""}`} onClick={() => setUseCurrent((v) => !v)}
-                title={describeFilters(current, resources, setupErrors)}>
+                title={describeFilters(current, resources, setupErrors, skills)}>
                 Bộ lọc đang dùng
               </button>
             ) : null}
             {list.map((p) => (
               <button key={p.id} type="button" className={`chip-btn ${picked.has(p.id) ? "chip-active" : ""}`} onClick={() => toggle(p.id)}
-                title={describeFilters(p.filters, resources, setupErrors)}>
+                title={describeFilters(p.filters, resources, setupErrors, skills)}>
                 {p.name}
               </button>
             ))}
