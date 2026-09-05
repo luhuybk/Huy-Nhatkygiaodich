@@ -5,7 +5,7 @@ import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -120,7 +120,7 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
       {!open ? null : (
       <>
       <div className="filter-grid">
-        <MultiFilterSelect {...menu("account")} value={filters.account} onChange={set("account")} options={resources.accounts.map((a) => a.name)} placeholder="Tài khoản" />
+        <MultiFilterSelect {...menu("account")} value={filters.account} onChange={set("account")} options={accountOptions(resources.accounts)} placeholder="Tài khoản" />
         <MultiFilterSelect {...menu("year")} value={filters.year} onChange={set("year")} options={years} placeholder="Năm" />
         <MultiFilterSelect {...menu("month")} value={filters.month} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
         <MultiFilterSelect {...menu("setup")} value={filters.setup} onChange={set("setup")} options={resources.setups} placeholder="Setup" />

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { StatCard } from "./ui.jsx";
-import { closedOf, closedOfUSD, computeSystemQuality, dateKey, fmtR, inRange, riskOfRuin, sqnRating } from "../lib/helpers.js";
+import { accountFamily, closedOf, closedOfUSD, computeSystemQuality, dateKey, fmtR, inRange, riskOfRuin, sqnRating } from "../lib/helpers.js";
 
 const RISK_LEVELS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
 
@@ -28,7 +28,8 @@ export function SystemQualityPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;

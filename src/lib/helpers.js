@@ -2330,11 +2330,60 @@ export function saveFilterPreset(presets, name, filters) {
   };
 }
 
+// ---- Tài khoản tổng ----
+// "Forex" là tài khoản gom H3/H8/D, không lệnh nào gắn thẳng vào nó. Lọc bằng cách so tên
+// thì chọn "Forex" luôn ra rỗng — vô dụng. Nên nó phải nghĩa là "cả nhóm".
+export function accountFamily(accounts, name) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const root = list.find((a) => a.name === name);
+  if (!root) return new Set(name ? [name] : []);
+  const out = new Set([root.name]);
+  const ids = new Set([root.id]);
+  // Lặp đến khi không thêm được ai nữa: nhóm có thể lồng nhiều cấp.
+  let added = true;
+  while (added) {
+    added = false;
+    list.forEach((a) => {
+      if (a.parentId && ids.has(a.parentId) && !ids.has(a.id)) {
+        ids.add(a.id); out.add(a.name); added = true;
+      }
+    });
+  }
+  return out;
+}
+
+// null = không lọc theo tài khoản. Gọi một lần trước vòng lặp thay vì mỗi lệnh một lần.
+export function expandAccountFilter(want, accounts) {
+  const names = toFilterList(want);
+  if (!names.length) return null;
+  const out = new Set();
+  names.forEach((n) => accountFamily(accounts, n).forEach((x) => out.add(x)));
+  return out;
+}
+
+// Danh sách cho ô chọn: cha trước, con ngay dưới, kèm độ sâu để thụt vào cho thấy quan hệ.
+export function accountOptions(accounts) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const out = [];
+  const walk = (parentId, depth) => {
+    list.filter((a) => (a.parentId || "") === (parentId || "")).forEach((a) => {
+      const isGroup = list.some((x) => x.parentId === a.id);
+      out.push({ value: a.name, depth, isGroup });
+      walk(a.id, depth + 1);
+    });
+  };
+  walk("", 0);
+  // Tài khoản có cha đã bị xóa thì không nằm trong cây — vẫn phải hiện, không thì mất tăm.
+  list.forEach((a) => { if (!out.some((o) => o.value === a.name)) out.push({ value: a.name, depth: 0, isGroup: false }); });
+  return out;
+}
+
 export function applyFilters(trades, filters, resources) {
+  const accountWanted = expandAccountFilter(filters.account, resources && resources.accounts);
   return trades.filter((t) => {
     const r = computeResult(t);
     if (filters.q && !t.symbol.toLowerCase().includes(filters.q.toLowerCase())) return false;
-    if (!filterMatches(t.account, filters.account)) return false;
+    if (accountWanted && !accountWanted.has(t.account)) return false;
     if (!filterMatches(yearKey(t.entryDate), filters.year)) return false;
     if (!filterMatches((t.entryDate || "").slice(5, 7), filters.month)) return false;
     if (!filterMatches(t.setup, filters.setup)) return false;

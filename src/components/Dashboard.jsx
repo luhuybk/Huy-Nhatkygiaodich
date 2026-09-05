@@ -4,7 +4,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { accountFamily, accountOptions, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -28,7 +28,11 @@ export function DashboardFilters({ resources, account, onAccount, range, onRange
           <span className="field-label" style={{ marginRight: 4 }}>Tài khoản:</span>
           <select className="input" style={{ maxWidth: 200 }} value={account} onChange={(e) => onAccount(e.target.value)}>
             <option value="">Tất cả tài khoản</option>
-            {resources.accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+            {accountOptions(resources.accounts).map((o) => (
+              <option key={o.value} value={o.value}>
+                {"\u00a0\u00a0".repeat(o.depth)}{o.depth ? "└ " : ""}{o.value}{o.isGroup ? " (cả nhóm)" : ""}
+              </option>
+            ))}
           </select>
         </>
       ) : null}
@@ -52,7 +56,9 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const scoped = trades.filter((t) => (!account || t.account === account) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  // Chọn nhóm tổng (VD "Forex") thì gom cả các tài khoản bên dưới, không thì luôn ra rỗng.
+  const inScope = useMemo(() => accountFamily(resources.accounts, account), [resources.accounts, account]);
+  const scoped = trades.filter((t) => (!account || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = account ? resources.accounts.find((a) => a.name === account) : null;
   const currencyUnit = singleAccount ? singleAccount.currency : "USD";
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);

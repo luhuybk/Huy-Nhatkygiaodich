@@ -163,7 +163,8 @@ export function MultiFilterSelect({ value, onChange, options, placeholder, open:
   const setOpen = (v) => (controlled ? onOpenChange(v) : setOpenSelf(v));
   const ref = useRef(null);
   const selected = toFilterList(value);
-  const list = options || [];
+  // Nhận cả mảng chuỗi lẫn mảng { value, depth, isGroup } để ô Tài khoản vẽ được cây nhóm.
+  const list = (options || []).map((o) => (typeof o === "string" ? { value: o, depth: 0 } : o)).filter((o) => o && o.value);
 
   useEffect(() => {
     if (!open) return;
@@ -191,9 +192,13 @@ export function MultiFilterSelect({ value, onChange, options, placeholder, open:
         <div className="msel-pop">
           {list.length === 0 ? <p className="empty-note" style={{ margin: 0 }}>Chưa có tùy chọn nào.</p> : null}
           {list.map((o) => (
-            <button key={o} type="button" className={`msel-opt ${selected.includes(o) ? "msel-opt-on" : ""}`} onClick={() => toggle(o)}>
-              <span className="msel-box">{selected.includes(o) ? <Check size={11} /> : null}</span>
-              <span className="msel-opt-label">{o}</span>
+            <button key={o.value} type="button" className={`msel-opt ${selected.includes(o.value) ? "msel-opt-on" : ""}`}
+              style={o.depth ? { paddingLeft: 8 + o.depth * 14 } : undefined}
+              title={o.isGroup ? `Nhóm tổng — chọn là lấy cả các tài khoản bên dưới` : undefined}
+              onClick={() => toggle(o.value)}>
+              <span className="msel-box">{selected.includes(o.value) ? <Check size={11} /> : null}</span>
+              <span className="msel-opt-label">{o.value}</span>
+              {o.isGroup ? <span className="msel-group-tag">nhóm</span> : null}
             </button>
           ))}
           {selected.length ? (

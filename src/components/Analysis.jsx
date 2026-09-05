@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LineChart as LineChartIcon, Layers, Target } from "lucide-react";
 import { ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./Dashboard.jsx";
 import { CATEGORY_COLORS, GRADE_OPTIONS, LOSS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
-import { avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
+import { accountFamily, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
 
 export function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
@@ -159,7 +160,8 @@ export function TradeAnalysisPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const closed = closedOf(scoped);
   const closedTrades = closed.map((x) => x.t);
   const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
@@ -313,7 +315,8 @@ export function Analysis({ trades, resources, onViewTrade }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;

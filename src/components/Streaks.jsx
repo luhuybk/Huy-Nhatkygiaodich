@@ -4,7 +4,7 @@ import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, 
 import { DashboardFilters } from "./Dashboard.jsx";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { ACCENT, GRID, LOSS, MUTED, WIN, tooltipStyle } from "../lib/constants.js";
-import { buildStreakCurve, closedOf, closedOfUSD, dateKey, fmt, fmtR, inRange, streakErrorBreakdown, streakLadder } from "../lib/helpers.js";
+import { accountFamily, buildStreakCurve, closedOf, closedOfUSD, dateKey, fmt, fmtR, inRange, streakErrorBreakdown, streakLadder } from "../lib/helpers.js";
 
 const THRESHOLDS = [2, 3, 4, 5];
 
@@ -172,7 +172,8 @@ export function StreakPage({ trades, resources, setupErrors }) {
   const [rangeTo, setRangeTo] = useState("");
   const [minLen, setMinLen] = useState(3);
 
-  const scoped = trades.filter((t) => (!scope || t.account === scope) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const curve = useMemo(() => buildStreakCurve(closed), [closed]);
