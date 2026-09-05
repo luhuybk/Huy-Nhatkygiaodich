@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { ChartCard, StatCard } from "./ui.jsx";
+import { ChartCard, StatCard, FxWarning } from "./ui.jsx";
 import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { fmt, fmtR, shiftDate, todayStr, weekLabel, weeklyAccountReport, weeklyRTrend, weekStart } from "../lib/helpers.js";
 
@@ -56,6 +56,8 @@ export function WeeklyReportPage({ trades, resources }) {
         Lệnh được xếp vào tuần theo <b>ngày đóng</b> — đó là lúc kết quả thành hình. Tuần tính từ Thứ 2 đến Chủ nhật.
         R tách thành phần thắng và phần lỗ vì +2R do "thắng 3R lỗ 1R" khác hẳn +2R do "thắng 12R lỗ 10R".
       </p>
+
+      <FxWarning resources={resources} what="Ô Lãi/lỗ quy đổi USD" />
 
       <div className="stat-grid">
         <StatCard label="R ròng cả tuần" value={report.total.rCount ? fmtR(report.total.rNet) : "—"}

@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
-import { formatVN, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
+import { formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
@@ -124,6 +124,22 @@ export function Field({ label, children, hint, required, incomplete }) {
       {children}
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
+  );
+}
+
+// Mọi chỗ hiện số "quy đổi USD" phải kèm cái này. Thiếu tỷ giá thì app quy 1:1 — 5 triệu VND
+// cộng vào như 5 triệu USD mà không một dòng cảnh báo nào; đó là cách một báo cáo nói dối.
+export function FxWarning({ resources, trades, what = "Con số quy đổi USD" }) {
+  const missing = missingFxAccounts(resources, trades);
+  if (!missing.length) return null;
+  return (
+    <p className="fx-warning">
+      <ShieldAlert size={13} />
+      <span>
+        {what} bên dưới <b>chưa đáng tin</b>: {missing.map((m) => `${m.currency} (${m.accounts.join(", ")})`).join(" · ")}
+        {" "}chưa có tỷ giá nên đang bị cộng thẳng như USD. Điền tỷ giá ở tab <b>Tài khoản</b>.
+      </span>
+    </p>
   );
 }
 

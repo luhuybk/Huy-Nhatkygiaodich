@@ -3,7 +3,7 @@ import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
-import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid } from "../lib/helpers.js";
+import { accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
 
 export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
   const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true };
@@ -50,6 +50,7 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
   const roots = accounts.filter((a) => !a.parentId);
   const childrenOf = (id) => accounts.filter((a) => a.parentId === id);
   const leaves = accounts.filter((a) => !accounts.some((x) => x.parentId === a.id));
+  const missingFx = missingFxAccounts({ accounts, fxRates }, null);
   const leafBalanceSumUSD = leaves.reduce((s, a) => s + toUSD(accountBalance(a, ledger, trades), a.currency, fxRates), 0);
   const leafInitialSumUSD = leaves.reduce((s, a) => s + toUSD(Number(a.initialBalance) || 0, a.currency, fxRates), 0);
   const usedCurrencies = Array.from(new Set(accounts.map((a) => a.currency).filter((c) => c && c !== "USD")));
@@ -103,13 +104,24 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
         <div className="fx-panel">
           <span className="field-label">Tỷ giá quy đổi (1 USD = ?)</span>
           <div className="fx-rows">
-            {usedCurrencies.map((c) => (
-              <div key={c} className="fx-row">
-                <span className="mono">{c}</span>
-                <input type="number" step="0.0001" className="input mono" value={fxRates[c] ?? ""} onChange={(e) => onFxRatesChange({ ...fxRates, [c]: Number(e.target.value) || 0 })} />
-              </div>
-            ))}
+            {usedCurrencies.map((c) => {
+              const missing = fxRate(c, fxRates) === null;
+              return (
+                <div key={c} className={`fx-row ${missing ? "fx-row-missing" : ""}`}>
+                  <span className="mono">{c}</span>
+                  <input type="number" step="0.0001" className="input mono" value={fxRates[c] ?? ""}
+                    placeholder="chưa có" title={missing ? `Chưa có tỷ giá — mọi số quy đổi USD đang cộng thẳng ${c} như USD` : undefined}
+                    onChange={(e) => onFxRatesChange({ ...fxRates, [c]: Number(e.target.value) || 0 })} />
+                </div>
+              );
+            })}
           </div>
+          {missingFx.length ? (
+            <span className="error-text">
+              Chưa điền tỷ giá cho {missingFx.map((m) => m.currency).join(", ")} — mọi con số "quy đổi USD" trong app
+              (Tổng quan, Báo cáo tuần, tin Telegram) đang cộng thẳng như USD, tức là sai.
+            </span>
+          ) : null}
           <span className="field-hint">Tỷ giá không tự cập nhật — chỉnh tay theo tỷ giá hiện tại khi cần.</span>
         </div>
       ) : null}

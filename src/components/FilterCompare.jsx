@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bookmark, GitCompare } from "lucide-react";
 import { applyFilters, cleanFilters, countActiveFilters, fmt, fmtR, tradeSetSummary } from "../lib/helpers.js";
+import { FxWarning } from "./ui.jsx";
 import { describeFilters } from "../lib/filterLabels.js";
 
 // Dưới ngần này lệnh đã đóng thì mọi con số chỉ là nhiễu. Không chặn người dùng xem, nhưng
@@ -95,6 +96,7 @@ export function FilterCompare({ trades, resources, setupErrors, skills, presets,
             <p className="empty-note" style={{ padding: "24px 0" }}>Chọn ít nhất một bộ lọc ở trên để so với toàn bộ nhật ký.</p>
           ) : (
             <>
+              <FxWarning resources={resources} trades={trades} what="Dòng Lãi/lỗ (USD)" />
               <div className="table-wrap">
                 <table className="table cmp-table">
                   <thead>

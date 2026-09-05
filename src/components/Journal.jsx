@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare } from "lucide-react";
-import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
@@ -188,7 +188,9 @@ function FilteredSummary({ list, total, resources, selected }) {
   const s = useMemo(() => tradeSetSummary(list, resources), [list, resources]);
   const rTone = (v) => (v > 0 ? "text-win" : v < 0 ? "text-loss" : "");
   return (
-    <div className="filter-summary">
+    <div>
+      <FxWarning resources={resources} trades={list} what="Ô Lãi/lỗ (USD)" />
+      <div className="filter-summary">
       <SummaryItem label="Lệnh" value={`${s.total} / ${total}`} />
       {selected ? <SummaryItem label="Đã chọn" value={selected} /> : null}
       {s.open ? <SummaryItem label="Đang mở" value={s.open} /> : null}
@@ -202,6 +204,7 @@ function FilteredSummary({ list, total, resources, selected }) {
         <SummaryItem label="Chưa ghi risk" value={`${s.closed - s.rCount} lệnh`} />
       ) : null}
       {s.awaitingProfit ? <SummaryItem label="Đã thoát, chưa điền lợi nhuận" value={`${s.awaitingProfit} lệnh`} tone="text-loss" /> : null}
+      </div>
     </div>
   );
 }

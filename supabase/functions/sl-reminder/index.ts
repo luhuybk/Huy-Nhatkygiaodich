@@ -131,6 +131,12 @@ function partialProfitOf(t: Record<string, unknown>) {
   return sum;
 }
 
+function fxRate(currency: string | undefined, fxRates: Record<string, number> | undefined) {
+  if (!currency || currency === "USD") return 1;
+  const r = Number(fxRates && fxRates[currency]);
+  return Number.isFinite(r) && r > 0 ? r : null;
+}
+
 function toUSD(amount: number, currency: string | undefined, fxRates: Record<string, number> | undefined) {
   if (!currency || currency === "USD") return amount;
   const rate = (fxRates && fxRates[currency]) || 1;
@@ -473,6 +479,8 @@ Deno.serve(async () => {
 
         const closed = trades.filter((t) => inRange(t.exitDate as string | undefined));
         let win = 0, loss = 0, be = 0, totalR = 0, rCount = 0, usd = 0, usdCount = 0;
+        // Thiếu tỷ giá thì toUSD quy 1:1 và dòng "Lãi/lỗ quy USD" thành vô nghĩa mà không ai biết.
+        const noRate = new Set<string>();
         // Tách R thắng và R lỗ cho từng tài khoản: +2R do "thắng 3R lỗ 1R" khác hẳn
         // +2R do "thắng 12R lỗ 10R", mà nhìn mỗi con số ròng thì không phân biệt được.
         type AccR = { win: number; loss: number; rWin: number; rLoss: number; rCount: number };
@@ -498,7 +506,9 @@ Deno.serve(async () => {
           }
           byAccount.set(name, acc);
 
-          const converted = toUSD(profit, currencyOf(t.account as string | undefined), fxRates);
+          const cur = currencyOf(t.account as string | undefined);
+          if (fxRate(cur, fxRates) === null) noRate.add(cur || "—");
+          const converted = toUSD(profit, cur, fxRates);
           if (!Number.isNaN(converted)) { usd += converted; usdCount++; }
         }
         const accountLines = [...byAccount.entries()]
@@ -552,7 +562,8 @@ Deno.serve(async () => {
           ],
           [
             ...(accountLines.length ? ["R từng tài khoản:", ...accountLines] : []),
-            usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}` : "",
+            usdCount ? `Lãi/lỗ quy USD: ${signed(usd, 2)}${noRate.size ? " ⚠ chưa đáng tin" : ""}` : "",
+            noRate.size ? `⚠ ${[...noRate].join(", ")} chưa có tỷ giá — đang cộng thẳng như USD. Điền ở tab Tài khoản.` : "",
           ],
           [
             `Lệnh mới mở: ${opened} · đang mở: ${stillOpen}`,

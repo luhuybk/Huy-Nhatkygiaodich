@@ -1143,10 +1143,39 @@ export function accountSyncsTime(account) {
   return !account || account.syncBrokerTime !== false;
 }
 
+// Trả null khi tiền tệ đó chưa có tỷ giá dùng được (thiếu, 0, âm, không phải số).
+// Không có hàm này thì chỗ nào cũng phải tự đoán, và cái đoán ấy là 1:1 — im lặng và sai.
+export function fxRate(currency, fxRates) {
+  if (!currency || currency === "USD") return 1;
+  const r = Number(fxRates && fxRates[currency]);
+  return Number.isFinite(r) && r > 0 ? r : null;
+}
+
 export function toUSD(amount, currency, fxRates) {
-  if (!currency || currency === "USD") return amount;
-  const rate = (fxRates && fxRates[currency]) || 1;
-  return amount / rate;
+  const rate = fxRate(currency, fxRates);
+  // Vẫn quy 1:1 như trước để con số không đổi đột ngột — nhưng mọi nơi hiện số USD phải
+  // gọi kèm missingFxAccounts() để nói ra là số đó không đáng tin.
+  return rate === null ? amount : amount / rate;
+}
+
+// Những tài khoản có mặt trong tập lệnh này mà tiền tệ chưa có tỷ giá. Truyền trades = null
+// để soi toàn bộ tài khoản trong Tài nguyên.
+export function missingFxAccounts(resources, trades) {
+  const accounts = (resources && resources.accounts) || [];
+  const fx = resources && resources.fxRates;
+  const inScope = trades ? new Set((trades || []).map((t) => t && t.account).filter(Boolean)) : null;
+  const bad = accounts.filter((a) => {
+    if (!a || !a.name) return false;
+    if (inScope && !inScope.has(a.name)) return false;
+    return fxRate(a.currency, fx) === null;
+  });
+  const byCurrency = new Map();
+  bad.forEach((a) => {
+    const c = a.currency || "—";
+    if (!byCurrency.has(c)) byCurrency.set(c, []);
+    byCurrency.get(c).push(a.name);
+  });
+  return Array.from(byCurrency, ([currency, names]) => ({ currency, accounts: names }));
 }
 
 // Lãi/lỗ của một lệnh quy đổi sang USD theo tiền tệ của tài khoản.
