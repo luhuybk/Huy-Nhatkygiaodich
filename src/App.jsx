@@ -557,6 +557,11 @@ function AppShell({ onSignOut, userEmail }) {
     "--bg": palette.bg, "--surface": palette.surface, "--surface-2": palette.surface2, "--border": palette.border,
     "--text": palette.text, "--text-dim": palette.textDim, "--win": palette.win, "--loss": palette.loss,
     "--accent": accentHex, "--accent-2": accentHex,
+    // Kênh màu rời để CSS pha nền mờ theo đúng màu đang chọn. Trước đây mọi nền mờ ghi cứng
+    // mã vàng, nên đổi màu nhấn sang xanh chỉ đổi được viền — nền vẫn vàng, giao diện hai màu.
+    "--accent-rgb": rgbChannels(accentHex),
+    "--win-rgb": rgbChannels(palette.win),
+    "--loss-rgb": rgbChannels(palette.loss),
   };
 
   return (
@@ -711,6 +716,14 @@ function AppShell({ onSignOut, userEmail }) {
       ) : null}
     </div>
   );
+}
+
+// "#d4a24e" -> "212,162,78" để dùng trong rgba(var(--accent-rgb), .12)
+function rgbChannels(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  if (!m) return "212,162,78";
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
 function AuthScreen() {

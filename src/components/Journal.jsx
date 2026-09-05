@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
@@ -8,6 +8,9 @@ import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, 
 import { applyFilters, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
+// Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
+const EMPTY = <span className="cell-empty">·</span>;
+
 const RR_PRESETS = [
   { label: "Thua quá -1R", from: "", to: "-1" },
   { label: "-1R → -0.7R", from: "-1", to: "-0.7" },
@@ -96,14 +99,27 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
   const clear = () => { setOpenMenu(""); setFilters({}); };
   // Mỗi lúc chỉ một bảng chọn được mở.
   const [openMenu, setOpenMenu] = useState("");
+  // Mười ba ô lọc chiếm gần một phần ba màn hình trước khi thấy dòng lệnh đầu tiên. Mặc định
+  // thu lại; đang lọc dở thì mở sẵn để không giấu mất thứ đang tác động lên danh sách.
+  const [open, setOpen] = useState(() => countActiveFilters(filters) > 0);
   const menu = (key) => ({ open: openMenu === key, onOpenChange: (v) => setOpenMenu(v ? key : "") });
 
+  const activeCount = countActiveFilters(filters);
   return (
     <div className="filter-panel">
       <PresetBar trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} filters={filters} setFilters={setFilters}
         presets={presets} onPresetsChange={onPresetsChange} />
+      <div className="filter-bar">
+        <input className="input filter-q" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
+        <button type="button" className={`btn btn-ghost ${activeCount ? "filter-toggle-on" : ""}`} onClick={() => setOpen((v) => !v)}>
+          <SlidersHorizontal size={13} /> Bộ lọc{activeCount ? ` (${activeCount})` : ""}
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {activeCount ? <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button> : null}
+      </div>
+      {!open ? null : (
+      <>
       <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <MultiFilterSelect {...menu("account")} value={filters.account} onChange={set("account")} options={resources.accounts.map((a) => a.name)} placeholder="Tài khoản" />
         <MultiFilterSelect {...menu("year")} value={filters.year} onChange={set("year")} options={years} placeholder="Năm" />
         <MultiFilterSelect {...menu("month")} value={filters.month} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
@@ -169,6 +185,8 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
         })}
         <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -385,24 +403,75 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
 }
 
 // Các cột có thể bấm để sắp xếp — key khớp với tradeSortValue() ở helpers.js.
+// `num` = căn phải + chữ số đều bề ngang để so sánh theo cột. `soft` = dữ liệu ngữ cảnh, làm mờ
+// đi. `strong` = kết quả của lệnh, thứ mắt phải bắt được đầu tiên.
 const JOURNAL_COLUMNS = [
-  { key: "entryDate", label: "Ngày" },
-  { key: "account", label: "Tài khoản" },
-  { key: "symbol", label: "Symbol" },
-  { key: null, label: "Ảnh" },
-  { key: "direction", label: "Hướng" },
-  { key: "setup", label: "Setup" },
-  { key: "timeframe", label: "TF" },
-  { key: "riskPercent", label: "%Risk" },
-  { key: "profit", label: "Lãi/Lỗ" },
-  { key: "rr", label: "RR" },
-  { key: "status", label: "Kết quả" },
-  { key: "score", label: "Chấm điểm" },
-  { key: "checklist", label: "Checklist" },
-  { key: "grade", label: "Đánh giá" },
-  { key: "completion", label: "Tiến độ" },
-  { key: "hasLesson", label: "Bài học" },
+  { id: "entryDate", key: "entryDate", label: "Ngày" },
+  { id: "account", key: "account", label: "Tài khoản", soft: true },
+  { id: "symbol", key: "symbol", label: "Symbol" },
+  { id: "images", key: null, label: "Ảnh" },
+  { id: "direction", key: "direction", label: "Hướng" },
+  { id: "setup", key: "setup", label: "Setup" },
+  { id: "timeframe", key: "timeframe", label: "TF", soft: true },
+  { id: "riskPercent", key: "riskPercent", label: "%Risk", num: true, soft: true },
+  { id: "profit", key: "profit", label: "Lãi/Lỗ", num: true, strong: true },
+  { id: "rr", key: "rr", label: "RR", num: true, strong: true },
+  { id: "status", key: "status", label: "Kết quả" },
+  { id: "score", key: "score", label: "Chấm điểm", num: true, soft: true },
+  { id: "checklist", key: "checklist", label: "Checklist", num: true, soft: true },
+  { id: "grade", key: "grade", label: "Đánh giá" },
+  { id: "completion", key: "completion", label: "Tiến độ", num: true, soft: true },
+  { id: "hasLesson", key: "hasLesson", label: "Bài học", soft: true },
 ];
+
+export const JOURNAL_COLUMN_IDS = JOURNAL_COLUMNS.map((c) => c.id);
+// Sáu cột trả lời được "lệnh gì, theo kịch bản nào, kết quả ra sao" — phần còn lại là ngữ cảnh.
+const JOURNAL_COMPACT = ["entryDate", "symbol", "setup", "profit", "rr", "status"];
+
+export function normalizeJournalColumns(value) {
+  if (!Array.isArray(value)) return JOURNAL_COLUMN_IDS;
+  const known = value.filter((id) => JOURNAL_COLUMN_IDS.includes(id));
+  // Ẩn hết thì bảng thành một khối trống không cứu được bằng giao diện — quay về đủ cột.
+  return known.length ? known : JOURNAL_COLUMN_IDS;
+}
+
+function ColumnPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const visible = normalizeJournalColumns(value);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  // Giữ nguyên thứ tự gốc của bảng dù người dùng tick theo thứ tự nào.
+  const toggle = (id) => onChange(JOURNAL_COLUMN_IDS.filter((x) => (x === id ? !visible.includes(id) : visible.includes(x))));
+  return (
+    <div className="msel" ref={ref}>
+      <button type="button" className="btn btn-ghost" onClick={() => setOpen((v) => !v)}>
+        <Columns3 size={13} /> Cột ({visible.length}/{JOURNAL_COLUMN_IDS.length})
+      </button>
+      {open ? (
+        <div className="msel-pop col-pop">
+          <div className="col-presets">
+            <button type="button" className="chip-btn" onClick={() => onChange(JOURNAL_COMPACT)}>Gọn</button>
+            <button type="button" className="chip-btn" onClick={() => onChange(JOURNAL_COLUMN_IDS)}>Đầy đủ</button>
+          </div>
+          {JOURNAL_COLUMNS.map((c) => (
+            <button key={c.id} type="button" className={`msel-opt ${visible.includes(c.id) ? "msel-opt-on" : ""}`}
+              onClick={() => toggle(c.id)}>
+              <span className="msel-box">{visible.includes(c.id) ? <Check size={11} /> : null}</span>
+              <span className="msel-opt-label">{c.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 // Hiện rõ đang sắp xếp theo những cấp nào — vừa để biết, vừa là cách thêm/bớt cấp
 // trên điện thoại (không giữ Shift được).
@@ -440,7 +509,7 @@ function SortBar({ sort, onChange }) {
   );
 }
 
-export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange }) {
+export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange, columns }) {
   const res = resources || { checklistItems: [] };
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   const selectable = !!selected && !!onToggleOne;
@@ -459,6 +528,8 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
     }
     onSortChange(at >= 0 ? levels.map((l, i) => (i === at ? flipped : l)) : [...levels, { key, dir: "desc" }]);
   };
+  const visible = normalizeJournalColumns(columns);
+  const shown = JOURNAL_COLUMNS.filter((c) => visible.includes(c.id));
   return (
     <div className="table-wrap">
       <table className="table">
@@ -469,11 +540,11 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 <input type="checkbox" checked={allSelected} onChange={() => onToggleAll(trades.map((t) => t.id))} aria-label="Chọn tất cả" />
               </th>
             ) : null}
-            {JOURNAL_COLUMNS.map((col, i) => {
+            {shown.map((col) => {
               const at = sortable && col.key ? levels.findIndex((l) => l.key === col.key) : -1;
               return (
-                <th key={col.key || `col-${i}`}
-                  className={sortable && col.key ? `th-sortable ${at >= 0 ? "th-sorted" : ""}` : ""}
+                <th key={col.id}
+                  className={`${sortable && col.key ? `th-sortable ${at >= 0 ? "th-sorted" : ""}` : ""} ${col.num ? "cell-num" : ""}`}
                   onClick={(e) => clickHeader(col.key, e.shiftKey)}
                   title={sortable && col.key ? `Sắp xếp theo ${col.label} — giữ Shift để thêm làm cấp phụ` : undefined}>
                   {col.label}
@@ -499,6 +570,60 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
             const cp = checklistProgress(t, res);
             const completion = tradeCompletion(t);
             const shots = tradeImageShots(t);
+            const score = avgPillarScore(t);
+            const td = (col, inner, extra = {}) => (
+              <td key={col.id} {...extra}
+                className={`${extra.className || ""} ${col.num ? "cell-num" : ""} ${col.soft ? "cell-soft" : ""} ${col.strong ? "cell-strong" : ""}`.trim()}>
+                {inner}
+              </td>
+            );
+            const C = Object.fromEntries(JOURNAL_COLUMNS.map((c) => [c.id, c]));
+            const cells = {
+              entryDate: td(C.entryDate, t.entryDate || EMPTY, { className: "mono" }),
+              account: td(C.account, t.account || EMPTY),
+              symbol: td(C.symbol, t.symbol, { style: { fontWeight: 600 } }),
+              images: td(C.images, <Strip items={shots} empty={false} />, { onClick: (e) => e.stopPropagation() }),
+              direction: td(C.direction, <span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span>),
+              setup: td(C.setup, t.setup || EMPTY),
+              timeframe: td(C.timeframe, t.timeframe || EMPTY, { className: "mono" }),
+              riskPercent: td(C.riskPercent, t.riskPercent === "" || t.riskPercent === null || t.riskPercent === undefined ? EMPTY : `${t.riskPercent}%`, { className: "mono" }),
+              profit: td(C.profit, (
+                <>
+                  {banked === null ? EMPTY : fmtMoney(banked, tradeCurrency(t, res))}
+                  {partialCount ? <span className="partial-badge" title={`Đã chốt bớt ${partialCount} lần`}>×{partialCount}</span> : null}
+                </>
+              ), {
+                className: `mono ${banked === null ? "" : settled ? (banked > 0 ? "text-win" : banked < 0 ? "text-loss" : "") : "partial-pending"}`,
+                title: banked === null ? "" : settled ? `Quy đổi: ${fmtMoney(tradeProfitUSD(t, res), "USD")}` : "Đã chốt bớt một phần — lệnh chưa đóng hẳn",
+              }),
+              rr: td(C.rr, rr === null ? EMPTY : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`,
+                { className: `mono ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}` }),
+              status: td(C.status, status === "open"
+                ? <span className="status-pill open">Đang mở</span>
+                : <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>),
+              score: td(C.score, score === null ? EMPTY : `${score.toFixed(1)}★`,
+                { className: `mono ${score === null ? "" : score >= 4 ? "text-win" : score <= 2 ? "text-loss" : ""}` }),
+              checklist: td(C.checklist, cp === null ? EMPTY : (
+                <span className={`checklist-progress ${cp.checked === cp.total ? "checklist-progress-full" : cp.checked === 0 ? "checklist-progress-empty" : ""}`}>
+                  {cp.checked}/{cp.total}
+                </span>
+              ), { className: "mono" }),
+              grade: td(C.grade, t.tradeGrade
+                ? <span className="grade-tag">{GRADE_OPTIONS.find((g) => g.id === t.tradeGrade)?.tone === "win" ? "\ud83d\udc4d" : "\u2620\ufe0f"}</span>
+                : EMPTY),
+              completion: td(C.completion, (
+                <>
+                  {completion.percent < 100 ? <AlertCircle size={11} style={{ verticalAlign: -1, marginRight: 3 }} color="var(--loss)" /> : null}
+                  {completion.percent}%
+                </>
+              ), {
+                className: `mono ${completion.percent >= 80 ? "text-win" : completion.percent < 40 ? "text-loss" : ""}`,
+                title: completion.percent < 100
+                  ? `${completion.done}/${completion.total} mục — Còn thiếu: ${missingCompletionFields(t).join(", ")}`
+                  : `${completion.done}/${completion.total} mục — Đã hoàn thành đủ`,
+              }),
+              hasLesson: td(C.hasLesson, t.hasLesson ? <StickyNote size={16} className="lesson-icon" /> : EMPTY, { title: t.lessonNote || "" }),
+            };
             return (
               <tr key={t.id} onClick={() => onEdit(t)} className={t.hasLesson ? "row-has-lesson" : ""}>
                 {selectable ? (
@@ -506,41 +631,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                     <input type="checkbox" checked={selected.has(t.id)} onChange={() => onToggleOne(t.id)} aria-label="Chọn lệnh" />
                   </td>
                 ) : null}
-                <td className="mono">{t.entryDate || "—"}</td>
-                <td>{t.account || "—"}</td>
-                <td style={{ fontWeight: 600 }}>{t.symbol}</td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <Strip items={shots} />
-                </td>
-                <td><span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span></td>
-                <td>{t.setup || "—"}</td>
-                <td className="mono">{t.timeframe || "—"}</td>
-                <td className="mono">{t.riskPercent === "" || t.riskPercent === null || t.riskPercent === undefined ? "—" : `${t.riskPercent}%`}</td>
-                <td className={`mono ${banked === null ? "" : settled ? (banked > 0 ? "text-win" : banked < 0 ? "text-loss" : "") : "partial-pending"}`}
-                  title={banked === null ? "" : settled ? `Quy đổi: ${fmtMoney(tradeProfitUSD(t, res), "USD")}` : "Đã chốt bớt một phần — lệnh chưa đóng hẳn"}>
-                  {banked === null ? "—" : fmtMoney(banked, tradeCurrency(t, res))}
-                  {partialCount ? <span className="partial-badge" title={`Đã chốt bớt ${partialCount} lần`}>×{partialCount}</span> : null}
-                </td>
-                <td className={`mono ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}`}>{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</td>
-                <td>{status === "open" ? <span className="status-pill open">Đang mở</span> :
-                  <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>}</td>
-                <td className={`mono ${avgPillarScore(t) === null ? "" : avgPillarScore(t) >= 4 ? "text-win" : avgPillarScore(t) <= 2 ? "text-loss" : ""}`}>
-                  {avgPillarScore(t) === null ? "—" : `${avgPillarScore(t).toFixed(1)}★`}
-                </td>
-                <td className="mono">
-                  {cp === null ? "—" : (
-                    <span className={`checklist-progress ${cp.checked === cp.total ? "checklist-progress-full" : cp.checked === 0 ? "checklist-progress-empty" : ""}`}>
-                      {cp.checked}/{cp.total}
-                    </span>
-                  )}
-                </td>
-                <td>{t.tradeGrade ? <span className="grade-tag">{GRADE_OPTIONS.find((g) => g.id === t.tradeGrade)?.tone === "win" ? "\ud83d\udc4d" : "\u2620\ufe0f"}</span> : "—"}</td>
-                <td className={`mono ${completion.percent >= 80 ? "text-win" : completion.percent < 40 ? "text-loss" : ""}`}
-                  title={completion.percent < 100 ? `${completion.done}/${completion.total} mục — Còn thiếu: ${missingCompletionFields(t).join(", ")}` : `${completion.done}/${completion.total} mục — Đã hoàn thành đủ`}>
-                  {completion.percent < 100 ? <AlertCircle size={11} style={{ verticalAlign: -1, marginRight: 3 }} color="var(--loss)" /> : null}
-                  {completion.percent}%
-                </td>
-                <td title={t.lessonNote || ""}>{t.hasLesson ? <StickyNote size={16} className="lesson-icon" /> : "—"}</td>
+                {shown.map((col) => cells[col.id])}
                 <td onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: 2 }}>
                     <button type="button" className="row-btn" onClick={() => onEdit(t)}><Pencil size={13} /></button>
@@ -556,7 +647,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
   );
 }
 
-export function TradingCalendar({ trades, resources, onEdit }) {
+export function TradingCalendar({ trades, resources, onEdit, columns }) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [selected, setSelected] = useState("");
   const y = cursor.getFullYear(), m = cursor.getMonth();
@@ -624,7 +715,7 @@ export function TradingCalendar({ trades, resources, onEdit }) {
       {selected ? (
         <div style={{ marginTop: 16 }}>
           <h3 className="block-title">Giao dịch ngày {selected}</h3>
-          <JournalTable trades={selectedTrades} resources={resources} onEdit={onEdit} onDelete={() => {}} />
+          <JournalTable trades={selectedTrades} resources={resources} onEdit={onEdit} onDelete={() => {}} columns={columns} />
         </div>
       ) : null}
     </div>
@@ -645,6 +736,7 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
     onUiSettingsChange({ ...uiSettings, journalFilters: next });
   };
   const setSort = (next) => onUiSettingsChange({ ...uiSettings, journalSort: next });
+  const setColumns = (next) => onUiSettingsChange({ ...uiSettings, journalColumns: next });
   const filtered = useMemo(
     () => sortTrades(applyFilters(trades, filters, resources), sort, resources),
     [trades, filters, resources, sort]
@@ -712,6 +804,7 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
                   <DangerConfirmButton label={`Xóa (${selected.size})`} confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onBulkDelete(Array.from(selected)); setSelected(new Set()); }} />
                 </>
               ) : null}
+              <ColumnPicker value={uiSettings && uiSettings.journalColumns} onChange={setColumns} />
               <button type="button" className="btn btn-ghost" onClick={exportCsv} disabled={filtered.length === 0}
                 title="Xuất đúng những lệnh đang hiển thị theo bộ lọc và thứ tự hiện tại">
                 <Download size={13} /> Xuất CSV ({filtered.length})
@@ -719,10 +812,10 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
             </div>
           </div>
           <SortBar sort={sort} onChange={setSort} />
-          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} />
+          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} />
         </div>
       ) : tab === "calendar" ? (
-        <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} />
+        <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} columns={uiSettings && uiSettings.journalColumns} />
       ) : null}
     </div>
   );
