@@ -42,6 +42,7 @@ export const COMPLETION_FILTERS = [
   { id: "mid", label: "Trung bình (40-79%)" },
   { id: "high", label: "Sắp xong (80-99%)" },
   { id: "full", label: "Đã hoàn thành đủ (100%)" },
+  { id: "brokerPending", label: "Kết quả từ sàn, chưa soát", short: "từ sàn chưa soát" },
 ];
 const pick = (list, id) => { const x = list.find((o) => o.id === id); return x ? (x.short || x.label) : id; };
 

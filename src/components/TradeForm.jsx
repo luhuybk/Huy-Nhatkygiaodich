@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
 const PERCENT_PRESETS = [25, 33, 50, 100];
@@ -212,13 +212,20 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
       return;
     }
     setFormError("");
-    onSave(t);
+    // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn".
+    onSave(clearBrokerFilled(t));
   };
 
   return (
     <div className="trade-form">
       <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky />
+      {t.brokerFilled ? (
+        <p className="broker-note">
+          <FileSpreadsheet size={13} /> Lợi nhuận, ngày thoát và phí của lệnh này do <b>file sàn điền hộ</b> ngày {t.brokerFilled} —
+          phần đánh giá bên dưới vẫn là việc của bạn. Lưu lệnh một lần là dấu này mất.
+        </p>
+      ) : null}
       <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required>

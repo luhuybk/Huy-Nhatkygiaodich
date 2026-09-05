@@ -819,3 +819,30 @@
           .tl-src-name { flex:1 1 auto; }
           .tl-src-input { margin-left:auto; }
         }
+
+/* Kết quả do file sàn điền hộ — lệnh thành "đã đóng" ngay nên rất dễ trôi mất */
+.broker-dot {
+  margin-left: 5px; padding: 1px 5px; border-radius: 4px;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), .10);
+  border: 1px solid rgba(var(--accent-rgb), .35);
+  cursor: help;
+}
+.broker-note {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 8px 11px;
+  font-size: 12px; line-height: 1.5; color: var(--text-dim);
+  background: rgba(var(--accent-rgb), .07);
+  border: 1px solid rgba(var(--accent-rgb), .25);
+  border-radius: 7px;
+}
+.broker-note b { color: var(--text); }
+.rec-followup {
+  margin: 4px 0 18px; padding: 12px 14px 10px;
+  background: rgba(var(--accent-rgb), .05);
+  border: 1px solid rgba(var(--accent-rgb), .22);
+  border-radius: 9px;
+}
+.rec-followup .rec-title { margin-top: 0; }
+.rec-missing { font-size: 11px; color: var(--text-dim); max-width: 320px; }

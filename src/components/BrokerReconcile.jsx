@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, Flag, PlusCircle, RotateCcw, Scissors, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, Flag, ListChecks, PlusCircle, RotateCcw, Scissors, X } from "lucide-react";
 import { Field, ResourceSelect } from "./ui.jsx";
 import {
   guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerPosition,
   withBrokerFees, withBrokerOutcome, withBrokerTimes,
 } from "../lib/brokerCsv.js";
-import { accountSyncsTime, computeResult, fmtMoney, uid } from "../lib/helpers.js";
+import { accountSyncsTime, computeResult, fmtMoney, missingCompletionFields, tradeCompletion, tradeCurrency, uid } from "../lib/helpers.js";
 
 function money(v, currency) {
   return v === null || v === undefined ? "—" : fmtMoney(v, currency);
@@ -26,7 +26,7 @@ function planSummary(plan, currency) {
 
 // Một file = một tài khoản. Sáu tài khoản thì thả cả sáu file vào một lượt, mỗi file một thẻ
 // kết quả riêng — chứ chọn tài khoản rồi tải lại sáu lần thì quá mất công cho việc làm hằng tuần.
-function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, onCreateTrade, onEditTrade, onUpdateTrade }) {
+function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, onCreateTrade, onEditTrade, onUpdateTrade, onFillOutcome }) {
   const acc = accounts.find((a) => a.name === file.account);
   const currency = (acc || {}).currency || "USD";
   const syncTime = accountSyncsTime(acc);
@@ -139,7 +139,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                         <td>{planSummary(m.outcome, currency)}</td>
                         <td className="rec-actions">
                           <button type="button" className="btn btn-ghost"
-                            onClick={() => onUpdateTrade([withBrokerOutcome(m.trade, m.position, syncTime)])}>
+                            onClick={() => onFillOutcome([withBrokerOutcome(m.trade, m.position, syncTime)])}>
                             <Flag size={13} /> Điền kết quả
                           </button>
                           <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(m.trade)}>Mở lệnh</button>
@@ -156,7 +156,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
               </p>
               {outcomeRows.length > 1 ? (
                 <button type="button" className="btn"
-                  onClick={() => onUpdateTrade(outcomeRows.map((m) => withBrokerOutcome(m.trade, m.position, syncTime)))}>
+                  onClick={() => onFillOutcome(outcomeRows.map((m) => withBrokerOutcome(m.trade, m.position, syncTime)))}>
                   <Flag size={13} /> Điền kết quả cho cả {outcomeRows.length} lệnh
                 </button>
               ) : null}
@@ -288,11 +288,70 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
   );
 }
 
+// Điền kết quả xong là lệnh có lợi nhuận, tức là "đã đóng" theo cách app tính — nó rời khỏi
+// nhóm đang mở VÀ rời khỏi luôn bảng bên trên (bảng đó chỉ nhặt lệnh chưa có lợi nhuận). Nếu
+// không giữ lại ở đây thì bấm xong là mất dấu, trong khi ảnh thoát, tâm lý, chấm điểm vẫn trống.
+function FollowUp({ list, resources, onEditTrade, onDismiss }) {
+  if (!list.length) return null;
+  return (
+    <div className="rec-followup">
+      <h4 className="rec-title rec-title-warn">
+        <ListChecks size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
+        Vừa điền kết quả từ sàn — còn phải tự điền nốt ({list.length})
+      </h4>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Symbol</th><th>Vào lệnh</th><th>Kết quả</th><th>Tiến độ</th><th>Còn thiếu</th><th /></tr></thead>
+          <tbody>
+            {list.map((t) => {
+              const r = computeResult(t);
+              const c = tradeCompletion(t);
+              const missing = missingCompletionFields(t);
+              return (
+                <tr key={t.id}>
+                  <td><b>{t.symbol}</b></td>
+                  <td>{t.entryDate} {t.entryTime || ""}</td>
+                  <td className={r.profit > 0 ? "text-win" : r.profit < 0 ? "text-loss" : ""}>
+                    {money(r.profit, tradeCurrency(t, resources))}
+                  </td>
+                  <td className={`mono ${c.percent < 40 ? "text-loss" : ""}`}>{c.percent}%</td>
+                  <td className="rec-missing" title={missing.join(", ")}>
+                    {missing.slice(0, 4).join(", ")}{missing.length > 4 ? ` +${missing.length - 4} mục` : ""}
+                  </td>
+                  <td><button type="button" className="btn btn-ghost" onClick={() => onEditTrade(t)}>Mở lệnh</button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="field-hint">
+        Sàn chỉ biết tiền và thời gian; setup, ảnh, tâm lý và chấm điểm thì chỉ bạn biết. Lệnh tự rời
+        danh sách này khi đủ 100%. Rời tab rồi vẫn tìm lại được: nhật ký gắn nhãn <b>"sàn"</b> cạnh kết
+        quả, bộ lọc Tiến độ có mục <b>"Kết quả từ sàn, chưa soát"</b>, và trang Sức khỏe dữ liệu liệt kê đủ.
+      </p>
+      <button type="button" className="btn btn-ghost" onClick={onDismiss}>Ẩn danh sách này</button>
+    </div>
+  );
+}
+
 export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
   const accounts = resources.accounts || [];
   const symbols = resources.symbols || [];
   const [files, setFiles] = useState([]);
+  const [touched, setTouched] = useState([]);
   const fileRef = useRef(null);
+
+  const fillOutcome = (list) => {
+    onUpdateTrade(list);
+    setTouched((prev) => Array.from(new Set([...prev, ...list.map((t) => t.id)])));
+  };
+
+  // Đọc lại từ `trades` chứ không giữ bản chụp: điền nốt ở tab khác là dòng ở đây biến mất luôn.
+  const followUp = useMemo(() => {
+    const byId = new Map((trades || []).map((t) => [t.id, t]));
+    return touched.map((id) => byId.get(id)).filter((t) => t && tradeCompletion(t).percent < 100);
+  }, [touched, trades]);
 
   const addFiles = async (list) => {
     const picked = Array.from(list || []);
@@ -322,6 +381,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
 
   const reset = () => {
     setFiles([]);
+    setTouched([]);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -360,7 +420,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
           ) : null}
           {totals.outcomes.length > 1 ? (
             <button type="button" className="btn"
-              onClick={() => onUpdateTrade(totals.outcomes.map((x) => withBrokerOutcome(x.m.trade, x.m.position, x.syncTime)))}>
+              onClick={() => fillOutcome(totals.outcomes.map((x) => withBrokerOutcome(x.m.trade, x.m.position, x.syncTime)))}>
               <Flag size={13} /> Điền kết quả cho cả {totals.outcomes.length} lệnh (mọi file)
             </button>
           ) : null}
@@ -379,11 +439,13 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
         </div>
       ) : null}
 
+      <FollowUp list={followUp} resources={resources} onEditTrade={onEditTrade} onDismiss={() => setTouched([])} />
+
       {files.map((f, i) => (
         <FileCard key={f.id} file={f} result={results[i]} accounts={accounts} symbols={symbols}
           onAccountChange={(v) => setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, account: v, guessed: false } : x)))}
           onRemove={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
-          onCreateTrade={onCreateTrade} onEditTrade={onEditTrade} onUpdateTrade={onUpdateTrade} />
+          onCreateTrade={onCreateTrade} onEditTrade={onEditTrade} onUpdateTrade={onUpdateTrade} onFillOutcome={fillOutcome} />
       ))}
     </div>
   );

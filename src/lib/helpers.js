@@ -1778,6 +1778,21 @@ export function isFieldMissing(t, key) {
   return entry ? !entry[1] : false;
 }
 
+// Đối chiếu sàn điền hộ lợi nhuận thì lệnh lập tức thành "đã đóng" — nó rời khỏi nhóm "đang
+// mở", rời khỏi bảng "sàn đã có kết quả" vừa bấm, và trôi khỏi tầm mắt dù phần đánh giá còn
+// trống nguyên. Dấu này giữ lệnh ở lại tầm mắt cho tới khi bạn mở ra lưu lại một lần.
+export function brokerPending(t) {
+  return !!(t && t.brokerFilled) && tradeCompletion(t).percent < 100;
+}
+
+// Mở lệnh ra lưu lại = đã tự soát, gỡ dấu. Lệnh điền đủ 100% cũng tự hết dấu qua brokerPending.
+export function clearBrokerFilled(t) {
+  if (!t || !t.brokerFilled) return t;
+  const next = { ...t };
+  delete next.brokerFilled;
+  return next;
+}
+
 export function fmt(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -1964,6 +1979,14 @@ export function journalHealth(trades, resources, setupErrors, presets, skills) {
     label: "Lệnh trỏ tới giá trị không còn trong Tài nguyên",
     hint: `Giá trị đã bị xóa hoặc đổi tên: ${orphanDetail.join(" · ")}. Lệnh giữ tên cũ sẽ rơi khỏi bộ lọc và mọi thống kê theo chiều đó.`,
     ids: Array.from(orphanIds),
+  });
+
+  add({
+    id: "brokerFilled", tone: "warn",
+    label: "Kết quả lấy từ file sàn, chưa mở lại soát",
+    hint: 'Đối chiếu sàn đã điền hộ lợi nhuận nên lệnh chuyển sang "đã đóng" ngay và rời khỏi nhóm đang mở, nhưng phần bạn phải tự viết vẫn trống. Mở lệnh ra lưu lại một lần là hết dấu.',
+    ids: all.filter(brokerPending).map((t) => t.id),
+    filter: { completion: "brokerPending" },
   });
 
   add({
@@ -2488,6 +2511,7 @@ export function applyFilters(trades, filters, resources) {
       if (filters.completion === "mid" && (percent < 40 || percent >= 80)) return false;
       if (filters.completion === "high" && (percent < 80 || percent >= 100)) return false;
       if (filters.completion === "full" && percent !== 100) return false;
+      if (filters.completion === "brokerPending" && !brokerPending(t)) return false;
     }
     return true;
   });

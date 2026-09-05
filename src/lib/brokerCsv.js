@@ -311,13 +311,17 @@ export function brokerOutcomePlan(trade, position, syncTime = true) {
   return { changed: !!(partials.length || close || fees), partials, close, fees, position };
 }
 
-export function withBrokerOutcome(trade, position, syncTime = true) {
+export function withBrokerOutcome(trade, position, syncTime = true, stampedAt = null) {
   const plan = brokerOutcomePlan(trade, position, syncTime);
   if (!plan.changed) return trade;
   const next = { ...trade };
   if (plan.partials.length) next.partialExits = [...partialExitsOf(trade), ...plan.partials];
   if (plan.close) Object.assign(next, plan.close);
   if (plan.fees !== null) next.fees = plan.fees;
+  // Sàn điền hộ lợi nhuận là lệnh thành "đã đóng" ngay, dù ảnh thoát, tâm lý, chấm điểm vẫn
+  // trống — và nó rời khỏi đúng cái bảng bạn vừa bấm. Đánh dấu lại để còn tìm ra mà điền nốt;
+  // dấu mất khi bạn mở lệnh ra lưu lại (clearBrokerFilled) hoặc khi lệnh đủ 100%.
+  next.brokerFilled = stampedAt || localDate(new Date());
   return next;
 }
 

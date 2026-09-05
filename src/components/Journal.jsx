@@ -5,7 +5,7 @@ import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -598,9 +598,16 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
               }),
               rr: td(C.rr, rr === null ? EMPTY : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`,
                 { className: `mono ${rr > 0 ? "text-win" : rr < 0 ? "text-loss" : ""}` }),
-              status: td(C.status, status === "open"
-                ? <span className="status-pill open">Đang mở</span>
-                : <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>),
+              status: td(C.status, (
+                <>
+                  {status === "open"
+                    ? <span className="status-pill open">Đang mở</span>
+                    : <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>}
+                  {brokerPending(t) ? (
+                    <span className="broker-dot" title="Kết quả do file sàn điền hộ, bạn chưa mở lệnh ra soát — phần đánh giá còn trống">sàn</span>
+                  ) : null}
+                </>
+              )),
               score: td(C.score, score === null ? EMPTY : `${score.toFixed(1)}★`,
                 { className: `mono ${score === null ? "" : score >= 4 ? "text-win" : score <= 2 ? "text-loss" : ""}` }),
               checklist: td(C.checklist, cp === null ? EMPTY : (
