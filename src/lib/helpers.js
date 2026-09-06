@@ -2783,16 +2783,63 @@ export function fmtMoney(value, currency) {
   return `${neg ? "-" : ""}${numStr} ${cur}`;
 }
 
+// Ba trạng thái theo dõi. Tách "đã review xong" khỏi "còn phải xem" mới lọc ra được đúng
+// đống việc cuối tuần — chứ cùng gắn cờ theo dõi thì cái đã xong vẫn nằm lẫn trong đó.
+export function watchState(n) {
+  if (!n || !n.watch) return "none";
+  return n.watchDone ? "done" : "pending";
+}
+
+export function countPendingWatch(items) {
+  return (items || []).filter((n) => watchState(n) === "pending").length;
+}
+
+export const WATCH_FILTERS = [
+  { id: "pending", label: "Cần theo dõi — chưa review" },
+  { id: "done", label: "Đã theo dõi xong" },
+  { id: "any", label: "Có đánh dấu theo dõi" },
+  { id: "none", label: "Không đánh dấu" },
+];
+
 export function applyMissSkipFilters(items, filters, dateField) {
   return items.filter((n) => {
     if (filters.q && !(n.symbol || "").toLowerCase().includes(filters.q.toLowerCase())) return false;
     if (filters.timeframe && n.timeframe !== filters.timeframe) return false;
     if (filters.setup && n.setup !== filters.setup) return false;
     if (filters.reason && n.reason !== filters.reason) return false;
+    if (filters.watch) {
+      const st = watchState(n);
+      if (filters.watch === "any" ? st === "none" : st !== filters.watch) return false;
+    }
     if (filters.from && (n[dateField] || "") < filters.from) return false;
     if (filters.to && (n[dateField] || "") > filters.to) return false;
     return true;
   });
+}
+
+// Gom biến thể theo loại setup. Câu hỏi của mục này là "cùng một setup có mấy kiểu chạy",
+// mà xếp theo ngày thì các biến thể của cùng một setup nằm rải rác khắp bảng, không đối
+// chiếu được với nhau. Thứ tự nhóm theo đúng thứ tự setup bạn xếp ở Tài nguyên.
+export function groupBySetup(items, setups, dateField) {
+  const order = new Map((setups || []).map((s, i) => [s, i]));
+  const groups = new Map();
+  (items || []).forEach((n) => {
+    const key = (n && n.setup) || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  });
+  const out = Array.from(groups.entries()).map(([setup, list]) => ({
+    setup,
+    list: list.slice().sort((a, b) => (b[dateField] || "").localeCompare(a[dateField] || "")),
+  }));
+  out.sort((a, b) => {
+    // "Chưa gán setup" luôn xuống cuối, không thì nó chen lên đầu vì tên rỗng.
+    if (!a.setup !== !b.setup) return a.setup ? -1 : 1;
+    const ai = order.has(a.setup) ? order.get(a.setup) : 1e6;
+    const bi = order.has(b.setup) ? order.get(b.setup) : 1e6;
+    return ai - bi || a.setup.localeCompare(b.setup);
+  });
+  return out;
 }
 
 export function applyProblemLogFilters(items, filters) {

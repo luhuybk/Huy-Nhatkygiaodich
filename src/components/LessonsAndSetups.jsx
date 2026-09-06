@@ -2,21 +2,41 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
 
-export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel }) {
+// `showWatch` chỉ bật ở Bị miss / Bị skip. Biến thể không có khái niệm theo dõi, hiện ô lọc
+// đó ở đấy chỉ tổ khiến người dùng tưởng mình quên đánh dấu.
+export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOptions, dateKeyLabel, items, showWatch }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => setFilters({});
+  // Đếm trên TOÀN BỘ danh sách chứ không phải danh sách đã lọc: con số này để bạn biết còn
+  // bao nhiêu việc chưa xem, nó phải đứng yên khi bạn nghịch các bộ lọc khác.
+  const pending = countPendingWatch(items);
+  const onlyPending = filters.watch === "pending";
   return (
     <div className="filter-panel">
+      {showWatch ? (
+      <button type="button" className={`watch-quick ${onlyPending ? "watch-quick-on" : ""} ${pending ? "" : "watch-quick-empty"}`}
+        title="Lọc nhanh những cái bạn đã đánh dấu theo dõi mà chưa review — dành cho buổi xem lại cuối tuần"
+        onClick={() => setFilters((p) => ({ ...p, watch: onlyPending ? "" : "pending" }))}>
+        <Eye size={14} /> Cần theo dõi
+        <span className="watch-quick-count">{pending}</span>
+      </button>
+      ) : null}
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
         <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
         {reasonOptions ? <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" /> : null}
+        {showWatch ? (
+          <select className="input" value={filters.watch || ""} onChange={(e) => set("watch")(e.target.value)}>
+            <option value="">Mọi trạng thái theo dõi</option>
+            {WATCH_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        ) : null}
         <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
         <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
       </div>
@@ -122,7 +142,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
           </div>
         </FormModal>
       ) : null}
-      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.missReasons} dateKeyLabel="Ngày miss" />
+      <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.missReasons} dateKeyLabel="Ngày miss" showWatch />
       <div className="table-wrap" style={{ marginTop: 16 }}>
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p> : (
           <table className="table">
@@ -133,7 +153,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
               {sorted.map((n) => {
                 const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
                 return (
-                  <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
+                  <tr key={n.id} onClick={() => openEdit(n)} className={watchState(n) === "pending" ? "row-watch" : ""}>
                     <td className="mono">{n.missDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -261,7 +281,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
           </div>
         </FormModal>
       ) : null}
-      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.skipReasons} dateKeyLabel="Ngày skip" />
+      <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.skipReasons} dateKeyLabel="Ngày skip" showWatch />
       <div className="table-wrap" style={{ marginTop: 16 }}>
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p> : (
           <table className="table">
@@ -272,7 +292,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
               {sorted.map((n) => {
                 const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
                 return (
-                  <tr key={n.id} onClick={() => openEdit(n)} className={n.watch ? "row-watch" : ""}>
+                  <tr key={n.id} onClick={() => openEdit(n)} className={watchState(n) === "pending" ? "row-watch" : ""}>
                     <td className="mono">{n.skipDate || "—"}</td>
                     <td style={{ fontWeight: 600 }}>{n.symbol}</td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -321,10 +341,13 @@ export function SetupVariantsSection({ items, resources, onChange }) {
     setForm(emptyVariant());
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
-  const sorted = useMemo(
-    () => applyMissSkipFilters(items, filters, "variantDate").sort((a, b) => (b.variantDate || "").localeCompare(a.variantDate || "")),
-    [items, filters]
+  // Xếp theo ngày thì biến thể của cùng một setup nằm rải rác, không so với nhau được.
+  // Gom theo loại setup, trong mỗi nhóm mới xếp mới nhất trước.
+  const groups = useMemo(
+    () => groupBySetup(applyMissSkipFilters(items, filters, "variantDate"), resources.setups, "variantDate"),
+    [items, filters, resources.setups]
   );
+  const shown = groups.reduce((n, g) => n + g.list.length, 0);
 
   return (
     <div>
@@ -363,36 +386,44 @@ export function SetupVariantsSection({ items, resources, onChange }) {
           </div>
         </FormModal>
       ) : null}
-      <MissSkipFilterPanel filters={filters} setFilters={setFilters} resources={resources} dateKeyLabel="Ngày" />
-      <div className="table-wrap" style={{ marginTop: 16 }}>
-        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có biến thể nào khớp bộ lọc.</p> : (
-          <table className="table">
-            <thead>
-              <tr><th>Ngày</th><th>Symbol</th><th>Ảnh</th><th>Setup</th><th>TF</th><th>Ghi chú</th><th></th></tr>
-            </thead>
-            <tbody>
-              {sorted.map((n) => (
-                <tr key={n.id} onClick={() => openEdit(n)}>
-                  <td className="mono">{n.variantDate || "—"}</td>
-                  <td style={{ fontWeight: 600 }}>{n.symbol}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <Strip items={lessonAttachments(n)} />
-                  </td>
-                  <td>{n.setup || "—"}</td>
-                  <td className="mono">{n.timeframe || "—"}</td>
-                  <td style={{ maxWidth: 260, whiteSpace: "normal", color: "var(--text-dim)", fontSize: 12.5 }}>{n.note || "—"}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 2 }}>
-                      <button type="button" className="row-btn" onClick={() => openEdit(n)}><Pencil size={13} /></button>
-                      <ConfirmButton onConfirm={() => remove(n.id)} />
+      <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} dateKeyLabel="Ngày" />
+      {shown === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có biến thể nào khớp bộ lọc.</p> : (
+        <div className="var-groups">
+          {groups.map((g) => (
+            <section key={g.setup || "__none__"} className="var-group">
+              <h4 className="var-group-head">
+                <Shapes size={14} />
+                <span className={g.setup ? "" : "var-group-none"}>{g.setup || "Chưa gán setup"}</span>
+                <span className="var-group-count">{g.list.length} biến thể</span>
+              </h4>
+              <div className="var-grid">
+                {g.list.map((n) => (
+                  <article key={n.id} className="var-card" role="button" tabIndex={0}
+                    onClick={() => openEdit(n)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(n); }
+                    }}>
+                    <div className="var-card-shots" onClick={(e) => e.stopPropagation()}>
+                      <Strip items={lessonAttachments(n)} empty={false} />
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    <div className="var-card-head">
+                      <b>{n.symbol || "—"}</b>
+                      {n.timeframe ? <span className="var-card-tf mono">{n.timeframe}</span> : null}
+                      <span className="var-card-date mono">{n.variantDate || "—"}</span>
+                      <span className="var-card-tools" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" className="row-btn" aria-label="Sửa biến thể" onClick={() => openEdit(n)}><Pencil size={13} /></button>
+                        <ConfirmButton onConfirm={() => remove(n.id)} />
+                      </span>
+                    </div>
+                    {n.note ? <p className="var-card-note">{n.note}</p> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
