@@ -79,3 +79,82 @@ export async function replaceInlineImages(value, upload) {
   }
   return value;
 }
+
+// ——— Dọn ảnh mồ côi ———
+// Trước đây không chỗ nào xóa file khỏi Storage: xóa một lệnh, một bài học, hay chỉ đổi ảnh
+// khác trong form, thì file cũ ở lại vĩnh viễn và không ai nhìn thấy nó nữa.
+
+const PUBLIC_MARKER = `/storage/v1/object/public/${IMAGE_BUCKET}/`;
+
+// Đường dẫn trong bucket của một URL công khai; không phải ảnh của bucket này thì trả rỗng.
+export function storagePathOf(value) {
+  if (typeof value !== "string") return "";
+  const at = value.indexOf(PUBLIC_MARKER);
+  if (at < 0) return "";
+  const raw = value.slice(at + PUBLIC_MARKER.length).split(/[?#]/)[0];
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
+// Đi khắp dữ liệu nhặt mọi đường dẫn ảnh CÒN được trỏ tới. Cố tình đi sâu toàn bộ thay vì
+// liệt kê từng trường: thêm một trường ảnh mới mà quên cập nhật danh sách thì hậu quả là
+// xóa nhầm ảnh thật — không dựng lại được.
+export function collectImagePaths(value, out = new Set()) {
+  if (Array.isArray(value)) {
+    value.forEach((v) => collectImagePaths(v, out));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((v) => collectImagePaths(v, out));
+    return out;
+  }
+  const p = storagePathOf(value);
+  if (p) out.add(p);
+  return out;
+}
+
+const LIST_PAGE = 100;
+
+// Liệt kê file trong thư mục của chính người dùng. Storage chỉ cho list từng trang nên
+// phải lặp; gặp lỗi giữa chừng thì trả lỗi chứ KHÔNG trả danh sách thiếu — danh sách thiếu
+// sẽ khiến ảnh còn dùng bị coi là mồ côi.
+export async function listStoredImages() {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) return { error: "Phiên đăng nhập đã hết hạn — đăng nhập lại rồi thử lại." };
+
+  const files = [];
+  for (let offset = 0; ; offset += LIST_PAGE) {
+    const { data, error } = await supabase.storage.from(IMAGE_BUCKET)
+      .list(userId, { limit: LIST_PAGE, offset, sortBy: { column: "created_at", order: "asc" } });
+    if (error) return { error: describeError(error) };
+    if (!data || !data.length) break;
+    data.forEach((f) => {
+      if (!f || !f.name || f.id === null) return; // thư mục con, không phải file
+      const path = `${userId}/${f.name}`;
+      files.push({
+        path,
+        name: f.name,
+        size: Number(f.metadata?.size) || 0,
+        createdAt: f.created_at || "",
+        // Kèm luôn URL để chỗ hiển thị khỏi phải tự ghép lại đường dẫn công khai.
+        url: supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl,
+      });
+    });
+    if (data.length < LIST_PAGE) break;
+  }
+  return { files, userId };
+}
+
+// Xóa hẳn, không hoàn tác được. Chỉ nhận đường dẫn nằm trong thư mục của chính người dùng.
+export async function deleteStoredImages(paths) {
+  const list = (paths || []).filter(Boolean);
+  if (!list.length) return { removed: 0 };
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) return { error: "Phiên đăng nhập đã hết hạn — đăng nhập lại rồi thử lại." };
+  const mine = list.filter((p) => p.startsWith(`${userId}/`));
+  if (mine.length !== list.length) return { error: "Có đường dẫn không thuộc kho ảnh của bạn — đã dừng, không xóa gì." };
+  const { error } = await supabase.storage.from(IMAGE_BUCKET).remove(mine);
+  if (error) return { error: describeError(error) };
+  return { removed: mine.length };
+}

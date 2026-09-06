@@ -281,7 +281,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
               <DetailRow label="Phiên" value={t.session} />
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
-              <DetailRow label="Nhận xét Setup" value={t.setupNote} />
+              <DetailRow prose label="Nhận xét Setup" value={t.setupNote} />
               <DetailRow label="Lỗi setup"
                 tone={errorState === "clean" ? "win" : errorState === "errors" ? "loss" : ""}
                 value={errorState === "clean" ? "Không lỗi" : errorNames.length ? errorNames.join(", ") : "Chưa soi"} />
@@ -292,6 +292,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
               <DetailRow label="Rủi ro (%)" value={t.riskPercent ? `${t.riskPercent}%` : "—"} />
               <DetailRow label="Rủi ro (số tiền)" value={t.riskAmount ? fmt(Number(t.riskAmount)) : "—"} />
               <DetailRow label="Quản trị vốn" value={t.riskAction} />
+              <DetailRow prose label="Lý do quản trị vốn" value={t.riskActionReason} />
               <DetailRow label="Ngày exit" value={t.exitDate} />
               <DetailRow label="Giờ exit" value={t.exitTime} />
               <DetailRow label="TG giữ lệnh" value={fmtHold(holdHours(t))} />
@@ -318,15 +319,15 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
               <DetailRow label="Vào lệnh" value={t.entrySkill} />
               <DetailRow label="Trong lệnh" value={t.inTradeSkill} />
               <DetailRow label="Thoát lệnh" value={t.exitSkill} />
-              <DetailRow label="Cảm nhận kỹ năng" value={t.skillNote} />
+              <DetailRow prose label="Cảm nhận kỹ năng" value={t.skillNote} />
               <DetailRow label="Tâm lý" value={t.psychology} />
-              <DetailRow label="Cảm nghĩ tâm lý" value={t.psychologyNote} />
+              <DetailRow prose label="Cảm nghĩ tâm lý" value={t.psychologyNote} />
             </DetailGroup>
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
-              <DetailRow label="Nhận xét / Review" value={t.reviewNote} />
-              <DetailRow label="Lý do vào lệnh" value={t.entryReason} />
-              <DetailRow label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
+              <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
+              <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} />
+              <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
             </DetailGroup>
           </div>
 

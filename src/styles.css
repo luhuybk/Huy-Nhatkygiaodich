@@ -946,3 +946,23 @@
 .lsn-pick-on:hover { color: inherit; }
 .lsn-pick-lg { gap: 8px; }
 .lsn-pick-lg .lsn-pick-btn { padding: 7px 13px; font-size: 12.5px; font-weight: 600; }
+
+/* Ô văn xuôi trong chi tiết lệnh: nhãn một dòng, nội dung xuống dưới, giữ nguyên xuống dòng */
+.detail-row.detail-row-prose { display: block; }
+.detail-row.detail-row-prose > span:first-child { display: block; margin-bottom: 4px; }
+.detail-row.detail-row-prose > span.detail-prose {
+  display: block; text-align: left;
+  font-family: inherit; font-size: 12.5px; line-height: 1.55; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* "Dễ sai" ở tab Kỹ năng cũng là đoạn văn bạn tự gõ */
+.skill-watch span:not(.skill-watch-label) { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Xem trước ảnh mồ côi trước khi xóa — xóa rồi là mất hẳn, phải nhìn được cái mình sắp bỏ */
+.orphan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 10px; }
+.orphan-item { position: relative; display: block; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.orphan-item img { display: block; width: 100%; height: 68px; object-fit: cover; background: var(--surface-2); }
+.orphan-item span {
+  position: absolute; right: 3px; bottom: 3px; padding: 1px 5px; border-radius: 4px;
+  font-size: 10px; color: var(--text); background: rgba(0, 0, 0, .62);
+}

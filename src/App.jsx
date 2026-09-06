@@ -553,6 +553,19 @@ function AppShell({ onSignOut, userEmail }) {
 
   const palette = THEME_PRESETS[uiSettings.mode] || THEME_PRESETS.dark;
   const accentHex = ACCENT_PRESETS[uiSettings.accent] || ACCENT_PRESETS.gold;
+  // Mọi kho dữ liệu có thể chứa đường dẫn ảnh. Quét ảnh mồ côi đi sâu toàn bộ object này, nên
+  // thiếu MỘT kho ở đây là ảnh đang dùng bị coi là mồ côi — thêm state mới thì thêm cả vào đây.
+  const allData = {
+    trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
+    principles, setupLibrary, missedSetups, skippedSetups, setupVariants, setupErrors, reminders,
+    capitalAccounts, capitalEntries, capitalFlows, uiSettings, slReminderSettings, symbolWatches,
+    setupCheckLog, slMutedTrades, taskDone, filterPresets,
+    // Bản sao lưu giữ nguyên URL ảnh của cả những bản ghi đã xóa (stripInlineImages chỉ bỏ
+    // base64, không bỏ đường dẫn). Thiếu nó ở đây thì quét coi các ảnh đó là mồ côi, xóa đi,
+    // và bản khôi phục sau này mất sạch ảnh.
+    backups,
+  };
+
   const cssVars = {
     "--bg": palette.bg, "--surface": palette.surface, "--surface-2": palette.surface2, "--border": palette.border,
     "--text": palette.text, "--text-dim": palette.textDim, "--win": palette.win, "--loss": palette.loss,
@@ -674,7 +687,7 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "health" ? (
                 <HealthCheckPage trades={trades} resources={resources} setupErrors={setupErrors} skills={skills}
-                  filterPresets={filterPresets} onOpenTrade={setViewingTrade}
+                  filterPresets={filterPresets} allData={allData} onOpenTrade={setViewingTrade}
                   onGoToJournal={(f) => { persistUiSettings({ ...uiSettings, journalFilters: f }); setView("journal"); }} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :

@@ -472,11 +472,23 @@ export function ChartLegend({ items }) {
   );
 }
 
-export function DetailRow({ label, value, tone }) {
+// `prose` cho các ô bạn gõ thành đoạn: nhận xét, lý do vào lệnh, cảm nghĩ. Kiểu một dòng
+// canh phải + font mono là dành cho SỐ — với văn xuôi nó nuốt luôn dấu xuống dòng, ép chữ
+// vào nửa bề rộng và đọc như bảng tính. Ô trống vẫn về kiểu một dòng cho gọn.
+export function DetailRow({ label, value, tone, prose }) {
+  const empty = value === "" || value === null || value === undefined;
+  if (prose && !empty) {
+    return (
+      <div className="detail-row detail-row-prose">
+        <span>{label}</span>
+        <span className={`detail-prose ${tone || ""}`}>{value}</span>
+      </div>
+    );
+  }
   return (
     <div className="detail-row">
       <span>{label}</span>
-      <span className={`mono ${tone || ""}`}>{value === "" || value === null || value === undefined ? "—" : value}</span>
+      <span className={`mono ${tone || ""}`}>{empty ? "—" : value}</span>
     </div>
   );
 }
