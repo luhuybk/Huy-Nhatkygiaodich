@@ -4,18 +4,21 @@ import { ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./Dashboard.jsx";
 import { CATEGORY_COLORS, GRADE_OPTIONS, LOSS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
-import { accountFamily, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
+import { expandAccountFilter, toFilterList, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
 
 export function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
-  const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
+  const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
+  // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
+  const picked = toFilterList(scope);
+  const singleAccount = picked.length === 1 ? resources.accounts.find((a) => a.name === picked[0]) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -160,11 +163,11 @@ export function TradeAnalysisPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const closed = closedOf(scoped);
   const closedTrades = closed.map((x) => x.t);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -315,11 +318,14 @@ export function Analysis({ trades, resources, onViewTrade }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
-  const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
+  const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
+  // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
+  const picked = toFilterList(scope);
+  const singleAccount = picked.length === 1 ? resources.accounts.find((a) => a.name === picked[0]) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>
@@ -336,7 +342,9 @@ export function Analysis({ trades, resources, onViewTrade }) {
     <div>
       {scopeBar}
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        {singleAccount ? `Số liệu hiển thị theo đơn vị tiền tệ của tài khoản "${singleAccount.name}": ${singleAccount.currency}.` : "Đang gộp nhiều tài khoản — số tiền được quy đổi về USD theo tỷ giá cấu hình ở Tài khoản."}
+        {singleAccount
+          ? `Số liệu hiển thị theo đơn vị tiền tệ của tài khoản "${singleAccount.name}": ${singleAccount.currency}.`
+          : `Đang gộp ${picked.length ? `${picked.length} tài khoản (${picked.join(", ")})` : "mọi tài khoản"} — số tiền được quy đổi về USD theo tỷ giá cấu hình ở Tài khoản.`}
       </p>
       <div className="insight-box">
         <span className="insight-title">🤖 Phân tích tự động</span>

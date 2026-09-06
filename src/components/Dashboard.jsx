@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { LayoutDashboard, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
-import { ChartCard, RiskAlertBanner, StatCard } from "./ui.jsx";
+import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
 import { accountFamily, accountOptions, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
@@ -20,20 +20,28 @@ function renderPieSliceLabel(total) {
   };
 }
 
-export function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo }) {
+// `multi` bật thì ô tài khoản cho chọn nhiều cái một lúc (so H3 với H8 mà không phải xem hai
+// lượt). Bảng điều khiển giữ chế độ một tài khoản: ô đó dùng chung state với nút chuyển tài
+// khoản ở thanh bên và với tài khoản mặc định của lệnh mới, nên nó phải là một giá trị đơn.
+export function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo, multi }) {
   return (
     <div className="scope-bar">
       {resources.accounts.length > 0 ? (
         <>
           <span className="field-label" style={{ marginRight: 4 }}>Tài khoản:</span>
-          <select className="input" style={{ maxWidth: 200 }} value={account} onChange={(e) => onAccount(e.target.value)}>
-            <option value="">Tất cả tài khoản</option>
-            {accountOptions(resources.accounts).map((o) => (
-              <option key={o.value} value={o.value}>
-                {"\u00a0\u00a0".repeat(o.depth)}{o.depth ? "└ " : ""}{o.value}{o.isGroup ? " (cả nhóm)" : ""}
-              </option>
-            ))}
-          </select>
+          {multi ? (
+            <MultiFilterSelect placeholder="Tất cả tài khoản" value={account} options={accountOptions(resources.accounts)}
+              onChange={onAccount} />
+          ) : (
+            <select className="input" style={{ maxWidth: 200 }} value={account} onChange={(e) => onAccount(e.target.value)}>
+              <option value="">Tất cả tài khoản</option>
+              {accountOptions(resources.accounts).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {"\u00a0\u00a0".repeat(o.depth)}{o.depth ? "└ " : ""}{o.value}{o.isGroup ? " (cả nhóm)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </>
       ) : null}
       <span className="field-label" style={{ marginRight: 4, marginLeft: resources.accounts.length ? 14 : 0 }}>Thời gian:</span>

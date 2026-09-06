@@ -1343,6 +1343,36 @@ export function computeResult(trade) {
   };
 }
 
+// Tiền một lệnh đã thực sự đưa vào tài khoản, kể cả khi lệnh còn đang chạy.
+//   - Lệnh đã đóng: kết quả cuối, đã gồm phí.
+//   - Lệnh còn mở: tổng các lần chốt bớt đã điền. Tiền này về tài khoản thật rồi, bỏ ra khỏi
+//     số dư là sai số dư, sai đường cong vốn, sai luôn drawdown và % rủi ro (vì mẫu số thiếu).
+// KHÔNG cộng phí của lệnh còn mở: phí qua đêm tăng dần mỗi ngày, chỉ chốt được lúc đóng lệnh.
+export function bankedProfit(t) {
+  const r = computeResult(t);
+  if (r.status === "closed") return r.profit || 0;
+  return r.partialFilled ? r.partialProfit : 0;
+}
+
+// Cùng số tiền đó nhưng kèm ngày, cho đường cong vốn. Lệnh đã đóng vẫn gom về một mốc ở ngày
+// đóng như trước. Lệnh còn mở thì mỗi lần chốt bớt là một mốc riêng đúng ngày chốt — đó mới là
+// lúc tiền vào, dồn hết về ngày vào lệnh sẽ vẽ sai chỗ.
+export function bankedEvents(t) {
+  const r = computeResult(t);
+  if (r.status === "closed") return r.profit ? [{ date: dateKey(t), amount: r.profit }] : [];
+  return partialExitsOf(t)
+    .map((row) => ({ date: row.date || dateKey(t), amount: numOrNull(row.profit) }))
+    .filter((e) => e.amount);
+}
+
+// Chốt bớt rồi thì phần vị thế đã đóng không còn gì để mất — rủi ro đang treo chỉ ứng với phần
+// chưa đóng. Không ghi % chốt thì coi như còn nguyên: thà tính dư còn hơn tính thiếu.
+export function openRiskShare(t) {
+  const s = partialExitStats(t);
+  if (!(s.percent > 0)) return 1;
+  return Math.min(1, Math.max(0, s.remainingPercent / 100));
+}
+
 export function accountsInFamily(accounts, name) {
   const names = accountFamily(accounts, name);
   return (accounts || []).filter((a) => a && a.name && names.has(a.name));
@@ -1401,8 +1431,8 @@ export function accountBalance(account, ledger, trades, scope) {
   });
   trades.forEach((t) => {
     if (sc.names.has(t.account)) {
-      const r = computeResult(t);
-      if (r.profit) bal += sc.convName(r.profit, t.account);
+      const banked = bankedProfit(t);
+      if (banked) bal += sc.convName(banked, t.account);
     }
   });
   return bal;
@@ -1411,20 +1441,55 @@ export function accountBalance(account, ledger, trades, scope) {
 export function accountOpenRisk(account, ledger, trades, scope) {
   const sc = scope || ownScope(account);
   const openTrades = trades.filter((t) => sc.names.has(t.account) && computeResult(t).status === "open");
-  if (!openTrades.length) return { pct: 0, count: 0 };
   const balance = accountBalance(account, ledger, trades, sc);
+  // Vẫn phải trả về vốn kể cả khi không có lệnh nào mở: totalOpenRisk cộng vốn của MỌI tài
+  // khoản làm mẫu số, thiếu một cái là tổng ra NaN.
+  if (!openTrades.length) return { pct: 0, count: 0, money: 0, balance, currency: sc.currency };
   // Với một nhóm, KHÔNG cộng thẳng % của từng tài khoản con: 3% của tài khoản 1.000$ và 3% của
   // tài khoản 10.000$ không phải 6% của cả nhóm. Quy về tiền rồi mới chia cho vốn cả nhóm.
   let money = 0;
   openTrades.forEach((t) => {
+    // Đã chốt bớt 50% thì chỉ còn nửa vị thế đang treo, đừng tính đủ rủi ro ban đầu.
+    const share = openRiskShare(t);
+    if (share <= 0) return;
     const amt = numOrNull(t.riskAmount);
-    if (amt !== null) { money += sc.convName(amt, t.account); return; }
+    if (amt !== null) { money += sc.convName(amt * share, t.account); return; }
     const pct = numOrNull(t.riskPercent);
     if (pct === null) return;
     const own = sc.members.find((a) => a.name === t.account);
-    if (own) money += sc.convName((accountBalance(own, ledger, trades) * pct) / 100, t.account);
+    if (own) money += sc.convName((accountBalance(own, ledger, trades) * pct * share) / 100, t.account);
   });
-  return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length };
+  return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length, money, balance, currency: sc.currency };
+}
+
+// Tài khoản gốc = không thuộc nhóm nào, HOẶC thuộc một nhóm đã bị xóa. Vế sau quan trọng:
+// thiếu nó thì tài khoản mồ côi rơi khỏi mọi tổng cộng và biến mất khỏi trang Tài khoản.
+export function rootAccounts(accounts) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  return list.filter((a) => !a.parentId || !list.some((p) => p.id === a.parentId));
+}
+
+// Rủi ro đang treo trên TẤT CẢ tài khoản gộp lại. Sáu tài khoản mỗi cái 3% không phải là bạn
+// đang chịu 3% — là 18% tài sản. Từng thẻ tài khoản chỉ nói phần của nó, không chỗ nào nói
+// con số toàn cục, mà đúng con số đó mới là thứ giết tài khoản trong một phiên xấu.
+// Cộng theo tài khoản gốc (mỗi gốc đã gộp cả nhánh) để không đếm trùng, không sót.
+export function totalOpenRisk(accounts, ledger, trades, fxRates) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const roots = rootAccounts(list);
+  const scopes = roots.map((a) => ({ a, sc: familyScope(a, list, fxRates) }));
+  const mixed = new Set(scopes.map((x) => x.sc.currency)).size > 1;
+  const currency = mixed ? "USD" : (scopes[0] && scopes[0].sc.currency) || "USD";
+  let money = 0;
+  let equity = 0;
+  let count = 0;
+  scopes.forEach(({ a, sc }) => {
+    const r = accountOpenRisk(a, ledger, trades, sc);
+    const conv = (v) => (mixed ? toUSD(v, sc.currency, fxRates) : v);
+    money += conv(r.money);
+    equity += conv(r.balance);
+    count += r.count;
+  });
+  return { money, equity, count, currency, mixed, pct: equity ? (money / equity) * 100 : 0 };
 }
 
 const RISK_ALERT_LOSS_STREAK = 10;
@@ -2129,10 +2194,8 @@ export function buildBalanceCurve(account, ledger, trades, scope) {
     if (e.type === "transfer" && sc.ids.has(e.toAccountId)) events.push({ date: e.date, delta: sc.convId(amt, e.toAccountId) });
   });
   trades.forEach((t) => {
-    if (sc.names.has(t.account)) {
-      const r = computeResult(t);
-      if (r.profit) events.push({ date: dateKey(t), delta: sc.convName(r.profit, t.account) });
-    }
+    if (!sc.names.has(t.account)) return;
+    bankedEvents(t).forEach((ev) => events.push({ date: ev.date, delta: sc.convName(ev.amount, t.account) }));
   });
   events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   let bal = sc.initial;
@@ -2155,10 +2218,8 @@ export function buildTWRCurve(account, ledger, trades, scope) {
     if (e.type === "transfer" && sc.ids.has(e.toAccountId)) events.push({ date: e.date, cashflow: sc.convId(amt, e.toAccountId) });
   });
   trades.forEach((t) => {
-    if (sc.names.has(t.account)) {
-      const r = computeResult(t);
-      if (r.profit) events.push({ date: dateKey(t), pnl: sc.convName(r.profit, t.account) });
-    }
+    if (!sc.names.has(t.account)) return;
+    bankedEvents(t).forEach((ev) => events.push({ date: ev.date, pnl: sc.convName(ev.amount, t.account) }));
   });
   events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 

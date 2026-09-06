@@ -498,6 +498,7 @@
         .stat-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
         .stat-value { font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; }
         .stat-value.win { color:var(--win); } .stat-value.loss { color:var(--loss); }
+        .stat-value.warn { color:var(--accent); }
         .stat-sub { font-size:10.5px; color:var(--text-dim); }
         .stat-card-highlight { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
         .block-title { font-size:13.5px; margin:26px 0 12px; color:var(--text); font-weight:700; letter-spacing:0.1px;
@@ -754,6 +755,7 @@
         .stat-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--border-strong,var(--border)); }
         .stat-card:has(.stat-value.win)::before { background:var(--win); }
         .stat-card:has(.stat-value.loss)::before { background:var(--loss); }
+        .stat-card:has(.stat-value.warn)::before { background:var(--accent); }
         .stat-value { letter-spacing:-0.2px; }
         .btn { transition: background .15s ease, transform .1s ease, border-color .15s ease; }
         .btn:hover { border-color:#33393f; }

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { StatCard } from "./ui.jsx";
-import { accountFamily, closedOf, closedOfUSD, computeSystemQuality, dateKey, fmtR, inRange, riskOfRuin, sqnRating } from "../lib/helpers.js";
+import { expandAccountFilter, toFilterList, closedOf, closedOfUSD, computeSystemQuality, dateKey, fmtR, inRange, riskOfRuin, sqnRating } from "../lib/helpers.js";
 
 const RISK_LEVELS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
 
@@ -28,11 +28,18 @@ export function SystemQualityPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
-  const inScope = useMemo(() => accountFamily(resources.accounts, scope), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!scope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
-  const singleAccount = scope ? resources.accounts.find((a) => a.name === scope) : null;
+  const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
+  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
+  // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
+  const picked = toFilterList(scope);
+  const singleAccount = picked.length === 1 ? resources.accounts.find((a) => a.name === picked[0]) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  // Chọn 2 trong 5 tài khoản mà ghi "gộp mọi tài khoản" là nói sai — kể tên đúng cái đang gộp.
+  const scopeText = singleAccount ? `trong tài khoản "${singleAccount.name}"`
+    : picked.length ? `gộp ${picked.length} tài khoản: ${picked.join(", ")}`
+    : "gộp mọi tài khoản";
+  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   const q = computeSystemQuality(closed);
 
@@ -68,7 +75,7 @@ export function SystemQualityPage({ trades, resources }) {
     <div>
       {scopeBar}
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        {singleAccount ? `Tính theo R-multiple (không phụ thuộc tiền tệ) trên ${q.n} lệnh có "Rủi ro (tiền)" trong tài khoản "${singleAccount.name}".` : `Tính theo R-multiple (không phụ thuộc tiền tệ) trên ${q.n} lệnh có "Rủi ro (tiền)", gộp mọi tài khoản.`}
+        {`Tính theo R-multiple (không phụ thuộc tiền tệ) trên ${q.n} lệnh có "Rủi ro (tiền)", ${scopeText}.`}
       </p>
 
       <h3 className="block-title" style={{ marginTop: 0 }}>SQN — Chỉ số chất lượng hệ thống (Van Tharp)</h3>

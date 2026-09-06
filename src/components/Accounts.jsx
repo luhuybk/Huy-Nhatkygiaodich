@@ -3,7 +3,12 @@ import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
-import { familyScope, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
+import { familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
+
+// Ngưỡng cảnh báo rủi ro tổng. 6% là "đang gánh nặng", 10% là một phiên xấu đủ thổi bay
+// hai tháng lãi — đặt ở đây để sau này chỉnh một chỗ.
+const TOTAL_RISK_WARN = 6;
+const TOTAL_RISK_DANGER = 10;
 
 export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
   const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true };
@@ -47,7 +52,9 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
     doRemove(acc.id);
   };
 
-  const roots = accounts.filter((a) => !a.parentId);
+  // Gồm cả tài khoản mồ côi (nhóm cha đã bị xóa) — trước đây chúng biến mất khỏi cả trang này
+  // lẫn mọi tổng cộng, vì không phải gốc mà cũng không nằm dưới gốc nào.
+  const roots = rootAccounts(accounts);
   const childrenOf = (id) => accounts.filter((a) => a.parentId === id);
   const missingFx = missingFxAccounts({ accounts, fxRates }, null);
   // Cộng theo các tài khoản GỐC (mỗi gốc đã gộp cả nhánh của nó) thay vì chỉ cộng tài khoản lá:
@@ -61,6 +68,7 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
     return s + toUSD(sc.initial, sc.currency, fxRates);
   }, 0);
   const usedCurrencies = Array.from(new Set(accounts.map((a) => a.currency).filter((c) => c && c !== "USD")));
+  const risk = totalOpenRisk(accounts, ledger, trades, fxRates);
 
   const renderCard = (a, parent) => {
     // Tài khoản tổng không có lệnh nào gắn thẳng vào nó — mọi số phải cộng từ các tài khoản
@@ -105,10 +113,22 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
 
   return (
     <div>
-      <div className="stat-grid" style={{ gridTemplateColumns: "repeat(2,1fr)", marginBottom: 18 }}>
+      <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 18 }}>
         <StatCard label="Tổng vốn ban đầu (quy đổi USD)" value={fmtMoney(leafInitialSumUSD, "USD")} />
         <StatCard label="Tổng vốn hiện tại (quy đổi USD)" value={fmtMoney(leafBalanceSumUSD, "USD")} tone={leafBalanceSumUSD >= leafInitialSumUSD ? "win" : "loss"} />
+        <StatCard label="Rủi ro đang treo — tất cả tài khoản"
+          value={risk.count ? `${risk.pct.toFixed(2)}%` : "0%"}
+          sub={risk.count
+            ? `${fmtMoney(risk.money, risk.currency)} trên ${risk.count} lệnh đang mở`
+            : "Không có lệnh nào đang mở"}
+          tone={risk.pct >= TOTAL_RISK_DANGER ? "loss" : risk.pct >= TOTAL_RISK_WARN ? "warn" : undefined} />
       </div>
+      {risk.pct >= TOTAL_RISK_WARN ? (
+        <p className="error-text" style={{ marginTop: -10, marginBottom: 12 }}>
+          {risk.pct.toFixed(2)}% tổng tài sản đang treo cùng lúc trên {risk.count} lệnh. Mỗi tài khoản nhìn riêng có thể
+          vẫn nhỏ, nhưng một phiên xấu thì chúng ăn đòn cùng nhau — đây mới là con số bạn thật sự đang chịu.
+        </p>
+      ) : null}
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Gộp nhóm bằng cách chọn "Thuộc nhóm" (VD: Forex H3 / H8 / D thuộc nhóm Forex). Thẻ của một tài khoản tổng hiện số liệu <b>gộp cả nhóm</b> — số dư, lệnh, P&amp;L và rủi ro đang mở đều cộng từ các tài khoản bên dưới. Tổng vốn phía trên cộng theo từng nhóm nên không đếm trùng. Bấm vào một thẻ để xem phân tích chi tiết.
       </p>
