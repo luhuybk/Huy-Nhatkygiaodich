@@ -102,6 +102,34 @@ export function normalizeSymbol(s) {
   return v;
 }
 
+// Đồng định giá mà sàn hay gắn vào đuôi mã: XALUSD, XNGUSD, XCUUSD chỉ là nhôm, khí, đồng.
+const QUOTE_SUFFIXES = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"];
+
+// Sàn ghi đủ cặp còn bạn hay ghi mỗi mã gốc — "XALUSD" trên sàn với "XAL" trong nhật ký vẫn
+// là một thứ. Trả về mọi cách đọc của một symbol, phần tử đầu luôn là bản nguyên văn.
+// KHÔNG cắt cặp tiền tệ thật (EURUSD, USDJPY): phần còn lại cũng là một đồng tiền, cắt xong
+// thì "EUR" khớp bừa cả EURUSD lẫn EURJPY. Chỉ cắt khi phần gốc không phải đồng tiền — nhôm,
+// khí, đồng, vàng thì bạn có gõ mỗi mã gốc cũng chẳng lẫn vào đâu được.
+export function symbolKeys(s) {
+  const base = normalizeSymbol(s);
+  const keys = [base];
+  QUOTE_SUFFIXES.forEach((q) => {
+    if (base.length - q.length < 3 || !base.endsWith(q)) return;
+    const stem = base.slice(0, -q.length);
+    if (!QUOTE_SUFFIXES.includes(stem)) keys.push(stem);
+  });
+  return keys;
+}
+
+// "exact" = trùng nguyên văn, "loose" = chỉ trùng sau khi bỏ đuôi đồng định giá. Phân biệt hai
+// mức để lúc ghép cặp còn ưu tiên cái chắc chắn trước, và để giao diện nói rõ nó đoán chỗ nào.
+export function symbolMatch(a, b) {
+  const ka = symbolKeys(a);
+  const kb = symbolKeys(b);
+  if (ka[0] === kb[0]) return ka[0] ? "exact" : "";
+  return ka.some((x) => kb.includes(x)) ? "loose" : "";
+}
+
 export function parseBrokerCsv(text) {
   const rows = parseCsv(text);
   if (!rows.length) return { rows: [], error: "File rỗng." };
@@ -202,21 +230,24 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
   const pairs = [];
   (rows || []).forEach((row) => {
     pool.forEach((t) => {
-      if (normalizeSymbol(t.symbol) !== row.symbolKey) return;
+      const how = symbolMatch(t.symbol, row.symbol);
+      if (!how) return;
       const ms = tradeOpenMs(t);
       if (ms === null) return;
       const gap = Math.abs(ms - row.openAt.getTime());
-      if (gap <= tol) pairs.push({ row, trade: t, gap });
+      if (gap <= tol) pairs.push({ row, trade: t, gap, loose: how === "loose" });
     });
   });
-  pairs.sort((a, b) => a.gap - b.gap);
+  // Khớp nguyên văn giành chỗ trước: có "XALUSD" trong nhật ký thì nó nhận dòng XALUSD, chứ
+  // không để lệnh "XAL" gần giờ hơn cướp mất rồi đẩy lệnh kia thành "chưa ghi nhật ký".
+  pairs.sort((a, b) => (a.loose === b.loose ? a.gap - b.gap : (a.loose ? 1 : -1)));
   const positions = buildPositions(rows);
 
   const rowTaken = new Map();
   const tradeTaken = new Map();
-  pairs.forEach(({ row, trade, gap }) => {
+  pairs.forEach(({ row, trade, gap, loose }) => {
     if (rowTaken.has(row.key) || tradeTaken.has(trade.id)) return;
-    rowTaken.set(row.key, { trade, gap });
+    rowTaken.set(row.key, { trade, gap, loose });
     tradeTaken.set(trade.id, row);
   });
 
@@ -238,6 +269,8 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
       && (hit.trade.fees === "" || hit.trade.fees === undefined || hit.trade.fees === null);
     matched.push({
       row: hitRow, position: pos, trade: hit.trade, gap: hit.gap,
+      // Khớp được nhờ bỏ đuôi đồng định giá — nói ra để bạn liếc qua trước khi cho ghi tiền vào.
+      symbolLoose: !!hit.loose,
       profitDiff: diff,
       profitOff: diff !== null && Math.abs(diff) > PROFIT_TOLERANCE,
       feeMissing,
@@ -357,12 +390,13 @@ export function withBrokerTimes(trade, row, syncTime = true) {
 // (tài khoản mới tinh) thì trả về rỗng để người dùng tự chọn — đoán bừa còn tệ hơn.
 export function guessAccount(rows, trades, accounts) {
   const names = new Set((accounts || []).map((a) => a.name));
-  const symbols = new Set((rows || []).map((r) => r.symbolKey));
+  const symbols = new Set();
+  (rows || []).forEach((r) => symbolKeys(r.symbol).forEach((k) => symbols.add(k)));
   const hits = new Map();
   (trades || []).forEach((t) => {
     if (!t.account || !t.symbol || !names.has(t.account)) return;
-    const key = normalizeSymbol(t.symbol);
-    if (!symbols.has(key)) return;
+    const key = symbolKeys(t.symbol).find((k) => symbols.has(k));
+    if (!key) return;
     if (!hits.has(t.account)) hits.set(t.account, new Set());
     hits.get(t.account).add(key);
   });
@@ -379,7 +413,10 @@ export function guessAccount(rows, trades, accounts) {
 // tách, để tổng cộng lại ra khớp con số cuối cùng.
 export function tradeFromBrokerPosition(position, account, symbols, syncTime = true) {
   const row = position.first;
-  const known = (symbols || []).find((s) => normalizeSymbol(s) === row.symbolKey);
+  // Ưu tiên tên nguyên văn, không có thì lấy tên gốc bạn vẫn dùng ("XAL" cho dòng XALUSD) —
+  // ghi thẳng "XALUSD" sẽ đẻ ra một symbol lạ không có trong Tài nguyên.
+  const known = (symbols || []).find((s) => symbolMatch(s, row.symbol) === "exact")
+    || (symbols || []).find((s) => symbolMatch(s, row.symbol) === "loose");
   const base = {
     ...emptyTrade(),
     account,

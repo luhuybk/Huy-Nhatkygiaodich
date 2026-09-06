@@ -15,6 +15,17 @@ function when(d) {
   return d ? `${localDate(d)} ${localTime(d)}` : "—";
 }
 
+// Khớp được nhờ bỏ đuôi đồng định giá (XALUSD trên sàn = XAL trong nhật ký) thì nói ra, đừng
+// im lặng ghép — nhìn thấy cả hai tên mới yên tâm bấm điền tiền vào lệnh đó.
+function SymbolCell({ m }) {
+  return (
+    <>
+      <b>{m.row.symbol}</b>
+      {m.symbolLoose ? <span className="rec-tag" title={`Ghép với lệnh "${m.trade.symbol}" trong nhật ký`}>= {m.trade.symbol}</span> : null}
+    </>
+  );
+}
+
 // Nói bằng lời cái sắp được ghi vào, để bạn đọc xong mới bấm chứ không phải bấm rồi mới biết.
 function planSummary(plan, currency) {
   const parts = [];
@@ -34,6 +45,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
   const timeRows = result ? result.matched.filter((m) => m.timeFields.length) : [];
   const outcomeRows = result ? result.matched.filter((m) => m.outcome.changed) : [];
   const fillableFees = offRows.filter((m) => m.feeMissing);
+  const looseRows = result ? result.matched.filter((m) => m.symbolLoose) : [];
 
   return (
     <div className="rec-file">
@@ -63,6 +75,11 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
             {result.extra.length ? <span className="rec-chip rec-chip-warn">{result.extra.length} chỉ có trong nhật ký</span> : null}
             {outcomeRows.length ? (
               <span className="rec-chip rec-chip-bad"><Flag size={13} /> {outcomeRows.length} chưa ghi kết quả</span>
+            ) : null}
+            {looseRows.length ? (
+              <span className="rec-chip" title={looseRows.map((m) => `${m.row.symbol} = ${m.trade.symbol}`).join(" · ")}>
+                {looseRows.length} khớp sau khi bỏ đuôi đồng định giá
+              </span>
             ) : null}
             {offRows.length ? <span className="rec-chip rec-chip-warn">{offRows.length} lệch tiền</span> : null}
             {timeRows.length ? (
@@ -129,7 +146,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                   <tbody>
                     {outcomeRows.map((m) => (
                       <tr key={m.position.key}>
-                        <td><b>{m.row.symbol}</b></td>
+                        <td><SymbolCell m={m} /></td>
                         <td>{m.trade.entryDate} {m.trade.entryTime || ""}</td>
                         <td>
                           {m.position.fullyClosed
@@ -174,7 +191,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                   <tbody>
                     {offRows.map((m) => (
                       <tr key={m.position.key}>
-                        <td><b>{m.row.symbol}</b></td>
+                        <td><SymbolCell m={m} /></td>
                         <td>{when(m.row.openAt)}</td>
                         <td>{money(computeResult(m.trade).profit, currency)}</td>
                         <td>{money(m.row.net, currency)}</td>
@@ -223,7 +240,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
                       const exitOff = f.includes("exitDate") || f.includes("exitTime");
                       return (
                         <tr key={m.position.key}>
-                          <td><b>{m.row.symbol}</b></td>
+                          <td><SymbolCell m={m} /></td>
                           <td className={entryOff ? "text-loss" : ""}>{m.trade.entryDate} {m.trade.entryTime || "—"}</td>
                           <td>{when(m.row.openAt)}</td>
                           <td className={exitOff ? "text-loss" : ""}>
