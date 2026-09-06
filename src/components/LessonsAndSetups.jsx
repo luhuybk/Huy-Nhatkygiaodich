@@ -2,7 +2,7 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -348,6 +348,13 @@ export function SetupVariantsSection({ items, resources, onChange }) {
     [items, filters, resources.setups]
   );
   const shown = groups.reduce((n, g) => n + g.list.length, 0);
+  // Ghi chú dài làm thẻ cao lệch nhau và che mất phần còn lại — mặc định gấp, bấm mới mở.
+  const [openNotes, setOpenNotes] = useState(() => new Set());
+  const toggleNote = (id) => setOpenNotes((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
     <div>
@@ -375,7 +382,10 @@ export function SetupVariantsSection({ items, resources, onChange }) {
           <Field label="Link / hình ảnh TradingView" hint={`Tối đa ${VARIANT_MAX_IMAGES} ảnh/link`}>
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="variant" max={VARIANT_MAX_IMAGES} />
           </Field>
-          <Field label="Ghi chú (tùy chọn)" hint="Biến thể này khác chỗ nào, dấu hiệu gì giúp nhận ra sớm hơn lần sau?">
+          <Field label="Mô tả biến thể" hint="Một dòng ngắn để nhận ra ngay trên thẻ — luôn hiện, không phải bấm mở.">
+            <input className="input" value={form.desc || ""} onChange={(e) => setF("desc")(e.target.value)} placeholder="VD: Reversal + Doji" />
+          </Field>
+          <Field label="Ghi chú (tùy chọn)" hint="Phân tích dài để dành: trên thẻ nó được thu gọn, bấm mới mở ra. Xuống dòng ở đây thì ngoài thẻ cũng xuống dòng y hệt.">
             <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="VD: nến rút chân dài hơn thường lệ, vào chậm 1 nến..." />
           </Field>
           {error ? <p className="error-text">{error}</p> : null}
@@ -416,7 +426,19 @@ export function SetupVariantsSection({ items, resources, onChange }) {
                         <ConfirmButton onConfirm={() => remove(n.id)} />
                       </span>
                     </div>
-                    {n.note ? <p className="var-card-note">{n.note}</p> : null}
+                    {variantDesc(n) ? <p className="var-card-desc">{variantDesc(n)}</p> : null}
+                    {variantNoteRest(n) ? (
+                      <>
+                        <button type="button" className="var-card-more"
+                          onClick={(e) => { e.stopPropagation(); toggleNote(n.id); }}>
+                          {openNotes.has(n.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          Ghi chú
+                        </button>
+                        {openNotes.has(n.id) ? (
+                          <p className="var-card-note" onClick={(e) => e.stopPropagation()}>{variantNoteRest(n)}</p>
+                        ) : null}
+                      </>
+                    ) : null}
                   </article>
                 ))}
               </div>

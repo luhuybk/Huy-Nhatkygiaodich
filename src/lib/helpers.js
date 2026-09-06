@@ -365,7 +365,28 @@ export const VARIANT_MAX_IMAGES = 4;
 // Setup biến thể: vẫn là setup quen thuộc nhưng nến chạy khác đi nên lúc đang giao dịch
 // không nhận ra, xong lệnh nhìn lại mới thấy. Lưu ảnh lại để lần sau nhận diện sớm hơn.
 export function emptyVariant() {
-  return { id: null, symbol: "", variantDate: "", timeframe: "", setup: "", images: [{ link: "", image: "" }], note: "" };
+  return { id: null, symbol: "", variantDate: "", timeframe: "", setup: "", images: [{ link: "", image: "" }], desc: "", note: "" };
+}
+
+// Mô tả biến thể: một dòng để nhận ra ngay trên thẻ ("Reversal + Doji"). Bản ghi cũ chưa có
+// trường này nên lấy tạm dòng đầu của ghi chú — không thì thẻ cũ đột nhiên trống trơn.
+// Điền mô tả riêng là nó nhường chỗ ngay.
+export function variantDesc(n) {
+  if (!n) return "";
+  const d = String(n.desc || "").trim();
+  if (d) return d;
+  return String(n.note || "").split("\n").map((x) => x.trim()).find(Boolean) || "";
+}
+
+// Phần ghi chú còn lại sau khi dòng đầu đã bị mượn làm mô tả. Rỗng thì khỏi hiện nút mở —
+// không ai muốn bấm ra để đọc lại đúng câu vừa đọc.
+export function variantNoteRest(n) {
+  if (!n) return "";
+  const note = String(n.note || "");
+  if (String(n.desc || "").trim()) return note.trim();
+  const lines = note.split("\n");
+  const at = lines.findIndex((x) => x.trim());
+  return at < 0 ? "" : lines.slice(at + 1).join("\n").trim();
 }
 
 export const SL_REMINDER_DEFAULT_HOURS = ["09:00", "12:00", "15:00", "18:00", "21:00"];
