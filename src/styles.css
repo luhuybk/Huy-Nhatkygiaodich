@@ -917,3 +917,32 @@
   white-space: pre-wrap; overflow-wrap: anywhere;
   background: var(--surface-2); border-radius: 7px;
 }
+
+/* Bài học phân cấp — dùng chung khung thẻ với biến thể, khác ở phần cấp độ */
+.lsn-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.lsn-head-hint { font-size: 11.5px; font-weight: 400; color: var(--text-dim); }
+.lsn-card-title { font-size: 13px; line-height: 1.4; flex: 1; min-width: 0; }
+.lsn-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lsn-card-dim { font-size: 11px; color: var(--text-dim); }
+.lsn-card-date { margin-left: auto; }
+/* Vạch trái theo cấp: liếc một cái là thấy cái nào nặng, không phải đọc nhãn */
+.lsn-card-lv1 { border-left: 3px solid var(--accent); }
+.lsn-card-lv2 { border-left: 3px solid rgba(var(--accent-rgb), .45); }
+.lsn-card-lv3 { border-left: 3px solid var(--border); }
+
+.lsn-pick { display: flex; align-items: center; gap: 4px; margin-top: auto; padding-top: 4px; }
+.lsn-pick-label { font-size: 11px; color: var(--text-dim); margin-right: 2px; }
+.lsn-pick-btn {
+  min-width: 24px; padding: 3px 7px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  color: var(--text-dim); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.lsn-pick-btn:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), .5); }
+.lsn-pick-on-1 { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.lsn-pick-on-2 { background: rgba(var(--accent-rgb), .16); border-color: rgba(var(--accent-rgb), .5); color: var(--accent); }
+.lsn-pick-on-3 { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+.lsn-pick-on:hover { color: inherit; }
+.lsn-pick-lg { gap: 8px; }
+.lsn-pick-lg .lsn-pick-btn { padding: 7px 13px; font-size: 12.5px; font-weight: 600; }

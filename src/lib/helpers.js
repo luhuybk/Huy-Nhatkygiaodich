@@ -56,7 +56,49 @@ export function emptyNote(date) {
 }
 
 export function emptyLesson(date) {
-  return { id: null, date: date || todayStr(), categories: [], symbol: "", tradeId: "", title: "", content: "", link: "", image: "", images: [{ link: "", image: "" }] };
+  return { id: null, date: date || todayStr(), categories: [], symbol: "", tradeId: "", title: "", content: "", link: "", image: "", images: [{ link: "", image: "" }], level: 0 };
+}
+
+// Không phải bài học nào cũng nặng như nhau. Cấp 1 là thứ phải thuộc, cấp 3 là chi tiết vặt —
+// xếp cấp 1 lên đầu để mỗi lần mở trang là đọc lại đúng những cái đắt giá nhất.
+export const LESSON_LEVELS = [
+  { id: 1, label: "Cấp 1 — Cốt lõi", hint: "Phải thuộc nằm lòng, sai là trả giá đắt" },
+  { id: 2, label: "Cấp 2 — Quan trọng", hint: "Cần nhớ, ảnh hưởng rõ tới kết quả" },
+  { id: 3, label: "Cấp 3 — Ghi nhận", hint: "Chi tiết nhỏ, biết thì tốt" },
+];
+
+// 0 = chưa phân cấp. Bài học cũ không có trường này, và giá trị lạ cũng về 0 chứ không
+// được phép đẻ ra một nhóm thứ tư không ai gọi tên được.
+export function lessonLevel(n) {
+  const v = Number(n && n.level);
+  return v === 1 || v === 2 || v === 3 ? v : 0;
+}
+
+export function lessonLevelMeta(level) {
+  return LESSON_LEVELS.find((x) => x.id === lessonLevel({ level })) || null;
+}
+
+// Nhóm theo cấp: 1 → 2 → 3, "chưa phân cấp" xuống cuối. Nhóm rỗng không hiện, nên lúc mới
+// bắt đầu trang chỉ có đúng một nhóm "chưa phân cấp" chứ không phải bốn tiêu đề trống.
+export function groupByLevel(items, dateField = "date") {
+  const groups = new Map();
+  (items || []).forEach((n) => {
+    const lv = lessonLevel(n);
+    if (!groups.has(lv)) groups.set(lv, []);
+    groups.get(lv).push(n);
+  });
+  return Array.from(groups.entries())
+    .map(([level, list]) => ({
+      level,
+      list: list.slice().sort((a, b) => (b[dateField] || "").localeCompare(a[dateField] || "")),
+    }))
+    .sort((a, b) => (a.level === 0) - (b.level === 0) || a.level - b.level);
+}
+
+export function countByLevel(items) {
+  const out = { 0: 0, 1: 0, 2: 0, 3: 0 };
+  (items || []).forEach((n) => { out[lessonLevel(n)] += 1; });
+  return out;
 }
 
 export const LESSON_MAX_IMAGES = 4;
@@ -2884,6 +2926,10 @@ export function applyLessonFilters(items, filters) {
       if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q) && !(n.title || "").toLowerCase().includes(q)) return false;
     }
     if (filters.category && !(n.categories || []).includes(filters.category)) return false;
+    if (filters.level) {
+      const lv = lessonLevel(n);
+      if (filters.level === "none" ? lv !== 0 : lv !== Number(filters.level)) return false;
+    }
     if (filters.from && (n.date || "") < filters.from) return false;
     if (filters.to && (n.date || "") > filters.to) return false;
     return true;

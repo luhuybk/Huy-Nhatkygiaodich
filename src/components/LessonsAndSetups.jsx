@@ -2,7 +2,7 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, groupByLevel, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -494,6 +494,11 @@ export function LessonsFilterPanel({ filters, setFilters, resources }) {
       <div className="filter-grid">
         <input className="input" placeholder="Tìm theo symbol / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
         <ResourceSelect value={filters.category || ""} onChange={set("category")} options={resources.lessonCategories} placeholder="Danh mục" />
+        <select className="input" value={filters.level || ""} onChange={(e) => set("level")(e.target.value)}>
+          <option value="">Mọi cấp độ</option>
+          {LESSON_LEVELS.map((L) => <option key={L.id} value={String(L.id)}>{L.label}</option>)}
+          <option value="none">Chưa phân cấp</option>
+        </select>
         <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
         <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
       </div>
@@ -532,10 +537,11 @@ export function LessonsSection({ items, resources, trades, onChange }) {
     setForm(emptyLesson());
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
-  const sorted = useMemo(
-    () => applyLessonFilters(items, filters).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
-    [items, filters]
-  );
+  const groups = useMemo(() => groupByLevel(applyLessonFilters(items, filters)), [items, filters]);
+  const shown = groups.reduce((n, g) => n + g.list.length, 0);
+  const counts = useMemo(() => countByLevel(items), [items]);
+  // Phân cấp ngay trên thẻ: cả đống bài học cũ chưa đánh dấu, mở form từng cái thì không ai làm.
+  const setLevel = (id, level) => onChange(items.map((n) => (n.id === id ? { ...n, level } : n)));
 
   return (
     <div>
@@ -563,6 +569,17 @@ export function LessonsSection({ items, resources, trades, onChange }) {
           <Field label="Tiêu đề" hint="Hiển thị ngắn gọn trong danh sách — để trống sẽ tự lấy từ nội dung">
             <input className="input" value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: Đừng vào lệnh khi chưa đủ tín hiệu xác nhận" />
           </Field>
+          <Field label="Mức độ quan trọng" hint="Cấp 1 lên đầu trang. Để trống cũng được — phân cấp nhanh được ngay trên thẻ.">
+            <div className="lsn-pick lsn-pick-lg">
+              {LESSON_LEVELS.map((L) => (
+                <button key={L.id} type="button" title={L.hint}
+                  className={`lsn-pick-btn ${lessonLevel(form) === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
+                  onClick={() => setF("level")(lessonLevel(form) === L.id ? 0 : L.id)}>
+                  {L.label}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Nội dung bài học" required>
             <textarea className="input textarea" style={{ minHeight: 100 }} value={form.content} onChange={(e) => setF("content")(e.target.value)} placeholder="Điều rút ra được, cần chú ý lần sau..." />
           </Field>
@@ -578,42 +595,87 @@ export function LessonsSection({ items, resources, trades, onChange }) {
         </FormModal>
       ) : null}
       <LessonsFilterPanel filters={filters} setFilters={setFilters} resources={resources} />
-      <div className="resource-list" style={{ marginTop: 16 }}>
-        {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có bài học nào khớp bộ lọc.</p> : null}
-        {sorted.map((n) => {
-          const linkedTrade = trades.find((t) => t.id === n.tradeId);
-          const attachments = lessonAttachments(n);
-          const isOpen = expanded.has(n.id);
-          return (
-            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
-              <div className="note-head">
-                {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
-                <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>{lessonTitle(n) || "(Chưa có nội dung)"}</span>
-                <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
-                <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
-              </div>
-              <div className="note-head" style={{ marginTop: 2 }}>
-                {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
-                {n.symbol || linkedTrade ? (
-                  <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Lệnh: {n.symbol || linkedTrade.symbol}</span>
-                ) : null}
-                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
-                {attachments.length ? (
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <Strip items={attachments} empty={false} />
-                  </span>
-                ) : null}
-              </div>
-              {isOpen ? (
-                <>
-                  <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}>{n.content}</p>
-                  {linkedTrade ? <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span> : null}
-                </>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      {counts[0] > 0 && !filters.level ? (
+        <p className="field-hint" style={{ marginTop: 10 }}>
+          Còn <b>{counts[0]} bài học chưa phân cấp</b> — bấm số 1/2/3 ngay trên thẻ là xong, không cần mở form.
+        </p>
+      ) : null}
+      {shown === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có bài học nào khớp bộ lọc.</p> : (
+        <div className="var-groups">
+          {groups.map((g) => {
+            const meta = lessonLevelMeta(g.level);
+            return (
+              <section key={g.level} className="var-group">
+                <h4 className="var-group-head">
+                  <BookOpen size={14} />
+                  <span className={meta ? "" : "var-group-none"}>{meta ? meta.label : "Chưa phân cấp"}</span>
+                  {meta ? <span className="lsn-head-hint">{meta.hint}</span> : null}
+                  <span className="var-group-count">{g.list.length} bài</span>
+                </h4>
+                <div className="var-grid lsn-grid">
+                  {g.list.map((n) => {
+                    const linkedTrade = trades.find((t) => t.id === n.tradeId);
+                    const attachments = lessonAttachments(n);
+                    const isOpen = expanded.has(n.id);
+                    return (
+                      <article key={n.id} className={`var-card lsn-card lsn-card-lv${g.level}`} role="button" tabIndex={0}
+                        onClick={() => openEdit(n)}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(n); }
+                        }}>
+                        {attachments.length ? (
+                          <div className="var-card-shots" onClick={(e) => e.stopPropagation()}>
+                            <Strip items={attachments} empty={false} />
+                          </div>
+                        ) : null}
+                        <div className="var-card-head">
+                          <b className="lsn-card-title">{lessonTitle(n) || "(Chưa có nội dung)"}</b>
+                          <span className="var-card-tools" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" className="row-btn" aria-label="Sửa bài học" onClick={() => openEdit(n)}><Pencil size={13} /></button>
+                            <ConfirmButton onConfirm={() => remove(n.id)} />
+                          </span>
+                        </div>
+                        <div className="lsn-card-meta">
+                          {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
+                          {n.symbol || linkedTrade ? <span className="mono lsn-card-dim">{n.symbol || linkedTrade.symbol}</span> : null}
+                          <span className="mono lsn-card-dim lsn-card-date">{n.date || "—"}</span>
+                        </div>
+                        {n.content ? (
+                          <>
+                            <button type="button" className="var-card-more"
+                              onClick={(e) => { e.stopPropagation(); toggleExpand(n.id); }}>
+                              {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                              Nội dung
+                            </button>
+                            {isOpen ? (
+                              <p className="var-card-note" onClick={(e) => e.stopPropagation()}>{n.content}</p>
+                            ) : null}
+                          </>
+                        ) : null}
+                        {isOpen && linkedTrade ? (
+                          <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span>
+                        ) : null}
+                        <div className="lsn-pick" onClick={(e) => e.stopPropagation()}>
+                          <span className="lsn-pick-label">Cấp</span>
+                          {LESSON_LEVELS.map((L) => (
+                            <button key={L.id} type="button"
+                              className={`lsn-pick-btn ${g.level === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
+                              title={g.level === L.id ? `${L.label} — bấm lần nữa để bỏ cấp` : `${L.label}: ${L.hint}`}
+                              onClick={() => setLevel(n.id, g.level === L.id ? 0 : L.id)}>
+                              {L.id}
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
