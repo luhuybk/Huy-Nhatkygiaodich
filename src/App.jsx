@@ -120,6 +120,10 @@ function AppShell({ onSignOut, userEmail }) {
   const [viewingTrade, setViewingTrade] = useState(null);
   const [editing, setEditing] = useState(null);
   const [saveState, setSaveState] = useState("");
+  // Ghi hỏng thì giữ nguyên bản chưa lưu chứ không chỉ nhá một dòng chữ rồi thôi: người dùng
+  // vẫn thấy thay đổi trên màn hình nên tưởng xong, đóng tab là mất. Giữ đến khi lưu được.
+  const [pendingSaves, setPendingSaves] = useState([]);
+  const [retrying, setRetrying] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [backups, setBackups] = useState([]);
   const [undo, setUndo] = useState(null);
@@ -228,35 +232,66 @@ function AppShell({ onSignOut, userEmail }) {
   }, []);
 
   // safeSet trả false khi ghi lên Supabase thất bại (mất mạng, hết phiên, RLS...).
-  // Phải báo rõ thay vì vẫn hiện "Đã lưu" — nếu không người dùng đóng tab và mất dữ liệu mà không biết.
-  const flashSaved = (ok) => {
-    if (ok === false) { setSaveState("⚠ Lưu thất bại"); setTimeout(() => setSaveState(""), 6000); return; }
+  // Mỗi key hỏng giữ lại đúng bản mới nhất — ghi đè bản cũ cùng key vì bản sau đã bao gồm
+  // bản trước, thử lại cả hai chỉ tốn công. Lưu được thì tự rút khỏi hàng chờ.
+  const noteSave = (key, value, ok) => {
+    if (ok === false) {
+      setPendingSaves((prev) => [...prev.filter((x) => x.key !== key), { key, value, at: Date.now() }]);
+      setSaveState("");
+      return;
+    }
+    setPendingSaves((prev) => (prev.some((x) => x.key === key) ? prev.filter((x) => x.key !== key) : prev));
     setSaveState("Đã lưu");
     setTimeout(() => setSaveState(""), 1200);
   };
 
-  const persistTrades = useCallback(async (next) => { setTrades(next); flashSaved(await safeSet("trades", next)); }, []);
-  const persistResources = useCallback(async (next) => { setResources(next); flashSaved(await safeSet("resources", next)); }, []);
-  const persistLedger = useCallback(async (next) => { setLedger(next); flashSaved(await safeSet("ledger", next)); }, []);
-  const persistNotes = useCallback(async (next) => { setNotes(next); flashSaved(await safeSet("notes", next)); }, []);
-  const persistLessons = useCallback(async (next) => { setLessons(next); flashSaved(await safeSet("lessons", next)); }, []);
-  const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); flashSaved(await safeSet("processImprovements", next)); }, []);
-  const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); flashSaved(await safeSet("problemLogs", next)); }, []);
-  const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); flashSaved(await safeSet("newsLogs", next)); }, []);
-  const persistSkills = useCallback(async (next) => { setSkills(next); flashSaved(await safeSet("skills", next)); }, []);
-  const persistFilterPresets = useCallback(async (next) => { setFilterPresets(next); flashSaved(await safeSet("journalFilterPresets", next)); }, []);
-  const persistPrinciples = useCallback(async (next) => { setPrinciples(next); flashSaved(await safeSet("principles", next)); }, []);
-  const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); flashSaved(await safeSet("setupLibrary", next)); }, []);
-  const persistSetupErrors = useCallback(async (next) => { setSetupErrors(next); flashSaved(await safeSet("setupErrors", next)); }, []);
+  const retrySaves = async () => {
+    if (retrying || !pendingSaves.length) return;
+    setRetrying(true);
+    const queue = pendingSaves;
+    const stillBad = [];
+    for (const item of queue) {
+      const ok = await safeSet(item.key, item.value);
+      if (!ok) stillBad.push(item);
+    }
+    // Trong lúc đang thử lại người dùng vẫn có thể sửa tiếp và hỏng thêm — giữ lại những key
+    // mới rơi vào hàng chờ, chỉ gỡ đúng những key vừa lưu được.
+    const saved = new Set(queue.filter((x) => !stillBad.includes(x)).map((x) => x.key));
+    setPendingSaves((prev) => [...prev.filter((x) => !saved.has(x.key)), ...stillBad.filter((x) => !prev.some((p) => p.key === x.key))]);
+    setRetrying(false);
+    if (!stillBad.length) { setSaveState("Đã lưu"); setTimeout(() => setSaveState(""), 1200); }
+  };
+
+  // Đóng tab khi còn thay đổi chưa lên máy chủ là mất hẳn — trình duyệt hỏi lại một câu.
+  useEffect(() => {
+    if (!pendingSaves.length) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pendingSaves.length]);
+
+  const persistTrades = useCallback(async (next) => { setTrades(next); noteSave("trades", next, await safeSet("trades", next)); }, []);
+  const persistResources = useCallback(async (next) => { setResources(next); noteSave("resources", next, await safeSet("resources", next)); }, []);
+  const persistLedger = useCallback(async (next) => { setLedger(next); noteSave("ledger", next, await safeSet("ledger", next)); }, []);
+  const persistNotes = useCallback(async (next) => { setNotes(next); noteSave("notes", next, await safeSet("notes", next)); }, []);
+  const persistLessons = useCallback(async (next) => { setLessons(next); noteSave("lessons", next, await safeSet("lessons", next)); }, []);
+  const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); noteSave("processImprovements", next, await safeSet("processImprovements", next)); }, []);
+  const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); noteSave("problemLogs", next, await safeSet("problemLogs", next)); }, []);
+  const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); noteSave("newsLogs", next, await safeSet("newsLogs", next)); }, []);
+  const persistSkills = useCallback(async (next) => { setSkills(next); noteSave("skills", next, await safeSet("skills", next)); }, []);
+  const persistFilterPresets = useCallback(async (next) => { setFilterPresets(next); noteSave("journalFilterPresets", next, await safeSet("journalFilterPresets", next)); }, []);
+  const persistPrinciples = useCallback(async (next) => { setPrinciples(next); noteSave("principles", next, await safeSet("principles", next)); }, []);
+  const persistSetupLibrary = useCallback(async (next) => { setSetupLibrary(next); noteSave("setupLibrary", next, await safeSet("setupLibrary", next)); }, []);
+  const persistSetupErrors = useCallback(async (next) => { setSetupErrors(next); noteSave("setupErrors", next, await safeSet("setupErrors", next)); }, []);
   const persistUiSettings = useCallback(async (next) => { setUiSettings(next); await safeSet("uiSettings", next); }, []);
-  const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); flashSaved(await safeSet("missedSetups", next)); }, []);
-  const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); flashSaved(await safeSet("skippedSetups", next)); }, []);
-  const persistSetupVariants = useCallback(async (next) => { setSetupVariants(next); flashSaved(await safeSet("setupVariants", next)); }, []);
-  const persistReminders = useCallback(async (next) => { setReminders(next); flashSaved(await safeSet("reminders", next)); }, []);
-  const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); flashSaved(await safeSet("capitalAccounts", next)); }, []);
-  const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); flashSaved(await safeSet("capitalEntries", next)); }, []);
-  const persistCapitalFlows = useCallback(async (next) => { setCapitalFlows(next); flashSaved(await safeSet("capitalFlows", next)); }, []);
-  const persistSlReminderSettings = useCallback(async (next) => { setSlReminderSettings(next); flashSaved(await safeSet("slReminderSettings", next)); }, []);
+  const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); noteSave("missedSetups", next, await safeSet("missedSetups", next)); }, []);
+  const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); noteSave("skippedSetups", next, await safeSet("skippedSetups", next)); }, []);
+  const persistSetupVariants = useCallback(async (next) => { setSetupVariants(next); noteSave("setupVariants", next, await safeSet("setupVariants", next)); }, []);
+  const persistReminders = useCallback(async (next) => { setReminders(next); noteSave("reminders", next, await safeSet("reminders", next)); }, []);
+  const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); noteSave("capitalAccounts", next, await safeSet("capitalAccounts", next)); }, []);
+  const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); noteSave("capitalEntries", next, await safeSet("capitalEntries", next)); }, []);
+  const persistCapitalFlows = useCallback(async (next) => { setCapitalFlows(next); noteSave("capitalFlows", next, await safeSet("capitalFlows", next)); }, []);
+  const persistSlReminderSettings = useCallback(async (next) => { setSlReminderSettings(next); noteSave("slReminderSettings", next, await safeSet("slReminderSettings", next)); }, []);
   // symbolWatches bị CẢ HAI phía cùng ghi: web (sửa symbol/giờ) và Edge Function (bấm nút trên Telegram).
   // Ghi đè thẳng sẽ nuốt mất trạng thái hoãn/xong vừa bấm trên điện thoại, nên đọc lại bản trên server
   // rồi chỉ giữ nguyên các trường do server làm chủ.
@@ -283,7 +318,7 @@ function AppShell({ onSignOut, userEmail }) {
       });
     }
     setSymbolWatches(merged);
-    flashSaved(await safeSet("symbolWatches", merged));
+    noteSave("symbolWatches", merged, await safeSet("symbolWatches", merged));
   }, []);
 
   // slMutedTrades cũng bị cả hai phía ghi: webhook Telegram THÊM khi bấm "Kết thúc lệnh",
@@ -296,11 +331,11 @@ function AppShell({ onSignOut, userEmail }) {
     const server = await safeGet("slMutedTrades", null);
     const merged = Array.isArray(server) ? server.filter((m) => !removed.has(m.tradeId)) : next;
     setSlMutedTrades(merged);
-    flashSaved(await safeSet("slMutedTrades", merged));
+    noteSave("slMutedTrades", merged, await safeSet("slMutedTrades", merged));
   }, [slMutedTrades]);
-  const persistSetupCheckLog = useCallback(async (next) => { setSetupCheckLog(next); flashSaved(await safeSet("setupCheckLog", next)); }, []);
+  const persistSetupCheckLog = useCallback(async (next) => { setSetupCheckLog(next); noteSave("setupCheckLog", next, await safeSet("setupCheckLog", next)); }, []);
   // Chỉ web ghi khoá này, Edge Function chỉ đọc — nên ghi đè thẳng là an toàn.
-  const persistTaskDone = useCallback(async (next) => { setTaskDoneMap(next); flashSaved(await safeSet("timelineDone", next)); }, []);
+  const persistTaskDone = useCallback(async (next) => { setTaskDoneMap(next); noteSave("timelineDone", next, await safeSet("timelineDone", next)); }, []);
 
   // Giao dịch (và setup miss/skip) tham chiếu tài khoản bằng TÊN, không phải id.
   // Nên khi đổi tên tài khoản phải đổi luôn tên trong mọi bản ghi cũ, nếu không toàn bộ
@@ -516,7 +551,7 @@ function AppShell({ onSignOut, userEmail }) {
     }, Date.now());
     const next = pruneBackups([snap, ...backups]);
     setBackups(next);
-    flashSaved(await safeSet("backups", next));
+    noteSave("backups", next, await safeSet("backups", next));
   };
 
   const handleResetAll = async () => {
@@ -708,6 +743,18 @@ function AppShell({ onSignOut, userEmail }) {
           </div>
         </div>
       </div>
+      {pendingSaves.length ? (
+        <div className="save-fail-bar" role="alert">
+          <AlertTriangle size={16} />
+          <span>
+            <b>Chưa lưu được lên máy chủ.</b> {pendingSaves.length} thay đổi mới nhất chỉ đang nằm
+            trên máy này — đóng tab bây giờ là mất. Kiểm tra mạng rồi bấm thử lại.
+          </span>
+          <button type="button" className="btn btn-primary" onClick={retrySaves} disabled={retrying}>
+            {retrying ? "Đang thử..." : "Thử lưu lại"}
+          </button>
+        </div>
+      ) : null}
       {undo ? (
         <div className="undo-toast">
           <span>{undo.label}</span>

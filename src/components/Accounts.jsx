@@ -129,6 +129,15 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
           vẫn nhỏ, nhưng một phiên xấu thì chúng ăn đòn cùng nhau — đây mới là con số bạn thật sự đang chịu.
         </p>
       ) : null}
+      {risk.orphan && risk.orphan.count ? (
+        <p className="error-text" style={{ marginTop: -6, marginBottom: 12 }}>
+          Trong đó <b>{risk.orphan.count} lệnh đang mở nằm ở tài khoản không còn trong Tài nguyên</b>
+          {" "}({risk.orphan.accounts.join(", ")}) — đã xóa hoặc đổi tên.
+          {risk.orphan.money ? ` Tiền rủi ro của chúng (${fmtMoney(risk.orphan.money, risk.currency)}) vẫn được cộng vào, nhưng vốn thì không cộng được nên % ở trên nghiêng về phía cao hơn thực tế.` : ""}
+          {risk.orphan.unknown ? ` Còn ${risk.orphan.unknown} lệnh chưa tính được vì chỉ ghi %rủi ro, mà tính % thì cần số dư của tài khoản đã mất.` : ""}
+          {" "}Gán lại tài khoản cho các lệnh này ở trang Nhật ký để con số về đúng.
+        </p>
+      ) : null}
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Gộp nhóm bằng cách chọn "Thuộc nhóm" (VD: Forex H3 / H8 / D thuộc nhóm Forex). Thẻ của một tài khoản tổng hiện số liệu <b>gộp cả nhóm</b> — số dư, lệnh, P&amp;L và rủi ro đang mở đều cộng từ các tài khoản bên dưới. Tổng vốn phía trên cộng theo từng nhóm nên không đếm trùng. Bấm vào một thẻ để xem phân tích chi tiết.
       </p>

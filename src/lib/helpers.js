@@ -1569,7 +1569,34 @@ export function totalOpenRisk(accounts, ledger, trades, fxRates) {
     equity += conv(r.balance);
     count += r.count;
   });
-  return { money, equity, count, currency, mixed, pct: equity ? (money / equity) * 100 : 0 };
+
+  // Lệnh đang mở mà tên tài khoản không còn trong Tài nguyên (đã xóa hoặc đổi tên) không nằm
+  // trong scope nào, nên trước đây rơi thẳng ra ngoài con số này — thẻ báo 2% trong khi thực
+  // tế đang treo 7%. Báo THIẾU một con số cảnh báo rủi ro là hướng sai nguy hiểm nhất, nên
+  // vẫn cộng vào tiền rủi ro. Vốn thì không cộng được (tài khoản đó không còn để tính số dư),
+  // nghĩa là % nghiêng về phía thận trọng — và thẻ nói thẳng ra là đang có bao nhiêu lệnh như vậy.
+  const known = new Set(list.map((a) => a.name));
+  const orphanTrades = (trades || []).filter(
+    (t) => t && t.account && !known.has(t.account) && computeResult(t).status === "open"
+  );
+  let orphanMoney = 0;
+  let orphanUnknown = 0;
+  orphanTrades.forEach((t) => {
+    const share = openRiskShare(t);
+    const amt = numOrNull(t.riskAmount);
+    // Không có tiền rủi ro tuyệt đối thì đành chịu: %rủi ro cần số dư tài khoản, mà tài khoản
+    // đó không còn. Đếm riêng để thẻ nói "còn N lệnh chưa tính được" thay vì lặng lẽ bỏ qua.
+    if (amt === null || share <= 0) { orphanUnknown += 1; return; }
+    orphanMoney += amt * share;
+  });
+
+  const totalMoney = money + orphanMoney;
+  return {
+    money: totalMoney, equity, count: count + orphanTrades.length, currency, mixed,
+    pct: equity ? (totalMoney / equity) * 100 : 0,
+    orphan: { count: orphanTrades.length, money: orphanMoney, unknown: orphanUnknown,
+      accounts: Array.from(new Set(orphanTrades.map((t) => t.account))) },
+  };
 }
 
 const RISK_ALERT_LOSS_STREAK = 10;
