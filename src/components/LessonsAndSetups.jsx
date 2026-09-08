@@ -1,5 +1,5 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, SquareArrowOutUpRight } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, groupByLevel, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
@@ -507,7 +507,7 @@ export function LessonsFilterPanel({ filters, setFilters, resources }) {
   );
 }
 
-export function LessonsSection({ items, resources, trades, onChange }) {
+export function LessonsSection({ items, resources, trades, onChange, onOpenTrade }) {
   const [form, setForm] = useState(emptyLesson());
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({});
@@ -638,7 +638,16 @@ export function LessonsSection({ items, resources, trades, onChange }) {
                         </div>
                         <div className="lsn-card-meta">
                           {(n.categories || []).map((c) => <span key={c} className="note-type">{c}</span>)}
-                          {n.symbol || linkedTrade ? <span className="mono lsn-card-dim">{n.symbol || linkedTrade.symbol}</span> : null}
+                          {linkedTrade && onOpenTrade ? (
+                            <button type="button" className="lsn-trade-btn" title="Mở chi tiết lệnh này"
+                              onClick={(e) => { e.stopPropagation(); onOpenTrade(linkedTrade); }}>
+                              <SquareArrowOutUpRight size={11} />
+                              <span className="mono">{linkedTrade.symbol || "Lệnh"} · {linkedTrade.entryDate || "—"}</span>
+                            </button>
+                          ) : n.symbol ? <span className="mono lsn-card-dim">{n.symbol}</span> : null}
+                          {n.tradeId && !linkedTrade ? (
+                            <span className="lsn-card-dim" title="Lệnh gắn với bài học này đã bị xóa">lệnh đã xóa</span>
+                          ) : null}
                           <span className="mono lsn-card-dim lsn-card-date">{n.date || "—"}</span>
                         </div>
                         {n.content ? (
@@ -652,9 +661,6 @@ export function LessonsSection({ items, resources, trades, onChange }) {
                               <p className="var-card-note" onClick={(e) => e.stopPropagation()}>{n.content}</p>
                             ) : null}
                           </>
-                        ) : null}
-                        {isOpen && linkedTrade ? (
-                          <span className="field-hint">Gắn với lệnh: {linkedTrade.symbol} · {linkedTrade.entryDate || "—"}</span>
                         ) : null}
                         <div className="lsn-pick" onClick={(e) => e.stopPropagation()}>
                           <span className="lsn-pick-label">Cấp</span>
@@ -1089,7 +1095,7 @@ export function NewsLogSection({ items, onChange }) {
   );
 }
 
-export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples }) {
+export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples, onOpenTrade }) {
   const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["skills", "lessons", "process", "problems", "news"]);
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
@@ -1126,7 +1132,7 @@ export function JourneySection({ lessons, resources, trades, onChangeTrades, onC
           <SkillsPage items={skills} trades={trades} resources={resources} onChange={onChangeSkills} onTradesChange={onChangeTrades} />
         </Suspense>
       ) : tab === "lessons" ? (
-        <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} />
+        <LessonsSection items={lessons} resources={resources} trades={trades} onChange={onChangeLessons} onOpenTrade={onOpenTrade} />
       ) : tab === "process" ? (
         <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
           <ProcessImprovementSection items={processImprovements} avoidPrinciples={avoidPrinciples} onChange={onChangeProcessImprovements} />

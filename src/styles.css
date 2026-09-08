@@ -474,6 +474,15 @@
         .mini-bar-fill { display:block; height:100%; border-radius:3px; min-width:2px; }
         .mini-bar-fill.is-win { background:var(--win); }
         .mini-bar-fill.is-loss { background:var(--loss); }
+        .week-line-btn { width:100%; text-align:left; cursor:pointer; font:inherit; color:inherit; transition:border-color .12s,background .12s; }
+        .week-line-btn:hover { border-color:var(--accent); background:rgba(var(--accent-rgb),0.06); }
+        .week-line-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+        .week-line-go { color:var(--text-dim); flex-shrink:0; }
+        .week-line-btn:hover .week-line-go { color:var(--accent); }
+        .lsn-trade-btn { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; cursor:pointer;
+          font-size:11.5px; color:var(--accent); background:rgba(var(--accent-rgb),0.10); border:1px solid rgba(var(--accent-rgb),0.32); }
+        .lsn-trade-btn:hover { background:rgba(var(--accent-rgb),0.20); border-color:var(--accent); }
+        .lsn-trade-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
         .principles-editor .resource-list { counter-reset:principle-counter; gap:10px; }
         .principles-editor .resource-item { counter-increment:principle-counter; padding:15px 16px; border-radius:10px; border-width:1.5px;
           font-size:14.5px; font-weight:600; background:var(--surface-2); box-shadow:0 1px 0 rgba(0,0,0,0.15); }

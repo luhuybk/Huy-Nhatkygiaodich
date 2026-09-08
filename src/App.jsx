@@ -683,7 +683,7 @@ function AppShell({ onSignOut, userEmail }) {
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
                   skills={skills} onChangeSkills={persistSkills} onChangeTrades={persistTrades}
-                  avoidPrinciples={principles.avoid || []} />
+                  avoidPrinciples={principles.avoid || []} onOpenTrade={setViewingTrade} />
               ) :
               view === "health" ? (
                 <HealthCheckPage trades={trades} resources={resources} setupErrors={setupErrors} skills={skills}

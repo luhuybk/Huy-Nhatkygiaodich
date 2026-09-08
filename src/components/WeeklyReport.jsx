@@ -3,7 +3,7 @@ import { CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ChartCard, StatCard, FxWarning } from "./ui.jsx";
 import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
-import { fmt, fmtR, periodAccountReport, periodEnd, periodLabel, periodOf, periodRTrend, periodStart, PERIODS, readLocalUi, shiftPeriod, todayStr, weeksOfMonth, writeLocalUi } from "../lib/helpers.js";
+import { fmt, fmtR, periodAccountReport, periodEnd, periodLabel, periodOf, periodRTrend, periodStart, PERIODS, readLocalUi, shiftDate, shiftPeriod, todayStr, weekLabel, weeksOfMonth, weekStart, writeLocalUi } from "../lib/helpers.js";
 
 const MODES = [PERIODS.week, PERIODS.month];
 
@@ -19,11 +19,17 @@ function rBreakdown(row) {
 
 // Tháng dương nhờ đánh đều hay nhờ đúng một tuần gánh? Chỉ nhìn con số tháng thì không biết,
 // nên tháng nào cũng xẻ ra từng tuần — và các tuần đã cắt gọn trong tháng nên cộng lại khớp tổng.
-function MonthWeeks({ trades, resources, monthStart }) {
+// Bấm một tuần là mở thẳng tuần đó: thấy tuần nào bất thường thì soi được ngay, không phải
+// tự đổi chế độ rồi bấm lùi đếm tuần.
+function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
   const weeks = useMemo(() => {
     return weeksOfMonth(monthStart).map((w) => {
       const rep = periodAccountReport(trades, resources, w.from, w.to);
-      return { ...w, rNet: rep.total.rNet, rCount: rep.total.rCount, count: rep.total.count };
+      // Tuần đầu/cuối tháng bị cắt: ô này chỉ tính phần trong tháng, còn bấm sang chế độ tuần
+      // thì xem trọn tuần — nói rõ trong tooltip để hai con số lệch nhau không thành khó hiểu.
+      const wk = weekStart(w.from);
+      const full = weekLabel(wk, shiftDate(wk, 6));
+      return { ...w, rNet: rep.total.rNet, rCount: rep.total.rCount, count: rep.total.count, full, clipped: full !== `${w.label}/${w.to.slice(0, 4)}` };
     });
   }, [trades, resources, monthStart]);
 
@@ -34,7 +40,9 @@ function MonthWeeks({ trades, resources, monthStart }) {
       <h4 className="rec-title" style={{ marginTop: 18 }}>Từng tuần trong tháng</h4>
       <div className="week-lines">
         {weeks.map((w) => (
-          <div key={w.from} className="week-line">
+          <button key={w.from} type="button" className="week-line week-line-btn"
+            title={w.clipped ? `Mở tuần ${w.full} — tuần này thò sang tháng bên cạnh` : `Mở tuần ${w.label}`}
+            onClick={() => onPickWeek(w.from)}>
             <span className="week-line-name">{w.label}</span>
             <span className="mini-bar">
               <span className={`mini-bar-fill ${w.rNet >= 0 ? "is-win" : "is-loss"}`}
@@ -42,7 +50,8 @@ function MonthWeeks({ trades, resources, monthStart }) {
             </span>
             <b className={rTone(w.rNet)}>{w.rCount ? fmtR(w.rNet) : "—"}</b>
             <span className="err-note">({w.count} lệnh đóng)</span>
-          </div>
+            <ChevronRight size={13} className="week-line-go" />
+          </button>
         ))}
       </div>
     </>
@@ -63,6 +72,15 @@ export function WeeklyReportPage({ trades, resources }) {
     setAnchor(periodStart(next, anchor));
     setMode(next);
     writeLocalUi("reportMode", next);
+  }
+
+  // Từ một tuần trong tháng nhảy thẳng sang xem tuần đó. Neo về đầu tuần chứ không giữ nguyên
+  // ngày bấm: tuần đầu tháng bắt đầu giữa tuần, giữ nguyên sẽ ra một tuần cụt.
+  function openWeek(dayInWeek) {
+    setAnchor(periodStart("week", dayInWeek));
+    setMode("week");
+    writeLocalUi("reportMode", "week");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const report = useMemo(() => periodAccountReport(trades, resources, anchor, to), [trades, resources, anchor, to]);
@@ -182,7 +200,7 @@ export function WeeklyReportPage({ trades, resources }) {
       )}
 
       {mode === "month" && report.rows.length > 0
-        ? <MonthWeeks trades={trades} resources={resources} monthStart={anchor} /> : null}
+        ? <MonthWeeks trades={trades} resources={resources} monthStart={anchor} onPickWeek={openWeek} /> : null}
 
       <ChartCard title={`R ròng ${meta.trendTitle}`} subtitle={`Cột sáng là ${meta.noun} đang xem`} height={220}>
         <ResponsiveContainer>
