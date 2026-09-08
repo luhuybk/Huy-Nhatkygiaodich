@@ -3023,6 +3023,27 @@ export function groupByReason(items, dateField) {
   return out;
 }
 
+// Gom theo tháng, cho câu hỏi "gần đây mình bỏ lỡ những gì". Tháng mới nhất lên đầu.
+// Bản ghi chưa điền ngày gom về một nhóm riêng ở cuối chứ không bị vứt đi.
+export function groupByMonth(items, dateField) {
+  const groups = new Map();
+  (items || []).forEach((n) => {
+    const key = String((n && n[dateField]) || "").slice(0, 7);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  });
+  const out = Array.from(groups.entries()).map(([month, list]) => ({
+    month,
+    label: month ? `Tháng ${Number(month.slice(5, 7))}/${month.slice(0, 4)}` : "Chưa ghi ngày",
+    list: list.slice().sort((a, b) => (b[dateField] || "").localeCompare(a[dateField] || "")),
+  }));
+  out.sort((a, b) => {
+    if (!a.month !== !b.month) return a.month ? -1 : 1;
+    return b.month.localeCompare(a.month);
+  });
+  return out;
+}
+
 // Setup nào bạn hay bỏ lỡ nhất, và setup đó thực tế đánh có ăn không? Hai câu hỏi đó nằm ở
 // hai trang khác nhau nên chẳng ai ghép lại. Bỏ lỡ nhiều một setup đang lỗ thì không sao;
 // bỏ lỡ nhiều đúng setup lời nhất mới là tiền mất thật.

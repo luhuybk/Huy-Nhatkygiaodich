@@ -47,7 +47,7 @@ export function ProcessImprovementSection({ items, avoidPrinciples, onChange }) 
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Mỗi tuần dừng lại trả lời 3 câu hỏi để cải thiện quy trình giao dịch — làm tốt điều gì, mắc lỗi ở đâu, và lần sau cải thiện ra sao.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm đánh giá tuần</button>
       </div>

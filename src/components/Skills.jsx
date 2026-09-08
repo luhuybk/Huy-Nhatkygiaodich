@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Filter, Gauge, Pencil, Plus } from "lucide-react";
-import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Gauge, Pencil, Plus } from "lucide-react";
+import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
 import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLabel, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
@@ -11,17 +11,14 @@ function LevelBadge({ id }) {
 function SkillsFilterPanel({ filters, setFilters, resources }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   return (
-    <div className="filter-panel">
-      <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo tên / nội dung / bước..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <select className="input" value={filters.level || ""} onChange={(e) => set("level")(e.target.value)}>
-          <option value="">Mọi mức thành thạo</option>
-          {SKILL_LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-        </select>
-        <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Áp dụng cho setup" />
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={() => setFilters({})}><Filter size={13} /> Xóa lọc</button>
-    </div>
+    <FilterShell filters={filters} onClear={() => setFilters({})}
+      search={<input className="input filter-q" placeholder="Tìm theo tên / nội dung / bước..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      <select className="input" value={filters.level || ""} onChange={(e) => set("level")(e.target.value)}>
+        <option value="">Mọi mức thành thạo</option>
+        {SKILL_LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+      </select>
+      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Áp dụng cho setup" />
+    </FilterShell>
   );
 }
 

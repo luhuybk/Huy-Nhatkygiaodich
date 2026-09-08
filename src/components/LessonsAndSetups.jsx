@@ -1,8 +1,8 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, SquareArrowOutUpRight, TrendingUp } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByReason, missedVsPerformance, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -17,30 +17,63 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
   const pending = countPendingWatch(items);
   const onlyPending = filters.watch === "pending";
   return (
-    <div className="filter-panel">
-      {showWatch ? (
-      <button type="button" className={`watch-quick ${onlyPending ? "watch-quick-on" : ""} ${pending ? "" : "watch-quick-empty"}`}
-        title="Lọc nhanh những cái bạn đã đánh dấu theo dõi mà chưa review — dành cho buổi xem lại cuối tuần"
-        onClick={() => setFilters((p) => ({ ...p, watch: onlyPending ? "" : "pending" }))}>
-        <Eye size={14} /> Cần theo dõi
-        <span className="watch-quick-count">{pending}</span>
-      </button>
+    <FilterShell filters={filters} onClear={clear}
+      before={showWatch ? (
+        <button type="button" className={`watch-quick ${onlyPending ? "watch-quick-on" : ""} ${pending ? "" : "watch-quick-empty"}`}
+          title="Lọc nhanh những cái bạn đã đánh dấu theo dõi mà chưa review — dành cho buổi xem lại cuối tuần"
+          onClick={() => setFilters((p) => ({ ...p, watch: onlyPending ? "" : "pending" }))}>
+          <Eye size={14} /> Cần theo dõi
+          <span className="watch-quick-count">{pending}</span>
+        </button>
       ) : null}
-      <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
-        <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
-        {reasonOptions ? <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" /> : null}
-        {showWatch ? (
-          <select className="input" value={filters.watch || ""} onChange={(e) => set("watch")(e.target.value)}>
-            <option value="">Mọi trạng thái theo dõi</option>
-            {WATCH_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
-        ) : null}
-        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
-        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
+      search={<input className="input filter-q" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
+      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
+      {reasonOptions ? <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" /> : null}
+      {showWatch ? (
+        <select className="input" value={filters.watch || ""} onChange={(e) => set("watch")(e.target.value)}>
+          <option value="">Mọi trạng thái theo dõi</option>
+          {WATCH_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      ) : null}
+      <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title={`${dateKeyLabel} từ ngày`} />
+      <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title={`${dateKeyLabel} đến ngày`} />
+    </FilterShell>
+  );
+}
+
+// Mỗi cách nhóm trả lời một câu hỏi khác nhau, nên không có cách nào "đúng" để chốt cứng:
+// Lý do -> "vì sao mình cứ bỏ lỡ"; Setup -> "mình mù cái setup nào"; Ngày -> "gần đây bỏ lỡ gì".
+const GROUP_MODES = [
+  { id: "reason", label: "Lý do", icon: Filter, empty: "Chưa ghi lý do" },
+  { id: "setup", label: "Setup", icon: Shapes, empty: "Chưa gán setup" },
+  { id: "date", label: "Ngày", icon: CalendarRange, empty: "Chưa ghi ngày" },
+];
+
+function buildMissSkipGroups(items, dateField, mode, setups) {
+  if (mode === "setup") {
+    return groupBySetup(items, setups, dateField)
+      .map((g) => ({ key: g.setup || "__none", label: g.setup, list: g.list }));
+  }
+  if (mode === "date") {
+    return groupByMonth(items, dateField)
+      .map((g) => ({ key: g.month || "__none", label: g.month ? g.label : "", list: g.list }));
+  }
+  return groupByReason(items, dateField)
+    .map((g) => ({ key: g.reason || "__none", label: g.reason, list: g.list }));
+}
+
+function GroupByPicker({ value, onChange }) {
+  return (
+    <div className="group-by">
+      <span className="group-by-label">Nhóm theo</span>
+      {GROUP_MODES.map((m) => (
+        <button key={m.id} type="button"
+          className={`group-by-btn ${value === m.id ? "group-by-on" : ""}`}
+          onClick={() => onChange(m.id)}>
+          <m.icon size={12} /> {m.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -48,7 +81,9 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
 // Miss và Skip có cùng hình dạng dữ liệu nên dùng chung một thẻ. Bảng cũ 10 cột rộng 818px,
 // trên điện thoại phải cuộn ngang gần 480px mới thấy hai cột cuối — mà hai cột cuối lại đúng
 // là "Review" và "Theo dõi", thứ đáng nhìn nhất. Thẻ đưa chúng lên ngay đầu.
-function MissSkipCards({ groups, dateField, onEdit, onRemove }) {
+function MissSkipCards({ groups, dateField, mode, onEdit, onRemove }) {
+  const meta = GROUP_MODES.find((m) => m.id === mode) || GROUP_MODES[0];
+  const HeadIcon = meta.icon;
   const [open, setOpen] = useState(() => new Set());
   const toggle = (id) => setOpen((prev) => {
     const next = new Set(prev);
@@ -58,10 +93,10 @@ function MissSkipCards({ groups, dateField, onEdit, onRemove }) {
   return (
     <div className="var-groups">
       {groups.map((g) => (
-        <section key={g.reason || "(chưa ghi)"} className="var-group">
+        <section key={g.key} className="var-group">
           <h4 className="var-group-head">
-            <Filter size={14} />
-            <span className={g.reason ? "" : "var-group-none"}>{g.reason || "Chưa ghi lý do"}</span>
+            <HeadIcon size={14} />
+            <span className={g.label ? "" : "var-group-none"}>{g.label || meta.empty}</span>
             <span className="var-group-count">{g.list.length} lần</span>
           </h4>
           <div className="var-grid">
@@ -148,11 +183,13 @@ export function MissedSetupsSection({ items, resources, onChange }) {
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
   const filtered = useMemo(() => applyMissSkipFilters(items, filters, "missDate"), [items, filters]);
-  const groups = useMemo(() => groupByReason(filtered, "missDate"), [filtered]);
+  const [groupBy, setGroupBy] = useState(() => readLocalUi("missGroupBy", "reason"));
+  const pickGroup = (m) => { setGroupBy(m); writeLocalUi("missGroupBy", m); };
+  const groups = useMemo(() => buildMissSkipGroups(filtered, "missDate", groupBy, resources.setups), [filtered, groupBy, resources.setups]);
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại những setup bạn nhận ra nhưng không vào lệnh — để sau này xem lại có nên tối ưu quy trình không.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị miss</button>
       </div>
@@ -224,9 +261,14 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         </FormModal>
       ) : null}
       <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.missReasons} dateKeyLabel="Ngày miss" showWatch />
-      {filtered.length === 0
-        ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p>
-        : <MissSkipCards groups={groups} dateField="missDate" onEdit={openEdit} onRemove={remove} />}
+      {filtered.length === 0 ? (
+        <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị miss nào khớp bộ lọc.</p>
+      ) : (
+        <>
+          <GroupByPicker value={groupBy} onChange={pickGroup} />
+          <MissSkipCards groups={groups} dateField="missDate" mode={groupBy} onEdit={openEdit} onRemove={remove} />
+        </>
+      )}
     </div>
   );
 }
@@ -251,11 +293,13 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
   const filtered = useMemo(() => applyMissSkipFilters(items, filters, "skipDate"), [items, filters]);
-  const groups = useMemo(() => groupByReason(filtered, "skipDate"), [filtered]);
+  const [groupBy, setGroupBy] = useState(() => readLocalUi("skipGroupBy", "reason"));
+  const pickGroup = (m) => { setGroupBy(m); writeLocalUi("skipGroupBy", m); };
+  const groups = useMemo(() => buildMissSkipGroups(filtered, "skipDate", groupBy, resources.setups), [filtered, groupBy, resources.setups]);
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại những lệnh bạn chủ động bỏ qua (skip) dù đã cân nhắc — kèm review sau vài ngày để xem hướng lệnh diễn biến ra sao, giúp đánh giá quyết định skip có đúng không.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị skip</button>
       </div>
@@ -327,9 +371,14 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
         </FormModal>
       ) : null}
       <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} reasonOptions={resources.skipReasons} dateKeyLabel="Ngày skip" showWatch />
-      {filtered.length === 0
-        ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p>
-        : <MissSkipCards groups={groups} dateField="skipDate" onEdit={openEdit} onRemove={remove} />}
+      {filtered.length === 0 ? (
+        <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có setup bị skip nào khớp bộ lọc.</p>
+      ) : (
+        <>
+          <GroupByPicker value={groupBy} onChange={pickGroup} />
+          <MissSkipCards groups={groups} dateField="skipDate" mode={groupBy} onEdit={openEdit} onRemove={remove} />
+        </>
+      )}
     </div>
   );
 }
@@ -370,7 +419,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Cùng một setup nhưng nến chạy khác đi nên lúc giao dịch không nhận ra, xong lệnh nhìn lại mới thấy. Lưu ảnh lại để lần sau nhận diện được sớm hơn.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm biến thể</button>
       </div>
@@ -569,20 +618,17 @@ export function LessonsFilterPanel({ filters, setFilters, resources }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => setFilters({});
   return (
-    <div className="filter-panel">
-      <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo symbol / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <ResourceSelect value={filters.category || ""} onChange={set("category")} options={resources.lessonCategories} placeholder="Danh mục" />
-        <select className="input" value={filters.level || ""} onChange={(e) => set("level")(e.target.value)}>
-          <option value="">Mọi cấp độ</option>
-          {LESSON_LEVELS.map((L) => <option key={L.id} value={String(L.id)}>{L.label}</option>)}
-          <option value="none">Chưa phân cấp</option>
-        </select>
-        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
-        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
-    </div>
+    <FilterShell filters={filters} onClear={clear}
+      search={<input className="input filter-q" placeholder="Tìm theo symbol / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      <ResourceSelect value={filters.category || ""} onChange={set("category")} options={resources.lessonCategories} placeholder="Danh mục" />
+      <select className="input" value={filters.level || ""} onChange={(e) => set("level")(e.target.value)}>
+        <option value="">Mọi cấp độ</option>
+        {LESSON_LEVELS.map((L) => <option key={L.id} value={String(L.id)}>{L.label}</option>)}
+        <option value="none">Chưa phân cấp</option>
+      </select>
+      <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+      <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+    </FilterShell>
   );
 }
 
@@ -624,7 +670,7 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại từng bài học rút ra từ giao dịch, phân loại theo danh mục (quản lý ở Tài nguyên → Danh mục bài học), kèm ảnh/link TradingView minh họa — để xem lại những điều cần chú ý.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm bài học</button>
       </div>
@@ -769,19 +815,16 @@ export function ProblemLogFilterPanel({ filters, setFilters }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => setFilters({});
   return (
-    <div className="filter-panel">
-      <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo vấn đề / hướng xử lý..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <select className="input" value={filters.status || ""} onChange={(e) => set("status")(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          <option value="unresolved">Chưa xử lý</option>
-          <option value="resolved">Đã xử lý</option>
-        </select>
-        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
-        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
-    </div>
+    <FilterShell filters={filters} onClear={clear}
+      search={<input className="input filter-q" placeholder="Tìm theo vấn đề / hướng xử lý..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      <select className="input" value={filters.status || ""} onChange={(e) => set("status")(e.target.value)}>
+        <option value="">Tất cả trạng thái</option>
+        <option value="unresolved">Chưa xử lý</option>
+        <option value="resolved">Đã xử lý</option>
+      </select>
+      <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+      <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+    </FilterShell>
   );
 }
 
@@ -819,7 +862,7 @@ export function ProblemLogSection({ items, onChange }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại vấn đề gặp phải khi giao dịch và hướng xử lý — VD: FOMO vào lệnh khi có giờ ra tin, cách xử lý là tạo nhắc hẹn không vào lệnh đồng tiền đó.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm vấn đề</button>
       </div>
@@ -934,7 +977,7 @@ export function SetupLibrarySection({ items, onChange }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Thư viện setup mẫu — bấm vào 1 setup để xem ảnh, checklist nhận diện và các biến thể (VD: RB có biến thể A, B, C).</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup</button>
       </div>
@@ -1061,18 +1104,15 @@ export function NewsLogFilterPanel({ filters, setFilters }) {
   const set = (k) => (v) => setFilters((p) => ({ ...p, [k]: v }));
   const clear = () => setFilters({});
   return (
-    <div className="filter-panel">
-      <div className="filter-grid">
-        <input className="input" placeholder="Tìm theo tên tin / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />
-        <select className="input" value={filters.currency || ""} onChange={(e) => set("currency")(e.target.value)}>
-          <option value="">Tất cả đồng tiền</option>
-          {MAJOR_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
-        <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={clear}><Filter size={13} /> Xóa lọc</button>
-    </div>
+    <FilterShell filters={filters} onClear={clear}
+      search={<input className="input filter-q" placeholder="Tìm theo tên tin / nội dung..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      <select className="input" value={filters.currency || ""} onChange={(e) => set("currency")(e.target.value)}>
+        <option value="">Tất cả đồng tiền</option>
+        {MAJOR_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
+      <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
+    </FilterShell>
   );
 }
 
@@ -1109,7 +1149,7 @@ export function NewsLogSection({ items, onChange }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+      <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại biến động tin tức ảnh hưởng tới các đồng tiền khi trade forex — VD: CPI Mỹ ra tin ảnh hưởng USD, các cặp dính USD biến động mạnh.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm tin tức</button>
       </div>

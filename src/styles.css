@@ -604,7 +604,7 @@
         .filter-bar .btn { padding:7px 12px; font-size:12px; }
         .filter-q { flex:1 1 220px; min-width:0; max-width:340px; }
         .filter-toggle-on { border-color:var(--accent); color:var(--accent); }
-        .filter-panel .filter-grid { margin-top:10px; }
+        .filter-panel .filter-grid { margin-top:10px; margin-bottom:0; }
         .col-pop { max-width:none; width:200px; }
         .col-presets { display:flex; gap:6px; padding:2px 4px 7px; margin-bottom:5px; border-bottom:1px solid var(--border); }
         .col-presets .chip-btn { flex:1; padding:5px 0; font-size:11.5px; text-align:center; }
@@ -918,6 +918,27 @@
 .var-card-tf { font-size: 11px; color: var(--text-dim); }
 .var-card-date { margin-left: auto; font-size: 11px; color: var(--text-dim); }
 .var-card-tools { display: flex; gap: 2px; }
+/* Dòng đầu mỗi mục: câu mô tả bên trái, nút "Thêm..." bên phải. Trên điện thoại xếp chồng —
+   ép cạnh nhau thì nút bị bóp còn ba chữ một dòng, đọc như bị hỏng. */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.section-head > .btn { flex-shrink: 0; }
+@media (max-width: 720px) {
+  .section-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .section-head > .btn { justify-content: center; }
+}
+/* Nhóm theo: lý do / setup / ngày */
+.group-by { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 14px 0 4px; }
+.group-by-label { font-size: 11.5px; color: var(--text-dim); margin-right: 2px; }
+.group-by-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px;
+  font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  color: var(--text-dim); background: transparent; border: 1px solid var(--border);
+}
+.group-by-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.group-by-on, .group-by-on:hover {
+  color: var(--accent); background: rgba(var(--accent-rgb), .12); border-color: rgba(var(--accent-rgb), .45);
+}
+.group-by-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Thẻ setup bị miss/skip */
 .ms-card-watch { border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .05); }
 .ms-card-setup { font-size: 12.5px; font-weight: 600; color: var(--accent); }

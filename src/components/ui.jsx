@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from "react";
-import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus } from "lucide-react";
-import { formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
+import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
+import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
@@ -41,6 +41,34 @@ export function CellImagePreview({ image, link, title }) {
 
 // Nhiều ảnh trên một dòng, ngăn nhau bằng dấu "|" để nhìn ra ngay có mấy tấm.
 // `empty` = false khi ô trống thì không cần hiện dấu "—" (các thẻ ghi chú).
+// Khung bộ lọc dùng chung. Xếp dọc trên điện thoại, bảy ô lọc cao 414px — hơn nửa màn hình
+// 812px trôi qua trước khi thấy bản ghi đầu tiên. Trang Nhật ký đã thu gọn kiểu này từ lâu;
+// đây là mang đúng cách đó sang những trang còn lại.
+// Ô tìm kiếm ở lại ngoài vì đó là thứ được dùng nhiều nhất và gõ là thấy kết quả ngay.
+// Đang lọc dở thì mở sẵn — giấu mất thứ đang cắt bớt danh sách là cách nhanh nhất để
+// người dùng tưởng dữ liệu bị mất.
+export function FilterShell({ filters, onClear, search, before, children }) {
+  const activeCount = Object.keys(cleanFilters(filters)).length;
+  const [open, setOpen] = useState(() => activeCount > 0);
+  return (
+    <div className="filter-panel">
+      {before}
+      <div className="filter-bar">
+        {search}
+        <button type="button" className={`btn btn-ghost ${activeCount ? "filter-toggle-on" : ""}`}
+          onClick={() => setOpen((v) => !v)}>
+          <SlidersHorizontal size={13} /> Bộ lọc{activeCount ? ` (${activeCount})` : ""}
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {activeCount ? (
+          <button type="button" className="btn btn-ghost" onClick={onClear}><Filter size={13} /> Xóa lọc</button>
+        ) : null}
+      </div>
+      {open ? <div className="filter-grid">{children}</div> : null}
+    </div>
+  );
+}
+
 export function ImagePreviewStrip({ items, empty = true }) {
   const shots = (items || []).filter((s) => s && (s.image || s.link));
   if (!shots.length) return empty ? <span style={{ color: "var(--text-dim)" }}>—</span> : null;
