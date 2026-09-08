@@ -410,6 +410,21 @@ export function emptyVariant() {
   return { id: null, symbol: "", variantDate: "", timeframe: "", setup: "", images: [{ link: "", image: "" }], desc: "", note: "" };
 }
 
+// Dòng đầu của một đoạn văn, dùng làm nhãn nhận diện khi phần còn lại được thu gọn.
+// Bỏ qua các dòng trống ở đầu để không lấy nhầm một dòng rỗng làm nhãn.
+export function firstLine(text) {
+  return String(text || "").split("\n").map((x) => x.trim()).find(Boolean) || "";
+}
+
+// Phần còn lại sau dòng đầu. Rỗng thì đừng hiện nút mở — không ai muốn bấm ra để đọc lại
+// đúng câu vừa đọc.
+export function restLines(text) {
+  const lines = String(text || "").split("\n");
+  const at = lines.findIndex((x) => x.trim());
+  if (at < 0) return "";
+  return lines.slice(at + 1).join("\n").trim();
+}
+
 // Mô tả biến thể: một dòng để nhận ra ngay trên thẻ ("Reversal + Doji"). Bản ghi cũ chưa có
 // trường này nên lấy tạm dòng đầu của ghi chú — không thì thẻ cũ đột nhiên trống trơn.
 // Điền mô tả riêng là nó nhường chỗ ngay.

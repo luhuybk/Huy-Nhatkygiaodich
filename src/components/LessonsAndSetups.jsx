@@ -49,6 +49,12 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
 // trên điện thoại phải cuộn ngang gần 480px mới thấy hai cột cuối — mà hai cột cuối lại đúng
 // là "Review" và "Theo dõi", thứ đáng nhìn nhất. Thẻ đưa chúng lên ngay đầu.
 function MissSkipCards({ groups, dateField, onEdit, onRemove }) {
+  const [open, setOpen] = useState(() => new Set());
+  const toggle = (id) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   return (
     <div className="var-groups">
       {groups.map((g) => (
@@ -95,9 +101,22 @@ function MissSkipCards({ groups, dateField, onEdit, onRemove }) {
                       {dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : null}
                     </div>
                   ) : null}
-                  {n.note ? <p className="var-card-note ms-card-note">{n.note}</p> : null}
-                  {n.reviewNote ? (
-                    <p className="var-card-note ms-card-note ms-card-review"><b>Review:</b> {n.reviewNote}</p>
+                  {n.note || n.reviewNote ? (
+                    <>
+                      <button type="button" className="var-card-more"
+                        onClick={(e) => { e.stopPropagation(); toggle(n.id); }}>
+                        {open.has(n.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        Ghi chú
+                      </button>
+                      {open.has(n.id) ? (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          {n.note ? <p className="var-card-note ms-card-note">{n.note}</p> : null}
+                          {n.reviewNote ? (
+                            <p className="var-card-note ms-card-note ms-card-review"><b>Review:</b> {n.reviewNote}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </article>
               );

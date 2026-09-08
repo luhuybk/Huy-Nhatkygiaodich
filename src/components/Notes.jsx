@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { ConfirmButton, Field, ResourceSelect } from "./ui.jsx";
 import { NOTE_TYPES } from "../lib/constants.js";
-import { emptyNote } from "../lib/helpers.js";
+import { emptyNote, firstLine, restLines } from "../lib/helpers.js";
 
 export function NotesSection({ notes, onChange }) {
   const [form, setForm] = useState(emptyNote());
@@ -14,6 +15,15 @@ export function NotesSection({ notes, onChange }) {
   };
   const remove = (id) => { onChange(notes.filter((n) => n.id !== id)); if (form.id === id) setForm(emptyNote()); };
   const sorted = [...notes].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  // Kế hoạch giao dịch và đánh giá tuần thường dài cả chục dòng; đổ hết ra thì danh sách
+  // thành một bức tường chữ, lướt tìm đúng ghi chú cần đọc còn khó hơn mở từng cái.
+  // Dòng đầu ở lại làm nhãn nhận diện, phần còn lại chờ bấm mới hiện.
+  const [open, setOpen] = useState(() => new Set());
+  const toggle = (id) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
     <div>
@@ -31,16 +41,31 @@ export function NotesSection({ notes, onChange }) {
       </div>
       <div className="resource-list" style={{ marginTop: 16 }}>
         {sorted.length === 0 ? <p className="empty-note">Chưa có ghi chú nào.</p> : null}
-        {sorted.map((n) => (
-          <div key={n.id} className="note-card" onClick={() => setForm(n)}>
-            <div className="note-head">
-              <span className="note-type">{n.type}</span>
-              <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
-              <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+        {sorted.map((n) => {
+          const head = firstLine(n.content);
+          const rest = restLines(n.content);
+          const isOpen = open.has(n.id);
+          return (
+            <div key={n.id} className="note-card" onClick={() => setForm(n)}>
+              <div className="note-head">
+                <span className="note-type">{n.type}</span>
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
+                <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
+              </div>
+              <p className="note-content note-content-head">{head || "(chưa có nội dung)"}</p>
+              {rest ? (
+                <>
+                  <button type="button" className="var-card-more"
+                    onClick={(e) => { e.stopPropagation(); toggle(n.id); }}>
+                    {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    {isOpen ? "Thu gọn" : `Xem tiếp ${rest.split("\n").filter((x) => x.trim()).length} dòng`}
+                  </button>
+                  {isOpen ? <p className="note-content">{rest}</p> : null}
+                </>
+              ) : null}
             </div>
-            <p className="note-content">{n.content}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
