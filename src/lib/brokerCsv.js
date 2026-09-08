@@ -96,9 +96,16 @@ export function localTime(d) {
 // Sàn thêm hậu tố theo loại tài khoản (EURUSDm, XAUUSD.raw) và người dùng hay gõ EUR/USD —
 // quy hết về chữ và số viết hoa rồi mới so.
 export function normalizeSymbol(s) {
-  let v = String(s || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  // Bỏ hậu tố một chữ cái của tài khoản cent/raw, nhưng giữ nguyên mã 3 ký tự như XAU.
-  if (v.length > 6 && /[A-Z]$/.test(v) && /^[A-Z]{6}/.test(v)) v = v.slice(0, 6);
+  let v = String(s || "").trim().toUpperCase();
+  // Hậu tố loại tài khoản mà sàn gắn sau dấu chấm/thăng/cộng: XAUUSD.raw, EURUSD#, US30.cash.
+  // Cắt ngay ở dấu phân cách chứ không đoán theo độ dài. Riêng "/" và "-" KHÔNG tính là phân
+  // cách vì đó là cách người dùng gõ cặp tiền (EUR/USD), cắt ở đó thì chỉ còn "EUR".
+  const cut = v.search(/[.#+]/);
+  if (cut >= 3) v = v.slice(0, cut);
+  v = v.replace(/[^A-Z0-9]/g, "");
+  // Hậu tố MỘT chữ cái của tài khoản cent/raw (EURUSDm). Chỉ áp dụng khi đúng 7 ký tự:
+  // dài hơn là mã thật — USOILUSD mà cắt thành USOILU thì không khớp được với gì nữa.
+  if (v.length === 7 && /[A-Z]$/.test(v) && /^[A-Z]{6}/.test(v)) v = v.slice(0, 6);
   return v;
 }
 

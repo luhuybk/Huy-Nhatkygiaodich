@@ -643,7 +643,7 @@ function AppShell({ onSignOut, userEmail }) {
           <div className="body">
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
-              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} /> :
+              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => goTo("lessons")} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
@@ -651,7 +651,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "setuphub" ? (
-                <SetupHubSection missedSetups={missedSetups} skippedSetups={skippedSetups} setupVariants={setupVariants} resources={resources}
+                <SetupHubSection missedSetups={missedSetups} skippedSetups={skippedSetups} setupVariants={setupVariants} trades={trades} resources={resources}
                   onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
               ) :
               view === "form" ? (

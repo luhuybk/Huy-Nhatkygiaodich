@@ -1192,7 +1192,9 @@ export function normalizeResources(rs) {
   merged.accounts = (merged.accounts || []).map((a) =>
     typeof a === "string"
       ? { id: uid(), name: a, broker: "", currency: "USD", initialBalance: 0, parentId: "" }
-      : { initialBalance: 0, parentId: "", ...a }
+      // id là thứ nối cha-con. Bản sao lưu cũ (hoặc file sửa tay) có thể có tài khoản dạng
+      // object mà thiếu id — thiếu thì accountOptions đệ quy vô hạn và cả app trắng màn hình.
+      : { initialBalance: 0, parentId: "", ...a, id: a.id || uid() }
   );
   if (!merged.sessions || !merged.sessions.length) merged.sessions = DEFAULT_RESOURCES.sessions;
   merged.fxRates = { ...DEFAULT_RESOURCES.fxRates, ...(merged.fxRates || {}), USD: 1 };
@@ -2389,12 +2391,10 @@ export function buildGrowthSeries(curve, initialBalance, granularity) {
   dated.forEach((p) => {
     let key;
     if (granularity === "month") key = p.date.slice(0, 7);
-    else if (granularity === "week") {
-      const d = new Date(p.date + "T00:00:00");
-      const dow = (d.getDay() + 6) % 7;
-      const monday = new Date(d); monday.setDate(d.getDate() - dow);
-      key = monday.toISOString().slice(0, 10);
-    } else key = p.date;
+    // weekStart() chứ không phải toISOString(): cái sau quy về UTC, nên ở múi giờ dương
+    // (Việt Nam +7) nửa đêm Thứ 2 rơi về Chủ nhật và mọi nhãn tuần lệch một ngày.
+    else if (granularity === "week") key = weekStart(p.date);
+    else key = p.date;
     byPeriod[key] = p.balance;
   });
   const keys = Object.keys(byPeriod).sort();
@@ -2640,11 +2640,17 @@ export function expandAccountFilter(want, accounts) {
 export function accountOptions(accounts) {
   const list = (accounts || []).filter((a) => a && a.name);
   const out = [];
+  // Chặn đệ quy vô hạn: tài khoản thiếu id thì walk(undefined) quay lại đúng tập gốc, còn
+  // parentId trỏ vòng (A là con B, B là con A) thì đi mãi không hết. Cả hai đều làm tràn
+  // ngăn xếp và trắng màn hình, mà dữ liệu nhập từ file cũ hoàn toàn có thể rơi vào.
+  const seen = new Set();
   const walk = (parentId, depth) => {
     list.filter((a) => (a.parentId || "") === (parentId || "")).forEach((a) => {
-      const isGroup = list.some((x) => x.parentId === a.id);
+      if (seen.has(a)) return;
+      seen.add(a);
+      const isGroup = !!a.id && list.some((x) => x.parentId === a.id);
       out.push({ value: a.name, depth, isGroup });
-      walk(a.id, depth + 1);
+      if (a.id) walk(a.id, depth + 1);
     });
   };
   walk("", 0);
@@ -2978,6 +2984,67 @@ export function groupBySetup(items, setups, dateField) {
     return ai - bi || a.setup.localeCompare(b.setup);
   });
   return out;
+}
+
+// Gom setup bị miss/skip theo LÝ DO chứ không theo ngày. Câu hỏi của mục này là "vì sao mình
+// cứ bỏ lỡ" — xếp theo ngày thì 8 lần cùng một lý do nằm rải rác, đọc xong không rút ra gì.
+// Nhóm đông nhất lên đầu: đó chính là thứ đáng sửa trước.
+export function groupByReason(items, dateField) {
+  const groups = new Map();
+  (items || []).forEach((n) => {
+    const key = (n && n.reason) || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  });
+  const out = Array.from(groups.entries()).map(([reason, list]) => ({
+    reason,
+    list: list.slice().sort((a, b) => (b[dateField] || "").localeCompare(a[dateField] || "")),
+  }));
+  out.sort((a, b) => {
+    // "Chưa ghi lý do" luôn xuống cuối dù đông tới đâu — nó không phải một lý do để sửa.
+    if (!a.reason !== !b.reason) return a.reason ? -1 : 1;
+    return b.list.length - a.list.length || a.reason.localeCompare(b.reason);
+  });
+  return out;
+}
+
+// Setup nào bạn hay bỏ lỡ nhất, và setup đó thực tế đánh có ăn không? Hai câu hỏi đó nằm ở
+// hai trang khác nhau nên chẳng ai ghép lại. Bỏ lỡ nhiều một setup đang lỗ thì không sao;
+// bỏ lỡ nhiều đúng setup lời nhất mới là tiền mất thật.
+export function missedVsPerformance(missed, skipped, trades, resources) {
+  const bucket = new Map();
+  const touch = (setup) => {
+    const key = setup || "";
+    if (!bucket.has(key)) bucket.set(key, { setup: key, miss: 0, skip: 0, rNet: 0, rCount: 0, closed: 0, wins: 0 });
+    return bucket.get(key);
+  };
+  (missed || []).forEach((n) => { touch(n && n.setup).miss += 1; });
+  (skipped || []).forEach((n) => { touch(n && n.setup).skip += 1; });
+  (trades || []).forEach((t) => {
+    if (!t || !t.setup) return;
+    const r = computeResult(t);
+    if (r.status !== "closed") return;
+    const row = touch(t.setup);
+    row.closed += 1;
+    if (r.outcome === "win") row.wins += 1;
+    if (r.rr !== null && Number.isFinite(r.rr)) { row.rNet += r.rr; row.rCount += 1; }
+  });
+  const rows = Array.from(bucket.values())
+    .filter((r) => r.setup && (r.miss + r.skip) > 0)
+    .map((r) => ({
+      ...r,
+      total: r.miss + r.skip,
+      winRate: r.closed ? (r.wins / r.closed) * 100 : null,
+      rPerTrade: r.rCount ? r.rNet / r.rCount : null,
+    }));
+  // Đắt nhất trước: bỏ lỡ nhiều × mỗi lệnh ăn được nhiều R. Setup chưa từng đánh (rPerTrade
+  // null) thì chưa có bằng chứng gì, xếp sau những setup đã chứng minh là lời.
+  rows.sort((a, b) => {
+    const ca = (a.rPerTrade || 0) > 0 ? a.total * a.rPerTrade : -1;
+    const cb = (b.rPerTrade || 0) > 0 ? b.total * b.rPerTrade : -1;
+    return cb - ca || b.total - a.total;
+  });
+  return rows;
 }
 
 export function applyProblemLogFilters(items, filters) {

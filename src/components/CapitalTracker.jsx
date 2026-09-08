@@ -3,7 +3,7 @@ import { Trash2, Pencil, LineChart as LineChartIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ACCENT, CAPITAL_FLOW_TYPES, CURRENCIES, GRID, MUTED, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, Field, MoneyInput, StatCard } from "./ui.jsx";
-import { buildCapitalIndexCurve, buildTWRCurve, emptyCapitalEntry, emptyCapitalFlow, fmtMoney, uid } from "../lib/helpers.js";
+import { buildCapitalIndexCurve, buildTWRCurve, emptyCapitalEntry, emptyCapitalFlow, fmtMoney, todayStr, uid } from "../lib/helpers.js";
 
 export function EquityIndexPage({ resources, ledger, trades }) {
   const [accountId, setAccountId] = useState(resources.accounts[0]?.id || "");
@@ -78,7 +78,7 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
     if (newAccount.reserveCapital === "" || newAccount.tradeCapital === "") { setAccountError("Nhập đủ Vốn dự phòng và Vốn trade ban đầu."); return; }
     setAccountError("");
     const acc = { id: uid(), name: newAccount.name.trim(), currency: newAccount.currency || "USD" };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr(); // giờ máy, không phải UTC — tạo tài khoản trước 7h sáng sẽ ra ngày hôm qua
     const firstEntry = { id: uid(), accountId: acc.id, date: today, reserveCapital: newAccount.reserveCapital, tradeCapital: newAccount.tradeCapital, note: "Mốc khởi tạo tài khoản" };
     onAccountsChange([...accounts, acc]);
     onEntriesChange([...entries, firstEntry]);

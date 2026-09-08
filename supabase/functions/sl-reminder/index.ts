@@ -131,6 +131,16 @@ function partialProfitOf(t: Record<string, unknown>) {
   return sum;
 }
 
+// Phí hoa hồng + qua đêm, giữ nguyên dấu như sàn xuất (bị trừ là số âm) nên cộng thẳng.
+// computeResult() bên web luôn cộng khoản này; thiếu ở đây thì tin nhắn Telegram và số
+// trong app lệch nhau đúng bằng tổng phí, mà lệnh giữ nhiều ngày thì phí không hề nhỏ.
+function feesOf(t: Record<string, unknown>) {
+  const v = t.fees;
+  if (v === "" || v === null || v === undefined) return 0;
+  const n = Number(v);
+  return Number.isNaN(n) ? 0 : n;
+}
+
 function fxRate(currency: string | undefined, fxRates: Record<string, number> | undefined) {
   if (!currency || currency === "USD") return 1;
   const r = Number(fxRates && fxRates[currency]);
@@ -488,8 +498,8 @@ Deno.serve(async () => {
         for (const t of closed) {
           const closingProfit = t.profit === "" || t.profit === null || t.profit === undefined ? null : Number(t.profit);
           if (closingProfit === null || Number.isNaN(closingProfit)) continue;
-          // Lời/lỗ cả lệnh = các lần chốt bớt + lần đóng nốt, giống hệt bên web.
-          const profit = closingProfit + partialProfitOf(t);
+          // Lời/lỗ cả lệnh = các lần chốt bớt + lần đóng nốt + phí, giống hệt bên web.
+          const profit = closingProfit + partialProfitOf(t) + feesOf(t);
           if (profit > 0) win++; else if (profit < 0) loss++; else be++;
 
           const name = (t.account as string | undefined) || "(chưa gán tài khoản)";

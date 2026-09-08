@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { LayoutDashboard, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, ChevronLeft, ChevronDown, ChevronRight, GraduationCap } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { accountFamily, accountOptions, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { accountFamily, accountOptions, lessonLevel, lessonTitle, readLocalUi, writeLocalUi, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -60,7 +60,42 @@ export function DashboardFilters({ resources, account, onAccount, range, onRange
   );
 }
 
-export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade }) {
+// Bài học cấp 1 là thứ bạn tự đánh dấu "phải thuộc nằm lòng, sai là trả giá đắt" — mà lại
+// nằm sâu trong trang Hành trình, mở ra đọc thì đã vào lệnh xong rồi. Đặt ngay đầu Tổng quan,
+// là trang mở đầu tiên mỗi ngày. Chỉ cấp 1, không lấn sang cấp 2-3: nhồi hết thì thành nền,
+// và nền thì không ai đọc.
+const CORE_SHOWN = 4;
+
+function CoreLessons({ lessons, onGoToLessons }) {
+  const [open, setOpen] = useState(() => readLocalUi("dashCoreOpen", "1") !== "0");
+  const core = useMemo(() => (lessons || []).filter((n) => lessonLevel(n) === 1), [lessons]);
+  if (!core.length) return null;
+  const toggle = () => { const next = !open; setOpen(next); writeLocalUi("dashCoreOpen", next ? "1" : "0"); };
+  return (
+    <div className="core-lessons">
+      <button type="button" className="core-lessons-head" onClick={toggle}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <GraduationCap size={14} />
+        <b>Bài học cốt lõi</b>
+        <span className="var-group-count">{core.length}</span>
+      </button>
+      {open ? (
+        <>
+          <ul className="core-lessons-list">
+            {core.slice(0, CORE_SHOWN).map((n) => (
+              <li key={n.id}>{lessonTitle(n) || "(chưa có nội dung)"}</li>
+            ))}
+          </ul>
+          <button type="button" className="core-lessons-more" onClick={onGoToLessons}>
+            {core.length > CORE_SHOWN ? `Xem tất cả ${core.length} bài cốt lõi` : "Mở trang bài học"}
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
@@ -76,6 +111,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
     return (
       <div>
         <RiskAlertBanner alerts={riskAlerts} />
+        <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
         {scopeBar}
         <div className="empty-state">
           <LayoutDashboard size={28} color="var(--text-dim)" />
@@ -137,6 +173,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   return (
     <div>
       <RiskAlertBanner alerts={riskAlerts} />
+      <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Chỉ số quan trọng</h3>
       <p className="field-hint" style={{ marginBottom: 10, marginTop: 4 }}>
