@@ -510,8 +510,40 @@ function SortBar({ sort, onChange }) {
   );
 }
 
-export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange, columns }) {
+// Chừa một chút dưới đáy để bảng không dán sát mép, và một sàn tối thiểu để màn hình thấp
+// (hoặc bàn phím ảo che mất) không bóp bảng còn hai dòng.
+const TABLE_BOTTOM_GAP = 20;
+const MIN_TABLE_HEIGHT = 260;
+
+// Bảng dính tiêu đề phải tự cuộn dọc, nên chiều cao của nó quyết định mọi thứ: đặt cứng
+// bằng calc(100vh - 250px) là đoán mò — bộ lọc mở ra hay thanh "đã chọn N lệnh" hiện lên là
+// đáy bảng tụt xuống dưới màn hình, trang bắt đầu cuộn, và tiêu đề dính trôi đi mất cùng cả
+// bảng. Đo vị trí thật rồi kéo đáy bảng đúng tới mép dưới màn hình: trang hết chỗ để cuộn,
+// mọi thao tác cuộn rơi vào trong bảng, tiêu đề đứng yên.
+function useFitToViewport(ref, on) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !on) return undefined;
+    const fit = () => {
+      el.style.maxHeight = `${Math.max(MIN_TABLE_HEIGHT, window.innerHeight - el.getBoundingClientRect().top - TABLE_BOTTOM_GAP)}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    // Đổi chiều cao khối phía trên (mở bộ lọc, hiện thanh chọn) không sinh sự kiện nào —
+    // theo dõi chính khung cuộn của trang để tính lại.
+    const body = el.closest(".body");
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
+    if (ro && body) ro.observe(body);
+    return () => { window.removeEventListener("resize", fit); if (ro) ro.disconnect(); };
+  });
+}
+
+// sticky: chỉ bật cho bảng nhật ký chính. Mấy bảng con vài dòng nằm trong thẻ biểu đồ thì
+// thêm một thanh cuộn nữa là thừa.
+export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange, columns, sticky }) {
   const res = resources || { checklistItems: [] };
+  const wrapRef = useRef(null);
+  useFitToViewport(wrapRef, sticky && trades.length > 0);
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   const selectable = !!selected && !!onToggleOne;
   const allSelected = selectable && trades.length > 0 && trades.every((t) => selected.has(t.id));
@@ -532,7 +564,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
   const visible = normalizeJournalColumns(columns);
   const shown = JOURNAL_COLUMNS.filter((c) => visible.includes(c.id));
   return (
-    <div className="table-wrap">
+    <div ref={wrapRef} className={`table-wrap ${sticky ? "table-wrap-sticky" : ""}`}>
       <table className="table">
         <thead>
           <tr>
@@ -820,7 +852,7 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
             </div>
           </div>
           <SortBar sort={sort} onChange={setSort} />
-          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} />
+          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} sticky />
         </div>
       ) : tab === "calendar" ? (
         <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} columns={uiSettings && uiSettings.journalColumns} />

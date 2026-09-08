@@ -369,6 +369,20 @@
           font-family:'IBM Plex Mono',monospace; }
         .table-wrap { position:relative; }
         .table-wrap::after { content:""; position:absolute; left:0; right:0; top:39px; height:2px; background:linear-gradient(90deg, var(--accent), transparent 40%); opacity:0.4; pointer-events:none; }
+        /* Tiêu đề dính. Trang cuộn ở .body, nhưng .table-wrap có overflow-x nên trình duyệt
+           bật luôn overflow-y — tức là nó đã là một vùng cuộn riêng, và sticky sẽ neo vào nó
+           chứ không vào .body. Nên phải giới hạn chiều cao để nó thật sự cuộn được dọc;
+           thiếu max-height thì thead dính vào một khung không bao giờ cuộn = không dính gì cả. */
+        .table-wrap-sticky { max-height:calc(100vh - 250px); min-height:260px; overflow-y:auto; }
+        .table-wrap-sticky thead th { position:sticky; top:0; z-index:2; }
+        /* border-collapse vẽ viền lên bảng chứ không lên ô, nên ô dính mất viền dưới khi cuộn.
+           Dùng shadow: vừa thay viền, vừa là vạch nhấn (trước đây do .table-wrap::after vẽ —
+           cái đó nằm trong vùng cuộn nên sẽ trôi mất, phải tắt đi ở bảng dính). */
+        .table-wrap-sticky thead th { box-shadow:inset 0 -1px 0 var(--border), 0 2px 5px rgba(0,0,0,0.35); }
+        .table-wrap-sticky::after { display:none; }
+        @media (max-width:720px) {
+          .table-wrap-sticky { max-height:calc(100vh - 180px); }
+        }
         .th-sortable { cursor:pointer; user-select:none; }
         .th-sortable:hover { color:var(--text); background:var(--surface-3,var(--surface-2)); }
         .th-sorted { color:var(--accent); }
