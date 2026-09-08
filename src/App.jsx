@@ -59,7 +59,7 @@ const NAV_GROUPS = [
       { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
       { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
       { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
-      { key: "weeklyreport", label: "Báo cáo tuần", icon: CalendarRange },
+      { key: "weeklyreport", label: "Báo cáo tuần/tháng", icon: CalendarRange },
       { key: "streaks", label: "Chuỗi thắng / thua", icon: Activity },
       { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
     ]

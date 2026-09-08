@@ -469,6 +469,11 @@
         .week-line { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:13px;
           padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:7px; }
         .week-line-name { font-weight:600; min-width:130px; }
+        .mini-bar { flex:1; min-width:70px; height:6px; border-radius:3px; background:var(--surface-2);
+          border:1px solid var(--border); overflow:hidden; align-self:center; }
+        .mini-bar-fill { display:block; height:100%; border-radius:3px; min-width:2px; }
+        .mini-bar-fill.is-win { background:var(--win); }
+        .mini-bar-fill.is-loss { background:var(--loss); }
         .principles-editor .resource-list { counter-reset:principle-counter; gap:10px; }
         .principles-editor .resource-item { counter-increment:principle-counter; padding:15px 16px; border-radius:10px; border-width:1.5px;
           font-size:14.5px; font-weight:600; background:var(--surface-2); box-shadow:0 1px 0 rgba(0,0,0,0.15); }

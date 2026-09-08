@@ -1657,7 +1657,7 @@ export function buildStreakCurve(closed) {
   };
 }
 
-// ——— Báo cáo tuần theo tài khoản ———
+// ——— Báo cáo theo kỳ (tuần / tháng) theo tài khoản ———
 // Tuần tính từ Thứ 2 đến Chủ nhật, đúng nhịp làm việc — không phải 7 ngày trôi từ hôm nay.
 export function weekStart(dateStr) {
   const d = new Date((dateStr || todayStr()) + "T00:00:00");
@@ -1665,9 +1665,83 @@ export function weekStart(dateStr) {
   return shiftDate(dateStr || todayStr(), -offset);
 }
 
+export function monthStart(dateStr) {
+  return `${(dateStr || todayStr()).slice(0, 7)}-01`;
+}
+
+// Cộng tháng phải đi qua Date chứ không cộng số: tháng 12 + 1 là năm sau, và 31/1 + 1 tháng
+// nếu cộng thô sẽ nhảy sang 3/3. Luôn neo về ngày 1 nên không dính chuyện tháng thiếu ngày.
+function addMonths(startStr, n) {
+  const y = Number((startStr || todayStr()).slice(0, 4));
+  const m = Number((startStr || todayStr()).slice(5, 7));
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
 export function weekLabel(from, to) {
   const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "");
   return `${dm(from)} – ${dm(to)}/${(to || "").slice(0, 4)}`;
+}
+
+// Mọi khác biệt giữa tuần và tháng gom hết vào một chỗ, để phần báo cáo bên dưới
+// và cả trang hiển thị chỉ cần nói "kỳ" — thêm kỳ mới (quý?) chỉ là thêm một mục ở đây.
+export const PERIODS = {
+  week: {
+    key: "week", label: "Tuần", noun: "tuần",
+    prev: "Tuần trước", next: "Tuần sau", back: "Về tuần này", current: "Đang xem tuần hiện tại",
+    vsPrev: "so với tuần trước", trendCount: 8, trendTitle: "8 tuần gần nhất",
+    note: "Tuần tính từ Thứ 2 đến Chủ nhật.",
+    empty: "Tuần này chưa đóng lệnh nào.",
+  },
+  month: {
+    key: "month", label: "Tháng", noun: "tháng",
+    prev: "Tháng trước", next: "Tháng sau", back: "Về tháng này", current: "Đang xem tháng hiện tại",
+    vsPrev: "so với tháng trước", trendCount: 12, trendTitle: "12 tháng gần nhất",
+    note: "Tháng tính theo lịch, từ ngày 1 đến ngày cuối tháng.",
+    empty: "Tháng này chưa đóng lệnh nào.",
+  },
+};
+
+export function periodOf(mode) { return PERIODS[mode] || PERIODS.week; }
+
+export function periodStart(mode, dateStr) {
+  return mode === "month" ? monthStart(dateStr) : weekStart(dateStr);
+}
+
+export function periodEnd(mode, start) {
+  return mode === "month" ? shiftDate(addMonths(start, 1), -1) : shiftDate(start, 6);
+}
+
+export function shiftPeriod(mode, start, n) {
+  return mode === "month" ? addMonths(start, n) : shiftDate(start, 7 * n);
+}
+
+export function periodLabel(mode, from, to) {
+  if (mode === "month") return `Tháng ${Number((from || "").slice(5, 7))}/${(from || "").slice(0, 4)}`;
+  return weekLabel(from, to);
+}
+
+// Nhãn trên trục biểu đồ: tuần thì ngày/tháng, tháng thì T9 — trong 12 tháng liền nhau
+// mỗi số tháng chỉ xuất hiện đúng một lần nên không sợ lẫn năm.
+export function periodTick(mode, from) {
+  return mode === "month" ? `T${Number((from || "").slice(5, 7))}` : `${(from || "").slice(8, 10)}/${(from || "").slice(5, 7)}`;
+}
+
+// Các tuần nằm trong một tháng, đã CẮT về trong tháng — để tổng các tuần đúng bằng
+// tổng tháng. Không cắt thì tuần đầu và tuần cuối thò sang tháng bên cạnh, cộng lại lệch.
+export function weeksOfMonth(mStart) {
+  const from0 = monthStart(mStart);
+  const mEnd = periodEnd("month", from0);
+  const out = [];
+  let cur = weekStart(from0);
+  while (cur <= mEnd) {
+    const wEnd = shiftDate(cur, 6);
+    const from = cur < from0 ? from0 : cur;
+    const to = wEnd > mEnd ? mEnd : wEnd;
+    out.push({ from, to, label: `${from.slice(8, 10)}/${from.slice(5, 7)} – ${to.slice(8, 10)}/${to.slice(5, 7)}` });
+    cur = shiftDate(cur, 7);
+  }
+  return out;
 }
 
 // Tách R thắng và R thua chứ không chỉ R ròng: +2R có thể là "thắng 3R thua 1R" (ổn)
@@ -1692,8 +1766,8 @@ function accountRTotals(items) {
   };
 }
 
-// Lệnh thuộc về tuần nào tính theo ngày ĐÓNG — đó là lúc kết quả thành hình.
-export function weeklyAccountReport(trades, resources, from, to) {
+// Lệnh thuộc về kỳ nào tính theo ngày ĐÓNG — đó là lúc kết quả thành hình.
+export function periodAccountReport(trades, resources, from, to) {
   const inWeek = (trades || []).filter((t) => {
     const d = t && t.exitDate;
     return d && d >= from && d <= to;
@@ -1712,14 +1786,15 @@ export function weeklyAccountReport(trades, resources, from, to) {
   return { from, to, rows, total, opened: (trades || []).filter((t) => t.entryDate >= from && t.entryDate <= to).length };
 }
 
-// Vài tuần gần nhất để nhìn xu hướng — một tuần dương giữa bốn tuần âm thì chưa phải tin vui.
-export function weeklyRTrend(trades, resources, endWeekStart, weeks = 8) {
+// Vài kỳ gần nhất để nhìn xu hướng — một tuần dương giữa bốn tuần âm thì chưa phải tin vui.
+export function periodRTrend(trades, resources, mode, endStart, count) {
+  const n = count || periodOf(mode).trendCount;
   const out = [];
-  for (let i = weeks - 1; i >= 0; i--) {
-    const from = shiftDate(endWeekStart, -7 * i);
-    const to = shiftDate(from, 6);
-    const rep = weeklyAccountReport(trades, resources, from, to);
-    out.push({ from, to, label: `${from.slice(8, 10)}/${from.slice(5, 7)}`, rNet: rep.total.rNet, count: rep.total.count });
+  for (let i = n - 1; i >= 0; i--) {
+    const from = shiftPeriod(mode, endStart, -i);
+    const to = periodEnd(mode, from);
+    const rep = periodAccountReport(trades, resources, from, to);
+    out.push({ from, to, label: periodTick(mode, from), rNet: rep.total.rNet, count: rep.total.count });
   }
   return out;
 }
