@@ -48,18 +48,21 @@ function DropBox({ label, hint, file, onPick, onClear, required }) {
   );
 }
 
-// Bỏ cột "Ghi chú" cho bảng gọn; mấy chi tiết phụ chuyển thành tooltip của dòng, còn hai
-// thứ thật sự quan trọng (đã có trong nhật ký / chưa trừ lãi vay) thì nói ở dòng cảnh báo
-// bên trên kèm tên mã, chứ không giấu vào tooltip.
-function rowTitle(r) {
+// Ghi chú của DÒNG XEM TRƯỚC, không phải của lệnh — lệnh nhập vào để trống ô ghi chú cho
+// người dùng tự viết. Ở đây chỉ nói những thứ có ý nghĩa lúc đang chọn nhập.
+function rowNote(r) {
   const x = r.trip || r.lot;
   const bits = [];
-  if (r.dup) bits.push("Đã có trong nhật ký");
-  if (r.trip && r.trip.source === "tinh") bits.push("Chưa trừ lãi vay margin");
-  if (x.cashRatio > 0 && x.cashRatio < 1) bits.push(`Margin ${Math.round((1 - x.cashRatio) * 100)}%`);
-  else if (x.cashRatio >= 1) bits.push("Tiền mặt 100%");
-  if (r.trip) bits.push(`Phí + thuế ${fmtMoney(r.trip.costs)}đ`);
-  return bits.join(" · ");
+  if (x.cashRatio > 0 && x.cashRatio < 1) bits.push(`margin ${Math.round((1 - x.cashRatio) * 100)}%`);
+  else if (x.cashRatio >= 1) bits.push("tiền mặt");
+  if (r.trip) bits.push(`phí+thuế ${fmtMoney(r.trip.costs)}đ`);
+  return (
+    <>
+      {r.dup ? <span>đã có trong nhật ký · </span> : null}
+      {r.trip && r.trip.source === "tinh" ? <span style={{ color: "var(--loss)" }}>chưa có lãi vay · </span> : null}
+      {bits.join(" · ")}
+    </>
+  );
 }
 
 // Lệnh đã có trong nhật ký rồi thì bỏ tick sẵn — nhập lại lần hai sẽ nhân đôi lãi lỗ,
@@ -258,6 +261,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                   <th className="cell-num">Giá mua</th>
                   <th className="cell-num">Giá bán</th>
                   <th className="cell-num">Lãi/Lỗ</th>
+                  <th>Ghi chú</th>
                 </tr>
               </thead>
               <tbody>
@@ -266,7 +270,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                   const o = r.lot;
                   const days = t ? holdingDays(t) : null;
                   return (
-                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""} title={rowTitle(r)}>
+                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""}>
                       <td><input type="checkbox" checked={chosen.has(r.key)} onChange={() => toggle(r.key)} /></td>
                       <td><b>{t ? t.symbol : o.symbol}</b></td>
                       <td className="cell-num">{fmtQty(t ? t.qty : o.qty)}</td>
@@ -278,6 +282,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                       <td className="cell-num" style={t ? { color: t.net > 0 ? "var(--win)" : t.net < 0 ? "var(--loss)" : "" } : undefined}>
                         {t ? fmtMoney(t.net) : <span className="field-hint">{fmtMoney(o.value)} vốn</span>}
                       </td>
+                      <td className="cell-soft">{rowNote(r)}</td>
                     </tr>
                   );
                 })}
@@ -299,8 +304,9 @@ export function DnseImport({ trades, resources, onAddTrades }) {
             </button>
           </div>
           <p className="field-hint" style={{ marginTop: 8 }}>
-            Lệnh nhập vào chỉ có phần sàn biết chắc: mã, ngày, giá, khối lượng, lãi lỗ và phí.
-            Setup, lý do vào lệnh, tâm lý và đánh giá vẫn để trống cho bạn tự viết trong nhật ký.
+            Lệnh nhập vào chỉ mang những gì sàn biết chắc: mã, ngày, lãi lỗ và phí. <b>Ô ghi chú để trống</b> —
+            cột Ghi chú ở đây chỉ phục vụ lúc chọn, không ghi vào lệnh. Setup, lý do vào lệnh, tâm lý và
+            đánh giá cũng để trống cho bạn tự viết. Khối lượng và giá thì xem ở bảng trên trước khi nhập.
           </p>
         </>
       ) : null}

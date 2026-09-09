@@ -297,6 +297,8 @@ function money(n) {
 
 // Một lệnh trong nhật ký. Giữ đúng quy ước của app: `profit` là lãi lỗ theo GIÁ, `fees` là
 // khoản bị trừ (số âm) — cộng lại mới ra con số cuối. Nhồi hết vào `profit` sẽ bị trừ phí hai lần.
+// KHÔNG tự viết gì vào ô ghi chú: đó là chỗ của người dùng, chi tiết khối lượng/giá đã hiện
+// sẵn ở bảng xem trước rồi.
 export function tradeFromDnseTrip(trip, account, symbols) {
   const known = (symbols || []).find((s) => String(s).trim().toUpperCase() === trip.symbol);
   return {
@@ -310,7 +312,6 @@ export function tradeFromDnseTrip(trip, account, symbols) {
     exitTime: trip.exitTime,
     profit: money(trip.gross),
     fees: money(-trip.costs),
-    inTradeNote: dnseNote(trip),
   };
 }
 
@@ -323,19 +324,7 @@ export function tradeFromDnseOpen(lot, account, symbols) {
     direction: "buy",
     entryDate: lot.date,
     entryTime: lot.time,
-    inTradeNote: `DNSE · ${fmtQty(lot.qty)} cp @ ${fmtMoney(lot.price)}đ = ${fmtMoney(lot.value)}đ${lot.cashRatio && lot.cashRatio < 1 ? ` · margin ${Math.round((1 - lot.cashRatio) * 100)}%` : " · tiền mặt 100%"}`,
   };
-}
-
-function dnseNote(trip) {
-  const bits = [
-    `DNSE · ${fmtQty(trip.qty)} cp`,
-    `mua ${fmtMoney(trip.entryPrice)}đ → bán ${fmtMoney(trip.exitPrice)}đ`,
-  ];
-  if (trip.cashRatio && trip.cashRatio < 1) bits.push(`margin ${Math.round((1 - trip.cashRatio) * 100)}%`);
-  if (trip.interest) bits.push(`lãi vay ${fmtMoney(trip.interest)}đ`);
-  if (trip.source === "tinh") bits.push("chưa có file lãi lỗ nên chưa tính lãi vay");
-  return bits.join(" · ");
 }
 
 export function fmtMoney(n) {
