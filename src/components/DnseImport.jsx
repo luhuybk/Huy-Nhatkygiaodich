@@ -1,0 +1,282 @@
+import { useMemo, useRef, useState } from "react";
+import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet } from "lucide-react";
+import { Field, ResourceSelect, StatCard } from "./ui.jsx";
+import { readXlsx, xlsxSupported } from "../lib/xlsx.js";
+import {
+  buildDnseTrips, fmtMoney, fmtQty, holdingDays,
+  parseDnseOrders, parseDnsePnl, tradeFromDnseOpen, tradeFromDnseTrip,
+} from "../lib/dnseImport.js";
+
+// Đoán tài khoản dùng để ghi cổ phiếu Việt: ưu tiên tên có "vn"/"stock"/"chứng khoán"/"dnse",
+// không có thì chọn tài khoản ghi bằng VND, vẫn không có thì để người dùng tự chọn.
+function guessVnAccount(accounts, trades) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const byName = list.find((a) => /vn|stock|dnse|chứng khoán|co phieu|cổ phiếu/i.test(a.name));
+  if (byName) return byName.name;
+  const vnd = list.filter((a) => String(a.currency || "").toUpperCase() === "VND");
+  if (vnd.length === 1) return vnd[0].name;
+  const used = new Set((trades || []).map((t) => t.account));
+  const vndUsed = vnd.filter((a) => used.has(a.name));
+  return vndUsed.length === 1 ? vndUsed[0].name : "";
+}
+
+function DropBox({ label, hint, file, onPick, onClear, required }) {
+  const ref = useRef(null);
+  return (
+    <div className={`dnse-drop ${file && !file.error ? "dnse-drop-ok" : ""} ${file && file.error ? "dnse-drop-bad" : ""}`}>
+      <div className="dnse-drop-head">
+        <FileSpreadsheet size={15} />
+        <b>{label}</b>
+        <span className="field-hint">{required ? "bắt buộc" : "tuỳ chọn"}</span>
+      </div>
+      {file ? (
+        <div className="dnse-drop-file">
+          {file.error ? <AlertTriangle size={14} color="var(--loss)" /> : <CheckCircle2 size={14} color="var(--win)" />}
+          <span className="dnse-file-name" title={file.name}>{file.name}</span>
+          <button type="button" className="row-btn" title="Bỏ file này" onClick={onClear}><X size={13} /></button>
+        </div>
+      ) : (
+        <p className="field-hint" style={{ margin: "2px 0 8px" }}>{hint}</p>
+      )}
+      {file && file.error ? <p className="error-text" style={{ marginTop: 2 }}>{file.error}</p> : null}
+      <input ref={ref} type="file" accept=".xlsx" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onPick(f); e.target.value = ""; }} />
+      <button type="button" className="btn btn-ghost" onClick={() => ref.current && ref.current.click()}>
+        <Upload size={13} /> {file ? "Chọn file khác" : "Chọn file .xlsx"}
+      </button>
+    </div>
+  );
+}
+
+// Lệnh đã có trong nhật ký rồi thì bỏ tick sẵn — nhập lại lần hai sẽ nhân đôi lãi lỗ,
+// mà lệch số kiểu đó rất khó phát hiện về sau.
+function existingKeys(trades, account) {
+  const set = new Set();
+  (trades || []).forEach((t) => {
+    if (account && t.account !== account) return;
+    const sym = String(t.symbol || "").trim().toUpperCase();
+    if (!sym) return;
+    set.add(`${sym}|${t.entryDate || ""}|${t.exitDate || ""}`);
+  });
+  return set;
+}
+
+export function DnseImport({ trades, resources, onAddTrades }) {
+  const accounts = resources.accounts || [];
+  const symbols = resources.symbols || [];
+  const [orderFile, setOrderFile] = useState(null);
+  const [pnlFile, setPnlFile] = useState(null);
+  const [account, setAccount] = useState(() => guessVnAccount(accounts, trades));
+  const [picked, setPicked] = useState(null);
+  const [added, setAdded] = useState(0);
+
+  const pick = async (f, kind) => {
+    const { rows, error } = await readXlsx(await f.arrayBuffer());
+    if (error) {
+      const bad = { name: f.name, error };
+      if (kind === "orders") setOrderFile(bad); else setPnlFile(bad);
+      return;
+    }
+    const res = kind === "orders" ? parseDnseOrders(rows) : parseDnsePnl(rows);
+    const next = { name: f.name, error: res.error, ...res };
+    if (kind === "orders") setOrderFile(next); else setPnlFile(next);
+    setPicked(null);
+    setAdded(0);
+  };
+
+  const result = useMemo(() => {
+    if (!orderFile || orderFile.error) return null;
+    return buildDnseTrips(orderFile.orders, pnlFile && !pnlFile.error ? pnlFile.groups : []);
+  }, [orderFile, pnlFile]);
+
+  const rows = useMemo(() => {
+    if (!result) return [];
+    const seen = existingKeys(trades, account);
+    const trips = result.trips.map((t) => ({
+      kind: "closed", key: t.id, trip: t,
+      dup: seen.has(`${t.symbol}|${t.entryDate}|${t.exitDate}`),
+    }));
+    const opens = result.open.map((o) => ({
+      kind: "open", key: o.id, lot: o,
+      dup: seen.has(`${o.symbol}|${o.date}|`),
+    }));
+    return [...trips, ...opens];
+  }, [result, trades, account]);
+
+  // Mặc định tick những lệnh chưa có trong nhật ký. Người dùng bấm thì giữ đúng ý người dùng.
+  const chosen = picked || new Set(rows.filter((r) => !r.dup).map((r) => r.key));
+  const toggle = (key) => {
+    const next = new Set(chosen);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setPicked(next);
+  };
+  // Ô tick đầu bảng chỉ chọn những lệnh CHƯA có trong nhật ký. Chọn hết bằng một cú bấm mà
+  // gồm cả lệnh đã có là nhân đôi lãi lỗ — muốn thêm lại thì vẫn tick tay từng dòng được.
+  const fresh = rows.filter((r) => !r.dup);
+  const toggleAll = () => {
+    const allFresh = fresh.length > 0 && fresh.every((r) => chosen.has(r.key));
+    setPicked(allFresh ? new Set() : new Set(fresh.map((r) => r.key)));
+  };
+  const dupChosen = rows.filter((r) => r.dup && chosen.has(r.key));
+
+  const add = () => {
+    const list = rows.filter((r) => chosen.has(r.key)).map((r) => (
+      r.kind === "closed"
+        ? tradeFromDnseTrip(r.trip, account, symbols)
+        : tradeFromDnseOpen(r.lot, account, symbols)
+    ));
+    if (!list.length) return;
+    onAddTrades(list);
+    setAdded(list.length);
+    setPicked(new Set());
+  };
+
+  const closedNet = result ? result.trips.reduce((s, t) => s + t.net, 0) : 0;
+  const openValue = result ? result.open.reduce((s, o) => s + o.value, 0) : 0;
+  const noPnl = result && result.trips.some((t) => t.source === "tinh");
+
+  if (!xlsxSupported()) {
+    return (
+      <div className="account-form">
+        <h3 className="block-title" style={{ marginTop: 0 }}>Nhập lệnh từ DNSE</h3>
+        <p className="error-text">Trình duyệt này chưa đọc được file .xlsx. Hãy mở bằng trình duyệt mới hơn, hoặc dùng tab "Đối chiếu sàn" với file .csv.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="account-form">
+        <h3 className="block-title" style={{ marginTop: 0 }}>Nhập lệnh từ DNSE</h3>
+        <p className="field-hint" style={{ marginBottom: 12 }}>
+          DNSE xuất hai báo cáo và mỗi cái thiếu đúng thứ cái kia có: <b>Lịch sử lệnh</b> có ngày mua
+          nhưng không có lãi vay margin, <b>Lịch sử lãi lỗ</b> có lãi vay nhưng không có ngày mua.
+          Thả cả hai vào đây, app tự ghép mua với bán theo FIFO rồi dựng thành lệnh — kể cả phần đang cầm.
+        </p>
+        <div className="dnse-drops">
+          <DropBox required label="Lịch sử lệnh" file={orderFile}
+            hint="Báo cáo có cả lệnh MUA và BÁN. Nhớ xuất đủ khoảng thời gian từ lúc mua."
+            onPick={(f) => pick(f, "orders")} onClear={() => { setOrderFile(null); setPicked(null); }} />
+          <DropBox label="Lịch sử lãi lỗ" file={pnlFile}
+            hint="Để lấy lãi vay margin và con số sàn đã chốt. Xuất trùng khoảng thời gian với file trên."
+            onPick={(f) => pick(f, "pnl")} onClear={() => { setPnlFile(null); setPicked(null); }} />
+        </div>
+        {orderFile && !orderFile.error ? (
+          <p className="field-hint" style={{ marginTop: 10 }}>
+            Đọc được <b>{orderFile.orders.length} lệnh đã khớp</b>
+            {orderFile.skipped ? <> · bỏ qua {orderFile.skipped} lệnh huỷ / từ chối / hết hiệu lực</> : null}
+            {pnlFile && !pnlFile.error ? <> · file lãi lỗ có {pnlFile.groups.length} lần bán</> : null}
+          </p>
+        ) : null}
+      </div>
+
+      {result ? (
+        <>
+          <div className="stat-grid" style={{ marginTop: 14 }}>
+            <StatCard label="Lệnh đã đóng" value={String(result.trips.length)}
+              sub={`Lãi lỗ ${fmtMoney(closedNet)}đ`} tone={closedNet > 0 ? "win" : closedNet < 0 ? "loss" : ""} />
+            <StatCard label="Đang cầm" value={String(result.open.length)} sub={`Vốn ${fmtMoney(openValue)}đ`} />
+            <StatCard label="Sẽ thêm vào nhật ký" value={String(chosen.size)}
+              sub={`${rows.filter((r) => r.dup).length} lệnh đã có sẵn, bỏ tick sẵn`} />
+          </div>
+
+          {noPnl ? (
+            <p className="error-text" style={{ marginTop: 10 }}>
+              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Có lệnh nằm ngoài khoảng của file lãi lỗ nên <b>chưa trừ lãi vay margin</b> — số lãi đang cao hơn thực tế.
+              Xuất lại Lịch sử lãi lỗ cho đủ khoảng thời gian rồi thả lại vào ô bên trên.
+            </p>
+          ) : null}
+          {result.orphanSells.length ? (
+            <p className="error-text" style={{ marginTop: 10 }}>
+              {result.orphanSells.length} lệnh bán không tìm thấy lệnh mua tương ứng
+              ({result.orphanSells.map((s) => `${s.symbol} ${fmtQty(s.qty)}cp`).join(", ")}) — cổ phiếu này mua trước
+              khoảng thời gian của file. Xuất Lịch sử lệnh từ sớm hơn để ghép được.
+            </p>
+          ) : null}
+
+          <div className="account-form" style={{ marginTop: 14 }}>
+            <Field label="Ghi vào tài khoản" hint="Lãi lỗ tính bằng đồng, nên chọn tài khoản đang dùng cho cổ phiếu Việt Nam">
+              <ResourceSelect value={account} onChange={setAccount}
+                options={accounts.map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
+            </Field>
+            {!account ? (
+              <p className="error-text" style={{ marginTop: 6 }}>
+                <Wallet size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+                Chưa chọn tài khoản. Nếu chưa có tài khoản cho cổ phiếu Việt, tạo ở mục Tài nguyên → Tài khoản (đơn vị VND) rồi quay lại.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="table-wrap" style={{ marginTop: 14 }}>
+            <table className="table dnse-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 34 }}>
+                    <input type="checkbox" title="Chọn những lệnh chưa có trong nhật ký"
+                      checked={fresh.length > 0 && fresh.every((r) => chosen.has(r.key))} onChange={toggleAll} />
+                  </th>
+                  <th>Mã</th>
+                  <th className="cell-num">KL</th>
+                  <th>Mua</th>
+                  <th>Bán</th>
+                  <th className="cell-num">Giữ</th>
+                  <th className="cell-num">Giá mua</th>
+                  <th className="cell-num">Giá bán</th>
+                  <th className="cell-num">Lãi/Lỗ</th>
+                  <th>Ghi chú</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const t = r.trip;
+                  const o = r.lot;
+                  const days = t ? holdingDays(t) : null;
+                  return (
+                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""}>
+                      <td><input type="checkbox" checked={chosen.has(r.key)} onChange={() => toggle(r.key)} /></td>
+                      <td><b>{t ? t.symbol : o.symbol}</b></td>
+                      <td className="cell-num">{fmtQty(t ? t.qty : o.qty)}</td>
+                      <td>{t ? t.entryDate : o.date}</td>
+                      <td>{t ? t.exitDate : <span className="field-hint">đang cầm</span>}</td>
+                      <td className="cell-num">{days === null ? "" : `${days}n`}</td>
+                      <td className="cell-num">{fmtMoney(t ? t.entryPrice : o.price)}</td>
+                      <td className="cell-num">{t ? fmtMoney(t.exitPrice) : ""}</td>
+                      <td className="cell-num" style={t ? { color: t.net > 0 ? "var(--win)" : t.net < 0 ? "var(--loss)" : "" } : undefined}>
+                        {t ? fmtMoney(t.net) : <span className="field-hint">{fmtMoney(o.value)} vốn</span>}
+                      </td>
+                      <td className="cell-soft">
+                        {r.dup ? "đã có trong nhật ký" : null}
+                        {t && t.source === "tinh" ? <span style={{ color: "var(--loss)" }}> chưa có lãi vay</span> : null}
+                        {t && t.cashRatio > 0 && t.cashRatio < 1 ? ` margin ${Math.round((1 - t.cashRatio) * 100)}%` : null}
+                        {o && o.cashRatio > 0 && o.cashRatio < 1 ? ` margin ${Math.round((1 - o.cashRatio) * 100)}%` : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {dupChosen.length ? (
+            <p className="error-text" style={{ marginTop: 10 }}>
+              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Đang tick {dupChosen.length} lệnh <b>đã có trong nhật ký</b> ({dupChosen.map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)).join(", ")}) —
+              thêm nữa là nhật ký có hai lệnh giống nhau và lãi lỗ bị tính hai lần.
+            </p>
+          ) : null}
+          <div className="form-actions" style={{ marginTop: 12 }}>
+            {added ? <span className="field-hint" style={{ color: "var(--win)" }}><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> Đã thêm {added} lệnh vào nhật ký</span> : null}
+            <button type="button" className="btn btn-primary" onClick={add} disabled={!account || chosen.size === 0}>
+              <PlusCircle size={14} /> Thêm {chosen.size} lệnh vào nhật ký
+            </button>
+          </div>
+          <p className="field-hint" style={{ marginTop: 8 }}>
+            Lệnh nhập vào chỉ có phần sàn biết chắc: mã, ngày, giá, khối lượng, lãi lỗ và phí.
+            Setup, lý do vào lệnh, tâm lý và đánh giá vẫn để trống cho bạn tự viết trong nhật ký.
+          </p>
+        </>
+      ) : null}
+    </div>
+  );
+}

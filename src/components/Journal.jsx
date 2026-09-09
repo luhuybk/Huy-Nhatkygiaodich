@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal } from "lucide-react";
+import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
+import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
@@ -762,11 +763,16 @@ export function TradingCalendar({ trades, resources, onEdit, columns }) {
   );
 }
 
-export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, onAddTrades, uiSettings, onUiSettingsChange }) {
   const [tab, setTab] = useState("list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
-  const filters = (uiSettings && uiSettings.journalFilters) || {};
+  // Phải qua useMemo: chưa lưu bộ lọc nào thì `|| {}` đẻ ra object MỚI mỗi lần render,
+  // useEffect bên dưới thấy dependency đổi nên gọi setSelected liên tục -> render vô tận.
+  // Khoá theo chính journalFilters (không phải cả uiSettings) để đổi sắp xếp hay đổi cột
+  // không bị coi là đổi bộ lọc, kẻo mất luôn danh sách đang tick.
+  const savedFilters = uiSettings && uiSettings.journalFilters;
+  const filters = useMemo(() => savedFilters || {}, [savedFilters]);
   const sort = useMemo(() => {
     const levels = normalizeSort(uiSettings && uiSettings.journalSort);
     return levels.length ? levels : [{ key: "entryDate", dir: "desc" }];
@@ -822,12 +828,16 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
         <button className={`subtab ${tab === "calendar" ? "subtab-active" : ""}`} onClick={() => setTab("calendar")}><CalendarDays size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Lịch</button>
         <button className={`subtab ${tab === "compare" ? "subtab-active" : ""}`} onClick={() => setTab("compare")}><GitCompare size={13} style={{ marginRight: 5, verticalAlign: -2 }} />So sánh bộ lọc</button>
         <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu sàn</button>
+        <button className={`subtab ${tab === "dnse" ? "subtab-active" : ""}`} onClick={() => setTab("dnse")}><Landmark size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Nhập DNSE</button>
       </div>
       {tab === "compare" ? (
         <FilterCompare trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} presets={filterPresets} currentFilters={filters} />
       ) : null}
       {tab === "reconcile" ? (
         <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} onUpdateTrade={onUpdate} />
+      ) : null}
+      {tab === "dnse" ? (
+        <DnseImport trades={trades} resources={resources} onAddTrades={onAddTrades} />
       ) : null}
       {tab === "list" ? (
         <div>

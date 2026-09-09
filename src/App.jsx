@@ -451,6 +451,13 @@ function AppShell({ onSignOut, userEmail }) {
     persistTrades(trades.filter((t) => !idSet.has(t.id)));
     if (removed.length) offerUndo(removed, `Đã xóa ${removed.length} lệnh`);
   };
+  // Nhập từ file sàn thêm cả loạt lệnh một lượt. Bỏ trùng theo id cho chắc — bấm nhanh
+  // hai lần thì lần sau không được nhân đôi.
+  const handleAddTrades = (list) => {
+    const have = new Set(trades.map((t) => t.id));
+    const fresh = (list || []).filter((t) => t && !have.has(t.id));
+    if (fresh.length) persistTrades([...trades, ...fresh]);
+  };
   const handleDuplicateTrades = (ids) => {
     const idSet = new Set(ids);
     const copies = trades.filter((t) => idSet.has(t.id)).map((t) => ({ ...t, id: uid(), createdAt: Date.now() }));
@@ -679,7 +686,7 @@ function AppShell({ onSignOut, userEmail }) {
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => goTo("lessons")} /> :
-              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
+              view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} onAddTrades={handleAddTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
