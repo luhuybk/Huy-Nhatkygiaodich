@@ -671,8 +671,14 @@ function AppShell({ onSignOut, userEmail }) {
               {openRiskBadges.length === 0 ? (
                 <span className="field-hint">Không có lệnh đang mở</span>
               ) : openRiskBadges.map(({ account, risk }) => (
-                <span key={account.id} className={`open-risk-badge ${risk.pct >= 5 ? "open-risk-high" : ""}`}>
+                <span key={account.id} className={`open-risk-badge ${risk.pct >= 5 ? "open-risk-high" : ""}`}
+                  title={risk.unmeasured
+                    ? `${risk.unmeasured}/${risk.count} lệnh chưa ghi rủi ro nên không nằm trong ${risk.pct.toFixed(2)}% — con số thật cao hơn`
+                    : "Tổng rủi ro đang treo trên tài khoản này"}>
                   <AlertTriangle size={12} /> {account.name}: {risk.pct.toFixed(2)}% ({risk.count} lệnh)
+                  {/* Không đo được thì phải nói ra ngay trên badge: "0.00% · 4 lệnh" đọc thành
+                      "đang mở mà không rủi ro gì", trong khi tiền vẫn đang nằm ngoài thị trường. */}
+                  {risk.unmeasured ? <b style={{ marginLeft: 2 }}>+{risk.unmeasured} chưa đo</b> : null}
                 </span>
               ))}
             </div>

@@ -222,9 +222,13 @@ export function buildDnseTrips(orders, pnlGroups) {
       remain -= take;
       const share = o.qty ? take / o.qty : 0;
       const gross = take * (o.price - lot.price);
-      const costs = take * (lot.feePerShare + sellFeePerShare);
-      // Lãi vay chỉ có ở file lãi lỗ. Bán một lần ăn vào nhiều lô mua thì chia theo tỷ lệ khối lượng.
+      // Phí sàn tính tròn theo từng lô nên tự cộng lại lệch vài trăm đồng so với sàn.
+      // Có file lãi lỗ thì lấy số của sàn, không có thì tự cộng. Lãi vay chỉ có ở file lãi lỗ;
+      // một lần bán ăn vào nhiều lô mua thì chia theo tỷ lệ khối lượng.
       const interest = pnl ? pnl.interest * share : 0;
+      const costs = pnl
+        ? (pnl.fee + pnl.tax + pnl.interest) * share
+        : take * (lot.feePerShare + sellFeePerShare);
       trips.push({
         id: `${o.symbol}-${lot.at}-${o.at}-${trips.length}`,
         symbol: o.symbol,
@@ -234,11 +238,14 @@ export function buildDnseTrips(orders, pnlGroups) {
         cashRatio: lot.cashRatio,
         channel: o.channel || lot.channel,
         gross,
-        // Phí sàn tính tròn theo từng lô nên tự cộng lại lệch vài trăm đồng so với sàn.
-        // Có file lãi lỗ thì lấy số của sàn, không có thì tự cộng.
-        costs: pnl ? (pnl.fee + pnl.tax + pnl.interest) * share : costs + interest,
+        costs,
         interest,
-        net: pnl ? pnl.net * share : gross - costs,
+        // LUÔN là (lãi theo giá − phí), đúng bằng thứ sẽ lưu vào nhật ký — bảng xem trước phải
+        // hiện đúng con số sẽ ghi. Chia đều lãi lỗ của sàn cho từng lô là sai khi các lô khác
+        // giá vốn: cả hai dòng sẽ hiện cùng một số, mà không dòng nào đúng.
+        net: gross - costs,
+        // Số sàn chốt giữ riêng để đối chiếu, không dùng để hiển thị hay lưu.
+        brokerNet: pnl ? pnl.net * share : null,
         source: pnl ? "dnse" : "tinh",
         partial: remain > 0 || take < o.qty,
       });
@@ -252,7 +259,7 @@ export function buildDnseTrips(orders, pnlGroups) {
     if (lot.left > 0) {
       open.push({
         id: `open-${lot.symbol}-${lot.at}`,
-        symbol: lot.symbol, qty: lot.left, date: lot.date, time: lot.time,
+        symbol: lot.symbol, qty: lot.left, date: lot.date, time: lot.time, at: lot.at,
         price: lot.price, value: lot.left * lot.price, cashRatio: lot.cashRatio, channel: lot.channel,
       });
     }
@@ -261,7 +268,27 @@ export function buildDnseTrips(orders, pnlGroups) {
     trips: trips.sort((a, b) => a.exitAt - b.exitAt),
     open: open.sort((a, b) => b.at - a.at || a.symbol.localeCompare(b.symbol)),
     orphanSells,
+    mismatches: reconcile(trips),
   };
+}
+
+// Sai lệch dưới mức này là do sàn làm tròn phí theo từng lô (đo được nhiều nhất ~2.100đ);
+// lớn hơn nghĩa là đọc file sai chỗ nào đó, phải nói ra chứ không nuốt.
+const RECONCILE_TOLERANCE = 5000;
+
+function reconcile(trips) {
+  const bySell = new Map();
+  trips.forEach((t) => {
+    if (t.brokerNet === null) return;
+    const key = `${t.symbol}@${t.exitAt}`;
+    const g = bySell.get(key) || { symbol: t.symbol, exitDate: t.exitDate, ours: 0, broker: 0 };
+    g.ours += t.net;
+    g.broker += t.brokerNet;
+    bySell.set(key, g);
+  });
+  return [...bySell.values()]
+    .map((g) => ({ ...g, diff: g.ours - g.broker }))
+    .filter((g) => Math.abs(g.diff) > RECONCILE_TOLERANCE);
 }
 
 function money(n) {

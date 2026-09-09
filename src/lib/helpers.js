@@ -1557,10 +1557,14 @@ export function accountOpenRisk(account, ledger, trades, scope) {
   const balance = accountBalance(account, ledger, trades, sc);
   // Vẫn phải trả về vốn kể cả khi không có lệnh nào mở: totalOpenRisk cộng vốn của MỌI tài
   // khoản làm mẫu số, thiếu một cái là tổng ra NaN.
-  if (!openTrades.length) return { pct: 0, count: 0, money: 0, balance, currency: sc.currency };
+  if (!openTrades.length) return { pct: 0, count: 0, money: 0, unmeasured: 0, balance, currency: sc.currency };
   // Với một nhóm, KHÔNG cộng thẳng % của từng tài khoản con: 3% của tài khoản 1.000$ và 3% của
   // tài khoản 10.000$ không phải 6% của cả nhóm. Quy về tiền rồi mới chia cho vốn cả nhóm.
   let money = 0;
+  // Lệnh không ghi rủi ro thì cộng 0 — nhưng phải ĐẾM lại. Bỏ qua im lặng là con số cảnh báo
+  // nói dối theo hướng nguy hiểm nhất: 4 lệnh cổ phiếu đang cầm mà badge hiện "0.00% · 4 lệnh"
+  // đọc thành "đang mở nhưng không rủi ro gì", trong khi tiền vẫn nằm ngoài thị trường.
+  let unmeasured = 0;
   openTrades.forEach((t) => {
     // Đã chốt bớt 50% thì chỉ còn nửa vị thế đang treo, đừng tính đủ rủi ro ban đầu.
     const share = openRiskShare(t);
@@ -1568,11 +1572,14 @@ export function accountOpenRisk(account, ledger, trades, scope) {
     const amt = numOrNull(t.riskAmount);
     if (amt !== null) { money += sc.convName(amt * share, t.account); return; }
     const pct = numOrNull(t.riskPercent);
-    if (pct === null) return;
+    if (pct === null) { unmeasured += 1; return; }
     const own = sc.members.find((a) => a.name === t.account);
-    if (own) money += sc.convName((accountBalance(own, ledger, trades) * pct * share) / 100, t.account);
+    // Có %risk nhưng tài khoản chưa có vốn thì cũng không quy ra tiền được.
+    const ownBalance = own ? accountBalance(own, ledger, trades) : 0;
+    if (!own || !ownBalance) { unmeasured += 1; return; }
+    money += sc.convName((ownBalance * pct * share) / 100, t.account);
   });
-  return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length, money, balance, currency: sc.currency };
+  return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length, money, unmeasured, balance, currency: sc.currency };
 }
 
 // Tài khoản gốc = không thuộc nhóm nào, HOẶC thuộc một nhóm đã bị xóa. Vế sau quan trọng:
@@ -1595,12 +1602,14 @@ export function totalOpenRisk(accounts, ledger, trades, fxRates) {
   let money = 0;
   let equity = 0;
   let count = 0;
+  let unmeasured = 0;
   scopes.forEach(({ a, sc }) => {
     const r = accountOpenRisk(a, ledger, trades, sc);
     const conv = (v) => (mixed ? toUSD(v, sc.currency, fxRates) : v);
     money += conv(r.money);
     equity += conv(r.balance);
     count += r.count;
+    unmeasured += r.unmeasured || 0;
   });
 
   // Lệnh đang mở mà tên tài khoản không còn trong Tài nguyên (đã xóa hoặc đổi tên) không nằm
@@ -1627,6 +1636,9 @@ export function totalOpenRisk(accounts, ledger, trades, fxRates) {
   return {
     money: totalMoney, equity, count: count + orphanTrades.length, currency, mixed,
     pct: equity ? (totalMoney / equity) * 100 : 0,
+    // Lệnh đang mở nhưng chưa ghi rủi ro — không nằm trong `money`, nên % bên trên chỉ nói
+    // được phần đã đo. Cổ phiếu nhập từ sàn rơi hết vào đây vì sàn không biết SL của bạn.
+    unmeasured: unmeasured + orphanUnknown,
     orphan: { count: orphanTrades.length, money: orphanMoney, unknown: orphanUnknown,
       accounts: Array.from(new Set(orphanTrades.map((t) => t.account))) },
   };

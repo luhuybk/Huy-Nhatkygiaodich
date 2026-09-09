@@ -64,15 +64,26 @@ function rowTitle(r) {
 
 // Lệnh đã có trong nhật ký rồi thì bỏ tick sẵn — nhập lại lần hai sẽ nhân đôi lãi lỗ,
 // mà lệch số kiểu đó rất khó phát hiện về sau.
-function existingKeys(trades, account) {
-  const set = new Set();
+// ĐẾM chứ không chỉ đánh dấu có/không: mua cùng một mã hai lần trong cùng một ngày là
+// hai lô riêng, nếu nhật ký mới có một thì chỉ được coi MỘT dòng là trùng.
+function existingCounts(trades, account) {
+  const map = new Map();
   (trades || []).forEach((t) => {
     if (account && t.account !== account) return;
     const sym = String(t.symbol || "").trim().toUpperCase();
     if (!sym) return;
-    set.add(`${sym}|${t.entryDate || ""}|${t.exitDate || ""}`);
+    const key = `${sym}|${t.entryDate || ""}|${t.exitDate || ""}`;
+    map.set(key, (map.get(key) || 0) + 1);
   });
-  return set;
+  return map;
+}
+
+// Trừ dần: mỗi lệnh trong nhật ký chỉ "che" được một dòng nhập.
+function takeDup(counts, key) {
+  const left = counts.get(key) || 0;
+  if (left <= 0) return false;
+  counts.set(key, left - 1);
+  return true;
 }
 
 export function DnseImport({ trades, resources, onAddTrades }) {
@@ -105,14 +116,14 @@ export function DnseImport({ trades, resources, onAddTrades }) {
 
   const rows = useMemo(() => {
     if (!result) return [];
-    const seen = existingKeys(trades, account);
+    const counts = existingCounts(trades, account);
     const trips = result.trips.map((t) => ({
       kind: "closed", key: t.id, trip: t,
-      dup: seen.has(`${t.symbol}|${t.entryDate}|${t.exitDate}`),
+      dup: takeDup(counts, `${t.symbol}|${t.entryDate}|${t.exitDate}`),
     }));
     const opens = result.open.map((o) => ({
       kind: "open", key: o.id, lot: o,
-      dup: seen.has(`${o.symbol}|${o.date}|`),
+      dup: takeDup(counts, `${o.symbol}|${o.date}|`),
     }));
     return [...trips, ...opens];
   }, [result, trades, account]);
@@ -202,6 +213,14 @@ export function DnseImport({ trades, resources, onAddTrades }) {
               Xuất lại Lịch sử lãi lỗ cho đủ khoảng thời gian rồi thả lại vào ô bên trên.
             </p>
           ) : null}
+          {result.mismatches.length ? (
+            <p className="error-text" style={{ marginTop: 10 }}>
+              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Số tính ra lệch so với số DNSE chốt ở {result.mismatches.length} lần bán
+              ({result.mismatches.map((m) => `${m.symbol} ${m.exitDate} lệch ${fmtMoney(m.diff)}đ`).join(", ")}).
+              Kiểm tra lại xem hai file có đúng cùng một tiểu khoản không.
+            </p>
+          ) : null}
           {result.orphanSells.length ? (
             <p className="error-text" style={{ marginTop: 10 }}>
               {result.orphanSells.length} lệnh bán không tìm thấy lệnh mua tương ứng
@@ -212,7 +231,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
 
           <div className="account-form" style={{ marginTop: 14 }}>
             <Field label="Ghi vào tài khoản" hint="Lãi lỗ tính bằng đồng, nên chọn tài khoản đang dùng cho cổ phiếu Việt Nam">
-              <ResourceSelect value={account} onChange={setAccount}
+              <ResourceSelect value={account} onChange={(next) => { setAccount(next); setPicked(null); }}
                 options={accounts.map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
             </Field>
             {!account ? (

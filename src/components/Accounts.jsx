@@ -104,7 +104,11 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
           <div><span>Trading P&L</span><span className={`mono ${pnl >= 0 ? "text-win" : "text-loss"}`}>{pnl >= 0 ? "+" : ""}{fmt(pnl)}</span></div>
           <div><span>Tăng trưởng</span><span className="mono">{growth === null ? "—" : `${growth.toFixed(1)}%`}</span></div>
           <div><span>Số lệnh</span><span className="mono">{accountTrades.length}</span></div>
-          <div><span>% Risk đang mở</span><span className={`mono ${openRisk.pct >= 5 ? "text-loss" : ""}`}>{openRisk.count === 0 ? "—" : `${openRisk.pct.toFixed(2)}% (${openRisk.count} lệnh)`}</span></div>
+          <div><span>% Risk đang mở</span><span className={`mono ${openRisk.pct >= 5 ? "text-loss" : ""}`}
+            title={openRisk.unmeasured ? `${openRisk.unmeasured} lệnh chưa ghi rủi ro, không nằm trong con số này` : ""}>
+            {openRisk.count === 0 ? "—" : `${openRisk.pct.toFixed(2)}% (${openRisk.count} lệnh)`}
+            {openRisk.unmeasured ? <span className="text-loss risk-unmeasured">+{openRisk.unmeasured} lệnh chưa đo</span> : null}
+          </span></div>
         </div>
       </div>
     );
@@ -127,6 +131,13 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
         <p className="error-text" style={{ marginTop: -10, marginBottom: 12 }}>
           {risk.pct.toFixed(2)}% tổng tài sản đang treo cùng lúc trên {risk.count} lệnh. Mỗi tài khoản nhìn riêng có thể
           vẫn nhỏ, nhưng một phiên xấu thì chúng ăn đòn cùng nhau — đây mới là con số bạn thật sự đang chịu.
+        </p>
+      ) : null}
+      {risk.unmeasured ? (
+        <p className="error-text" style={{ marginTop: -6, marginBottom: 12 }}>
+          <b>{risk.unmeasured}/{risk.count} lệnh đang mở chưa ghi rủi ro</b> nên không nằm trong con số
+          {" "}{risk.pct.toFixed(2)}% ở trên — rủi ro thật đang cao hơn thế. Cổ phiếu nhập từ sàn rơi hết vào
+          nhóm này vì sàn không biết bạn đặt cắt lỗ ở đâu; điền "Số tiền rủi ro" cho từng lệnh là con số về đúng.
         </p>
       ) : null}
       {risk.orphan && risk.orphan.count ? (

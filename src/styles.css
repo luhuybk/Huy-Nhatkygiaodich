@@ -547,7 +547,10 @@
         .account-card-parent { font-size:11px; color:var(--text-dim); margin-top:-6px; }
         .account-card-balance { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700; }
         .account-card-rows { display:flex; flex-direction:column; gap:5px; padding-top:8px; border-top:1px solid var(--border); }
-        .account-card-rows div { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text-dim); }
+        .account-card-rows div { display:flex; align-items:baseline; justify-content:space-between; gap:8px; font-size:12px; color:var(--text-dim); }
+        .account-card-rows div > span:first-child { flex:0 0 auto; }
+        .account-card-rows div > span:last-child { text-align:right; min-width:0; }
+        .risk-unmeasured { display:block; font-size:11px; }
         .account-card-rows .mono { color:var(--text); font-size:12.5px; }
         .account-form { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px 4px; margin-bottom:8px; }
         .stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:10px; margin-bottom:22px; }
