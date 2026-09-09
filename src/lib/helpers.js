@@ -2061,6 +2061,37 @@ export const COMPLETION_FIELD_LABELS = {
   tradeGrade: "Đánh giá giao dịch",
 };
 
+// Mục lục của form nhập lệnh. Để cạnh tradeCompletionFields() vì hai thứ phải khớp nhau:
+// thêm một mục vào danh sách tiến độ mà quên gắn vào section thì mục lục báo "đủ" trong khi
+// thanh tiến độ vẫn thiếu. `fields` rỗng = section không có mục nào tính vào tiến độ.
+export const TRADE_FORM_SECTIONS = [
+  { id: "sec-1", num: "1", title: "Thông tin lệnh", fields: ["entryDate", "account", "timeframe", "entryVisual"] },
+  { id: "sec-2", num: "2", title: "Quản trị vốn", fields: ["riskPercent", "riskAmount", "riskAction", "ratingRisk"] },
+  { id: "sec-3", num: "3", title: "Kiến thức", fields: ["setup", "setupNote", "ratingKnowledge"] },
+  { id: "sec-1a", num: "1A", title: "Trong khi lệnh chạy", fields: [], optional: true },
+  { id: "sec-1b", num: "1B", title: "Thoát lệnh từng phần", fields: [], optional: true },
+  { id: "sec-1c", num: "1C", title: "Đóng lệnh", fields: ["exitDate", "profit", "exitVisual"] },
+  { id: "sec-4", num: "4", title: "Kỹ năng", fields: ["entrySkill", "inTradeSkill", "exitSkill", "ratingSkill"] },
+  { id: "sec-5", num: "5", title: "Tâm lý", fields: ["psychology", "ratingPsychology"] },
+  { id: "sec-6", num: "6", title: "Chấm điểm", fields: [] },
+  { id: "sec-7", num: "7", title: "Đánh giá giao dịch", fields: ["tradeGrade"] },
+  { id: "sec-8", num: "8", title: "Checklist", fields: [] },
+];
+
+// Mỗi section còn thiếu mấy mục. Trả về Map id -> { missing, total } để mục lục vừa chấm dấu
+// vừa nói được là thiếu bao nhiêu.
+export function tradeSectionProgress(t) {
+  const missing = new Set(tradeCompletionFields(t).filter(([, ok]) => !ok).map(([k]) => k));
+  const out = new Map();
+  TRADE_FORM_SECTIONS.forEach((sec) => {
+    out.set(sec.id, {
+      missing: sec.fields.filter((f) => missing.has(f)).length,
+      total: sec.fields.length,
+    });
+  });
+  return out;
+}
+
 export function missingCompletionFields(t) {
   return tradeCompletionFields(t).filter(([, ok]) => !ok).map(([key]) => COMPLETION_FIELD_LABELS[key] || key);
 }

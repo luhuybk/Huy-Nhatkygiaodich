@@ -442,12 +442,12 @@ export function ChecklistEditor({ items, onChange, placeholder }) {
 
 // `collapsible` dành cho các mục không bắt buộc: form đã dài nên mặc định gấp lại,
 // nhưng lệnh nào đã có dữ liệu trong đó thì mở sẵn để không giấu mất thứ đã điền.
-export function Section({ num, title, subtitle, children, optional, collapsible, defaultOpen, badge }) {
+export function Section({ id, num, title, subtitle, children, optional, collapsible, defaultOpen, badge }) {
   const [open, setOpen] = useState(!collapsible || !!defaultOpen);
   const shown = !collapsible || open;
   const Head = collapsible ? "button" : "div";
   return (
-    <div className={`section ${optional ? "section-optional" : ""} ${collapsible && !open ? "section-closed" : ""}`}>
+    <div id={id} className={`section ${optional ? "section-optional" : ""} ${collapsible && !open ? "section-closed" : ""}`}>
       <Head type={collapsible ? "button" : undefined} className="section-head"
         onClick={collapsible ? () => setOpen((v) => !v) : undefined}
         aria-expanded={collapsible ? open : undefined}>

@@ -1,8 +1,107 @@
-import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2 } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, TRADE_FORM_SECTIONS, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+
+// Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
+// hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
+// Chừa chỗ cho thanh tiến độ ghim ở đỉnh, không thì tiêu đề mục nhảy vào đúng chỗ bị che.
+const TOC_SCROLL_OFFSET = 78;
+
+// Tự tween thay vì dùng behavior:"smooth" — trình duyệt trong app nuốt luôn tuỳ chọn đó
+// (đo được: scrollTo smooth không nhúc nhích, auto thì chạy), nên bấm mục lục sẽ không có
+// phản hồi gì cả. Tự chạy thì chắc chắn tới nơi ở mọi trình duyệt.
+function scrollBoxTo(box, top) {
+  const from = box.scrollTop;
+  const dist = top - from;
+  if (!dist) return;
+  const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || Math.abs(dist) < 8 || typeof requestAnimationFrame !== "function") {
+    box.scrollTop = top;
+    return;
+  }
+  const start = performance.now();
+  const dur = Math.min(420, 140 + Math.abs(dist) * 0.22);
+  // Có môi trường bóp requestAnimationFrame gần như đứng hẳn (đo được 1 frame/500ms), lúc đó
+  // tween chạy được một nhịp rồi treo giữa đường. Hẹn một mốc chốt: quá hạn mà chưa tới nơi
+  // thì nhảy thẳng. Chậm hơn một chút vẫn hơn là bấm mục lục mà không tới đâu.
+  const settle = setTimeout(() => {
+    if (Math.abs(box.scrollTop - top) > 2) box.scrollTop = top;
+  }, dur + 90);
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / dur);
+    const e = p < 0.5 ? 2 * p * p : 1 - ((-2 * p + 2) ** 2) / 2;
+    box.scrollTop = from + dist * e;
+    if (p < 1) requestAnimationFrame(step);
+    else clearTimeout(settle);
+  };
+  requestAnimationFrame(step);
+}
+
+function FormToc({ trade }) {
+  const progress = tradeSectionProgress(trade);
+  const [active, setActive] = useState(TRADE_FORM_SECTIONS[0].id);
+  const clicked = useRef(0);
+
+  // Tô sáng mục đang xem. Dùng sự kiện cuộn chứ KHÔNG dùng IntersectionObserver: đo được là
+  // có môi trường không chạy IO lần nào (kể cả callback đầu), lúc đó mục sáng đứng im mãi ở
+  // mục 1. Đọc 11 cái getBoundingClientRect mỗi lần cuộn thì rẻ, mà chắc chắn chạy.
+  // Sau khi bấm thì khoá một nhịp, không thì các mục lướt qua sẽ thi nhau sáng lên rồi tắt.
+  useEffect(() => {
+    const nodes = TRADE_FORM_SECTIONS.map((sec) => document.getElementById(sec.id)).filter(Boolean);
+    const box = nodes.length ? nodes[0].closest(".body") : null;
+    if (!box) return undefined;
+    const pick = () => {
+      if (Date.now() < clicked.current) return;
+      // Mục đang xem = mục cuối cùng có đỉnh còn nằm trên vạch ngay dưới thanh tiến độ.
+      const line = box.getBoundingClientRect().top + TOC_SCROLL_OFFSET + 8;
+      let best = nodes[0].id;
+      nodes.forEach((n) => { if (n.getBoundingClientRect().top <= line) best = n.id; });
+      // Cuộn kịch đáy thì mục cuối không bao giờ vượt qua vạch — cứ lấy nó.
+      if (box.scrollTop + box.clientHeight >= box.scrollHeight - 4) best = nodes[nodes.length - 1].id;
+      setActive(best);
+    };
+    pick();
+    box.addEventListener("scroll", pick, { passive: true });
+    return () => box.removeEventListener("scroll", pick);
+  }, []);
+
+  const go = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    clicked.current = Date.now() + 700;
+    setActive(id);
+    const box = el.closest(".body");
+    if (!box) { el.scrollIntoView(); return; }
+    const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - TOC_SCROLL_OFFSET;
+    scrollBoxTo(box, Math.max(0, top));
+  };
+
+  return (
+    <nav className="form-toc" aria-label="Mục lục form">
+      <span className="form-toc-title">Các mục</span>
+      <ul className="form-toc-list">
+        {TRADE_FORM_SECTIONS.map((sec) => {
+          const p = progress.get(sec.id) || { missing: 0, total: 0 };
+          const done = p.total > 0 && p.missing === 0;
+          return (
+            <li key={sec.id}>
+              <button type="button" onClick={() => go(sec.id)}
+                className={`form-toc-item ${active === sec.id ? "form-toc-active" : ""} ${p.missing ? "form-toc-missing" : ""}`}
+                title={p.total === 0 ? "Không tính vào tiến độ" : p.missing ? `Còn thiếu ${p.missing}/${p.total} mục` : "Đã điền đủ"}>
+                <span className="form-toc-num">{sec.num}</span>
+                <span className="form-toc-label">{sec.title}</span>
+                {p.missing ? <span className="form-toc-count">{p.missing}</span> : null}
+                {done ? <CheckCircle2 size={13} className="form-toc-done" /> : null}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
 
 // Mức chốt bớt hay dùng, bấm cho nhanh thay vì gõ. 33% cho kiểu chia lệnh làm ba.
 const PERCENT_PRESETS = [25, 33, 50, 100];
@@ -217,7 +316,8 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   };
 
   return (
-    <div className="trade-form">
+    <div className="trade-form-layout">
+      <div className="trade-form">
       <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky />
       {t.brokerFilled ? (
@@ -226,7 +326,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
           phần đánh giá bên dưới vẫn là việc của bạn. Lưu lệnh một lần là dấu này mất.
         </p>
       ) : null}
-      <Section num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
+      <Section id="sec-1" num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required>
             <input
@@ -299,7 +399,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="2" title="Quản trị vốn" subtitle="Risk % · Risk $ · RR thực tế">
+      <Section id="sec-2" num="2" title="Quản trị vốn" subtitle="Risk % · Risk $ · RR thực tế">
         {selectedAccount ? (
           <div className={`open-risk-hint ${existingOpenRisk.count > 0 ? (existingOpenRisk.pct >= 5 ? "open-risk-hint-high" : "open-risk-hint-warn") : ""}`}>
             <AlertTriangle size={13} />
@@ -332,7 +432,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
+      <Section id="sec-3" num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
         <div className="grid-3">
           <Field label="Setup" incomplete={missing("setup")}>
             <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} placeholder="Chọn setup" />
@@ -358,7 +458,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="1A" title="Trong khi lệnh chạy" subtitle="Diễn biến & cảm nghĩ trong lúc lệnh đang mở" optional
+      <Section id="sec-1a" num="1A" title="Trong khi lệnh chạy" subtitle="Diễn biến & cảm nghĩ trong lúc lệnh đang mở" optional
         collapsible defaultOpen={inTradeFilled > 0} badge={inTradeFilled ? `${inTradeFilled} mục đã điền` : "trống"}>
         <Field label="Link / hình ảnh trong khi lệnh chạy" hint={`Tối đa ${IN_TRADE_MAX_IMAGES} ảnh/link`}>
           <MultiImageOrLink items={t.inTradeImages} onChange={set("inTradeImages")} label="in-trade" max={IN_TRADE_MAX_IMAGES} />
@@ -368,7 +468,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="1B" title="Thoát lệnh từng phần" subtitle="Chốt bớt 25-50% rồi trailing phần còn lại" optional
+      <Section id="sec-1b" num="1B" title="Thoát lệnh từng phần" subtitle="Chốt bớt 25-50% rồi trailing phần còn lại" optional
         collapsible defaultOpen={partial.count > 0}
         badge={partial.count
           ? `${partial.count} lần · ${fmtPercent(partial.percent)}${partial.filled ? ` · ${fmt(partial.profit)}` : ""}`
@@ -376,7 +476,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         <PartialExits trade={t} onChange={set("partialExits")} />
       </Section>
 
-      <Section num="1C" title="Đóng lệnh" subtitle="Đóng nốt phần vị thế còn lại">
+      <Section id="sec-1c" num="1C" title="Đóng lệnh" subtitle="Đóng nốt phần vị thế còn lại">
         <div className="grid-3">
           <Field label="Ngày exit" incomplete={missing("exitDate")}>
             <input type="date" className="input" value={t.exitDate} onChange={(e) => set("exitDate")(e.target.value)} />
@@ -427,7 +527,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         ) : null}
       </Section>
 
-      <Section num="4" title="Kỹ năng" subtitle="Vào lệnh · Trong lệnh · Thoát lệnh">
+      <Section id="sec-4" num="4" title="Kỹ năng" subtitle="Vào lệnh · Trong lệnh · Thoát lệnh">
         <Field label="Kỹ năng đã dùng trong lệnh này"
           hint="Tick những kỹ năng bạn thực sự đem ra dùng — để sau này đo được kỹ năng nào ăn tiền. Không tick gì nghĩa là lệnh này không dùng kỹ năng nào.">
           <SkillPicker trade={t} catalog={skills} onChange={setT} />
@@ -451,7 +551,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="5" title="Tâm lý" subtitle="Trạng thái tâm lý khi giao dịch">
+      <Section id="sec-5" num="5" title="Tâm lý" subtitle="Trạng thái tâm lý khi giao dịch">
         <Field label="Tâm lý giao dịch" incomplete={missing("psychology")}>
           <ResourceSelect value={t.psychology} onChange={set("psychology")} options={resources.psychologies} placeholder="Chọn tâm lý" />
         </Field>
@@ -463,7 +563,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         </Field>
       </Section>
 
-      <Section num="6" title="Chấm điểm" subtitle="Tổng hợp 4 trụ cột sao đã tự đánh giá ở trên">
+      <Section id="sec-6" num="6" title="Chấm điểm" subtitle="Tổng hợp 4 trụ cột sao đã tự đánh giá ở trên">
         <div className="pillar-grid">
           <div className="pillar-item"><span>Kiến thức</span><StarRating value={t.ratingKnowledge} onChange={set("ratingKnowledge")} size={15} /></div>
           <div className="pillar-item"><span>Kỹ năng</span><StarRating value={t.ratingSkill} onChange={set("ratingSkill")} size={15} /></div>
@@ -477,7 +577,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         <span className="field-hint">Có thể chỉnh lại từng sao ngay tại đây, không cần quay lại từng mục phía trên.</span>
       </Section>
 
-      <Section num="7" title="Đánh giá giao dịch" subtitle="Tốt/Tồi kết hợp Thắng/Thua & review">
+      <Section id="sec-7" num="7" title="Đánh giá giao dịch" subtitle="Tốt/Tồi kết hợp Thắng/Thua & review">
         {missing("tradeGrade") ? <AlertCircle size={11} className="field-missing-icon" title="Chưa chọn — đang ảnh hưởng tiến độ hoàn thành" /> : null}
         <div className="grade-grid">
           {GRADE_OPTIONS.map((g) => {
@@ -510,7 +610,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         ) : null}
       </Section>
 
-      <Section num="8" title="Checklist" subtitle="Kiểm tra nhanh trước khi chốt lệnh — quản lý danh sách ở tab Tài nguyên">
+      <Section id="sec-8" num="8" title="Checklist" subtitle="Kiểm tra nhanh trước khi chốt lệnh — quản lý danh sách ở tab Tài nguyên">
         <div className="pillar-grid">
           {resources.checklistItems.length === 0 ? <p className="empty-note">Chưa có mục checklist nào — thêm ở Tài nguyên → Checklist.</p> : null}
           {resources.checklistItems.map((item) => {
@@ -530,6 +630,8 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
         <button type="button" className="btn btn-primary" onClick={submit}><Save size={15} /> Lưu giao dịch</button>
       </div>
+      </div>
+      <FormToc trade={t} />
     </div>
   );
 }
