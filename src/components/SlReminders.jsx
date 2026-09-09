@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle } from "lucide-react";
+import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle, X } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
   mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
-  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, WEEKDAY_CODES,
+  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, symbolSuggestions, uid, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
@@ -420,16 +420,105 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
   );
 }
 
-export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatchesChange }) {
-  const [draft, setDraft] = useState({ label: "", symbols: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+// Ô nhập symbol dạng chip: gõ tên rồi phím cách / Enter / dấu phẩy là chốt thành một chip,
+// nên không phải gõ dấu phân cách nữa. Backspace ở ô rỗng xóa chip cuối. Hàng "gợi ý" bên dưới
+// lọc theo chữ đang gõ — symbol quen thì bấm một phát là xong, khỏi gõ.
+const SYMBOL_SUGGEST_SHOWN = 12;
+
+function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus }) {
+  const [text, setText] = useState("");
+  const chosen = useMemo(() => new Set((items || []).map((x) => x.name)), [items]);
+  const hints = useMemo(() => {
+    const q = text.trim().toUpperCase();
+    const rest = (suggestions || []).filter((sym) => !chosen.has(sym));
+    return (q ? rest.filter((sym) => sym.includes(q)) : rest).slice(0, SYMBOL_SUGGEST_SHOWN);
+  }, [suggestions, chosen, text]);
+
+  // Gõ hoặc dán có dấu phân cách thì chốt luôn phần trước dấu, giữ lại đuôi đang gõ dở.
+  const onType = (raw) => {
+    if (!/[,;\s]/.test(raw)) { setText(raw.toUpperCase()); return; }
+    const parts = raw.split(/[,;\s]+/);
+    const tail = /[,;\s]$/.test(raw) ? "" : parts.pop();
+    const names = parseSymbolList(parts.join(" "));
+    if (names.length) onAdd(names);
+    setText((tail || "").toUpperCase());
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const names = parseSymbolList(text);
+      if (names.length) { onAdd(names); setText(""); return; }
+      if (onSubmitEmpty) onSubmitEmpty();
+      return;
+    }
+    if (e.key === "Backspace" && !text && (items || []).length) {
+      e.preventDefault();
+      onRemove(items[items.length - 1]);
+    }
+  };
+
+  return (
+    <div>
+      <div className="symbol-box" onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector("input").focus(); }}>
+        {(items || []).map((x) => (
+          <span key={x.id || x.name} className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""}`}>
+            {onToggle ? (
+              <button type="button" className="chip-main" onClick={() => onToggle(x)}
+                title={x.done ? "Đã ngừng theo dõi — bấm để theo dõi lại" : "Đang theo dõi — bấm để tạm ngừng"}>
+                {x.done ? <CheckCircle2 size={11} /> : <Eye size={11} />} {x.name}
+              </button>
+            ) : <span className="chip-main">{x.name}</span>}
+            <button type="button" className="chip-x" title="Xóa khỏi danh sách" onClick={() => onRemove(x)}><X size={11} /></button>
+          </span>
+        ))}
+        <input className="symbol-box-input" value={text} autoFocus={autoFocus}
+          placeholder={(items || []).length ? "Thêm symbol..." : (placeholder || "XAUUSD EURUSD GBPJPY")}
+          onChange={(e) => onType(e.target.value)} onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            // Ô một dòng tự nuốt ký tự xuống dòng, nên dán một cột từ Excel/TradingView
+            // sẽ dính liền thành một cục. Đọc thẳng clipboard trước khi trình duyệt kịp cắt.
+            const raw = e.clipboardData ? e.clipboardData.getData("text") : "";
+            if (!/[,;\s]/.test(raw)) return;
+            e.preventDefault();
+            const names = parseSymbolList(`${text}${raw}`);
+            if (names.length) onAdd(names);
+            setText("");
+          }}
+          onBlur={() => { const names = parseSymbolList(text); if (names.length) { onAdd(names); setText(""); } }} />
+      </div>
+      {hints.length ? (
+        <div className="symbol-hints">
+          <span className="field-hint">Gợi ý:</span>
+          {hints.map((sym) => (
+            <button key={sym} type="button" className="symbol-hint-chip" onClick={() => { onAdd([sym]); setText(""); }}>
+              + {sym}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function SymbolWatchPanel({ settings, watches, resources, trades, onSettingsChange, onWatchesChange }) {
+  const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
   const s = settings;
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — cảnh báo symbol theo dõi sẽ gửi vào đây.");
 
+  // Gợi ý chung cho mọi ô. Symbol đang nằm trong các nhóm khác đứng đầu — đó mới là cách
+  // viết quen tay ở màn hình này (nhiều người gõ tắt "AU", "GU" chứ không gõ đủ "AUDUSD"),
+  // sau đó mới tới symbol đánh nhiều nhất trong nhật ký và danh sách trong Tài nguyên.
+  const suggestions = useMemo(() => {
+    const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).map((x) => x.name)))];
+    return [...used, ...symbolSuggestions(resources, trades, used, 40)];
+  }, [watches, resources, trades]);
+
   const updateWatch = (id, patch) => onWatchesChange(watches.map((w) => (w.id === id ? { ...w, ...patch } : w)));
   const removeWatch = (id) => onWatchesChange(watches.filter((w) => w.id !== id));
   const addWatch = () => {
-    const symbols = mergeSymbolList(draft.symbols, []);
+    const symbols = mergeSymbolList(draft.symbols.join(","), []);
     if (!symbols.length) return;
     const hours = parseHoursInput(draft.hours);
     onWatchesChange([...watches, {
@@ -439,8 +528,21 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
       symbols,
       hours: hours.length ? hours : [...SYMBOL_WATCH_DEFAULT_HOURS],
     }]);
-    setDraft({ label: "", symbols: "", note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+    setDraft({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
   };
+  const draftItems = draft.symbols.map((name) => ({ name }));
+  const addDraftSymbols = (names) =>
+    setDraft((p) => ({ ...p, symbols: [...p.symbols, ...names.filter((n) => !p.symbols.includes(n))] }));
+
+  // Thêm vào nhóm đã lưu: giữ nguyên symbol cũ (kèm trạng thái done) và bỏ qua trùng tên.
+  const addWatchSymbols = (w, names) => {
+    const cur = w.symbols || [];
+    const have = new Set(cur.map((x) => x.name));
+    const add = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, done: false }));
+    if (add.length) updateWatch(w.id, { symbols: [...cur, ...add] });
+  };
+  const removeWatchSymbol = (w, item) =>
+    updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
   const toggleDay = (w, day) => {
     const days = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
     updateWatch(w.id, { activeDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day] });
@@ -492,19 +594,26 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
           <Field label="Tên nhóm" hint="VD: H4, Khung ngày, Watchlist sáng">
             <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))} placeholder="H4" />
           </Field>
-          <Field label="Khung giờ nhắc" hint="HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy">
-            <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))} placeholder="09:00, 14:00, 20:00" />
+          <Field label="Khung giờ nhắc" hint="Giờ Việt Nam. Viết tắt được: gõ &quot;9 14 20&quot; ra 09:00, 14:00, 20:00">
+            <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))}
+              onBlur={(e) => {
+                const hrs = parseHoursInput(e.target.value);
+                setDraft((p) => ({ ...p, hours: (hrs.length ? hrs : SYMBOL_WATCH_DEFAULT_HOURS).join(", ") }));
+              }}
+              placeholder="9 14 20" />
           </Field>
         </div>
-        <Field label="Các symbol" hint="Cách nhau bằng dấu phẩy — mỗi symbol sẽ là một tin nhắn riêng khi tới giờ">
-          <input className="input" value={draft.symbols} onChange={(e) => setDraft((p) => ({ ...p, symbols: e.target.value }))}
-            placeholder="XAUUSD, EURUSD, GBPJPY" onKeyDown={(e) => { if (e.key === "Enter") addWatch(); }} />
+        <Field label="Các symbol" hint="Gõ tên rồi nhấn phím cách hoặc Enter là xong một symbol — hoặc bấm thẳng vào gợi ý bên dưới. Mỗi symbol là một tin nhắn riêng khi tới giờ.">
+          <SymbolBox items={draftItems} suggestions={suggestions}
+            onAdd={addDraftSymbols}
+            onRemove={(x) => setDraft((p) => ({ ...p, symbols: p.symbols.filter((n) => n !== x.name) }))}
+            onSubmitEmpty={addWatch} />
         </Field>
         <Field label="Ghi chú (tùy chọn)" hint="Gửi kèm trong mọi tin của nhóm này">
           <input className="input" value={draft.note} onChange={(e) => setDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Đang chờ gì ở nhóm này?" />
         </Field>
         <div className="form-actions" style={{ marginTop: 4 }}>
-          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!parseSymbolList(draft.symbols).length}>
+          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!draft.symbols.length}>
             <PlusCircle size={14} /> Thêm nhóm
           </button>
         </div>
@@ -533,38 +642,33 @@ export function SymbolWatchPanel({ settings, watches, onSettingsChange, onWatche
                     onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}
                     defaultValue={(w.hours && w.hours.length ? w.hours : SYMBOL_WATCH_DEFAULT_HOURS).join(", ")}
-                    placeholder="09:00, 14:00, 20:00"
-                    onBlur={(e) => updateWatch(w.id, { hours: parseHoursInput(e.target.value) })} />
+                    placeholder="9 14 20" title={'Giờ nhắc — viết tắt được: "9 14 20" ra 09:00, 14:00, 20:00'}
+                    onBlur={(e) => {
+                      // Không parse ra giờ nào thì trả lại giá trị cũ: nhóm mất sạch giờ là
+                      // âm thầm ngừng nhắc, mà nhìn thẻ vẫn thấy "đang bật".
+                      const hrs = parseHoursInput(e.target.value);
+                      const keep = hrs.length ? hrs : (w.hours && w.hours.length ? w.hours : [...SYMBOL_WATCH_DEFAULT_HOURS]);
+                      e.target.value = keep.join(", ");
+                      updateWatch(w.id, { hours: keep });
+                    }} />
                   <ConfirmButton onConfirm={() => removeWatch(w.id)} />
                 </div>
 
-                {/* Sửa cả danh sách bằng một ô chữ; bấm từng chip để bật/tắt riêng một symbol. */}
-                <input className="input input-inline" style={{ width: "100%", marginTop: 8 }}
-                  defaultValue={symbols.map((x) => x.name).join(", ")} placeholder="XAUUSD, EURUSD, GBPJPY"
-                  title="Danh sách symbol, cách nhau bằng dấu phẩy"
-                  onBlur={(e) => {
-                    const next = mergeSymbolList(e.target.value, symbols);
-                    e.target.value = next.map((x) => x.name).join(", ");
-                    updateWatch(w.id, { symbols: next });
-                  }} />
+                {/* Thêm bằng cách gõ tên rồi phím cách; bấm tên chip để tạm ngừng, bấm × để xóa hẳn. */}
+                <div style={{ marginTop: 8 }}>
+                  <SymbolBox items={symbols} suggestions={suggestions}
+                    onAdd={(names) => addWatchSymbols(w, names)}
+                    onRemove={(x) => removeWatchSymbol(w, x)}
+                    onToggle={(x) => toggleSymbol(w, x.id)} />
+                </div>
                 {symbols.length === 0 ? (
                   <p className="field-hint" style={{ marginTop: 6, color: "var(--loss)" }}>
-                    Nhóm chưa có symbol nào — sẽ không gửi thông báo. Điền vào ô trên, hoặc xóa nhóm nếu không dùng nữa.
+                    Nhóm chưa có symbol nào — sẽ không gửi thông báo. Thêm vào ô trên, hoặc xóa nhóm nếu không dùng nữa.
                   </p>
                 ) : (
-                  <div className="watch-symbol-chips">
-                    {symbols.map((x) => (
-                      <button key={x.id} type="button"
-                        className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""}`}
-                        title={x.done ? "Đã ngừng theo dõi — bấm để theo dõi lại" : "Đang theo dõi — bấm để ngừng"}
-                        onClick={() => toggleSymbol(w, x.id)}>
-                        {x.done ? <CheckCircle2 size={11} /> : <Eye size={11} />} {x.name}
-                      </button>
-                    ))}
-                    <span className="field-hint" style={{ marginLeft: 4 }}>
-                      {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
-                    </span>
-                  </div>
+                  <p className="field-hint" style={{ marginTop: 6 }}>
+                    {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
+                  </p>
                 )}
 
                 <div className="sl-reminder-days">

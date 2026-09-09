@@ -165,7 +165,8 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
       ) : tab === "setupcheck" ? (
         <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} checkLog={setupCheckLog} />
       ) : tab === "symbolwatch" ? (
-        <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
+        <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} resources={resources} trades={trades}
+          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
       ) : tab === "timeline" ? (
         <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
           accounts={resources.accounts} trades={trades} mutedTrades={slMutedTrades}

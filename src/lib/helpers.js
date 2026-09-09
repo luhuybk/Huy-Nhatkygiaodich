@@ -512,11 +512,32 @@ export function emptySymbolWatch() {
   };
 }
 
+// Gõ nhanh nên nhận mọi kiểu ngăn cách: dấu phẩy, khoảng trắng, xuống dòng, chấm phẩy.
+// "XAUUSD EURUSD" và "XAUUSD, EURUSD" ra cùng một kết quả — không phải gõ dấu phẩy nữa.
+// Bỏ ký tự "|" vì nó là dấu phân cách trong callback_data của nút bấm Telegram.
 export function parseSymbolList(text) {
-  // Bỏ ký tự "|" vì nó là dấu phân cách trong callback_data của nút bấm Telegram.
   return [...new Set(
-    (text || "").split(",").map((x) => x.replace(/\|/g, "").trim().toUpperCase()).filter(Boolean)
+    String(text || "").split(/[,;\s]+/).map((x) => x.replace(/\|/g, "").trim().toUpperCase()).filter(Boolean)
   )];
+}
+
+// Gợi ý symbol để bấm thay vì gõ: symbol đánh nhiều nhất đứng trước, rồi tới danh sách
+// trong Tài nguyên chưa từng đánh. `exclude` là những cái đã chọn rồi.
+export function symbolSuggestions(resources, trades, exclude, limit) {
+  const skip = new Set((exclude || []).map((s) => String(s || "").trim().toUpperCase()));
+  const count = new Map();
+  (trades || []).forEach((t) => {
+    const s = String((t && t.symbol) || "").trim().toUpperCase();
+    if (!s) return;
+    count.set(s, (count.get(s) || 0) + 1);
+  });
+  const traded = [...count.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([s]) => s);
+  const rest = [...new Set(((resources && resources.symbols) || []).map((s) => String(s || "").trim().toUpperCase()).filter(Boolean))]
+    .filter((s) => !count.has(s))
+    .sort();
+  return [...traded, ...rest].filter((s) => !skip.has(s)).slice(0, limit || 40);
 }
 
 // Giữ nguyên id và trạng thái done của những symbol không đổi tên, để lần sửa danh sách
@@ -557,11 +578,23 @@ export function emptyReminderSchedule(accountId, accountName) {
   return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS], threadId: "", activeDays: [...WEEKDAY_CODES] };
 }
 
+// Cùng lý do với parseSymbolList: nhận mọi kiểu ngăn cách, và viết tắt được giờ —
+// "9" → 09:00, "930" → 09:30, "1430" → 14:30. Gõ "9 14 20" là xong ba khung giờ.
+function normalizeHour(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  let h = null;
+  let m = 0;
+  let g = s.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (g) { h = +g[1]; m = +g[2]; }
+  else if ((g = s.match(/^(\d{1,2})(\d{2})$/))) { h = +g[1]; m = +g[2]; }
+  else if ((g = s.match(/^(\d{1,2})$/))) { h = +g[1]; m = 0; }
+  if (h === null || h > 23 || m > 59) return "";
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export function parseHoursInput(text) {
-  return (text || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
+  return [...new Set(String(text || "").split(/[,;\s]+/).map(normalizeHour).filter(Boolean))].sort();
 }
 
 // Toàn bộ dữ liệu nằm trong vài blob JSON, không có lịch sử phiên bản.
