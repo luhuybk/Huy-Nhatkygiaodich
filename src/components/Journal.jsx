@@ -306,7 +306,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
                   tone={Number(t.profit) > 0 ? "text-win" : Number(t.profit) < 0 ? "text-loss" : ""} />
               ) : null}
               {t.fees !== "" && t.fees !== undefined && t.fees !== null ? (
-                <DetailRow label="Phí (hoa hồng + qua đêm)" value={fmt(Number(t.fees))}
+                <DetailRow label="Phí + thuế" value={fmt(Number(t.fees))}
                   tone={Number(t.fees) < 0 ? "text-loss" : ""} />
               ) : null}
               <DetailRow label={partial.count ? "Lợi nhuận cả lệnh" : "Lợi nhuận"} value={profit === null ? "—" : fmt(profit)}

@@ -391,8 +391,8 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
           </Field>
         </div>
         <div className="grid-3">
-          <Field label="Phí hoa hồng + qua đêm"
-            hint="Giữ đúng dấu như sàn xuất: bị trừ thì là số âm (-8.78). Cổ phiếu giữ nhiều ngày thì khoản này ăn thẳng vào kết quả.">
+          <Field label="Phí + thuế (mọi khoản bị trừ)"
+            hint="Gộp TẤT CẢ những gì sàn trừ ngoài chênh lệch giá: hoa hồng, phí qua đêm, phí giao dịch, thuế bán, lãi vay margin. Giữ đúng dấu như sàn xuất — bị trừ thì là số âm (-8.78).">
             <MoneyInput value={t.fees} onChange={set("fees")} placeholder="-8.78" />
           </Field>
         </div>

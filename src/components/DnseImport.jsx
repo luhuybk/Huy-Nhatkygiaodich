@@ -48,6 +48,20 @@ function DropBox({ label, hint, file, onPick, onClear, required }) {
   );
 }
 
+// Bỏ cột "Ghi chú" cho bảng gọn; mấy chi tiết phụ chuyển thành tooltip của dòng, còn hai
+// thứ thật sự quan trọng (đã có trong nhật ký / chưa trừ lãi vay) thì nói ở dòng cảnh báo
+// bên trên kèm tên mã, chứ không giấu vào tooltip.
+function rowTitle(r) {
+  const x = r.trip || r.lot;
+  const bits = [];
+  if (r.dup) bits.push("Đã có trong nhật ký");
+  if (r.trip && r.trip.source === "tinh") bits.push("Chưa trừ lãi vay margin");
+  if (x.cashRatio > 0 && x.cashRatio < 1) bits.push(`Margin ${Math.round((1 - x.cashRatio) * 100)}%`);
+  else if (x.cashRatio >= 1) bits.push("Tiền mặt 100%");
+  if (r.trip) bits.push(`Phí + thuế ${fmtMoney(r.trip.costs)}đ`);
+  return bits.join(" · ");
+}
+
 // Lệnh đã có trong nhật ký rồi thì bỏ tick sẵn — nhập lại lần hai sẽ nhân đôi lãi lỗ,
 // mà lệch số kiểu đó rất khó phát hiện về sau.
 function existingKeys(trades, account) {
@@ -118,6 +132,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
     setPicked(allFresh ? new Set() : new Set(fresh.map((r) => r.key)));
   };
   const dupChosen = rows.filter((r) => r.dup && chosen.has(r.key));
+  const dupList = [...new Set(rows.filter((r) => r.dup).map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)))];
 
   const add = () => {
     const list = rows.filter((r) => chosen.has(r.key)).map((r) => (
@@ -133,7 +148,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
 
   const closedNet = result ? result.trips.reduce((s, t) => s + t.net, 0) : 0;
   const openValue = result ? result.open.reduce((s, o) => s + o.value, 0) : 0;
-  const noPnl = result && result.trips.some((t) => t.source === "tinh");
+  const noPnl = result ? [...new Set(result.trips.filter((t) => t.source === "tinh").map((t) => t.symbol))] : [];
 
   if (!xlsxSupported()) {
     return (
@@ -177,13 +192,13 @@ export function DnseImport({ trades, resources, onAddTrades }) {
               sub={`Lãi lỗ ${fmtMoney(closedNet)}đ`} tone={closedNet > 0 ? "win" : closedNet < 0 ? "loss" : ""} />
             <StatCard label="Đang cầm" value={String(result.open.length)} sub={`Vốn ${fmtMoney(openValue)}đ`} />
             <StatCard label="Sẽ thêm vào nhật ký" value={String(chosen.size)}
-              sub={`${rows.filter((r) => r.dup).length} lệnh đã có sẵn, bỏ tick sẵn`} />
+              sub={dupList.length ? `Đã có sẵn, bỏ tick: ${dupList.join(", ")}` : "Chưa lệnh nào trùng nhật ký"} />
           </div>
 
-          {noPnl ? (
+          {noPnl.length ? (
             <p className="error-text" style={{ marginTop: 10 }}>
               <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-              Có lệnh nằm ngoài khoảng của file lãi lỗ nên <b>chưa trừ lãi vay margin</b> — số lãi đang cao hơn thực tế.
+              {noPnl.join(", ")} nằm ngoài khoảng của file lãi lỗ nên <b>chưa trừ lãi vay margin</b> — số lãi đang cao hơn thực tế.
               Xuất lại Lịch sử lãi lỗ cho đủ khoảng thời gian rồi thả lại vào ô bên trên.
             </p>
           ) : null}
@@ -224,7 +239,6 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                   <th className="cell-num">Giá mua</th>
                   <th className="cell-num">Giá bán</th>
                   <th className="cell-num">Lãi/Lỗ</th>
-                  <th>Ghi chú</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,7 +247,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                   const o = r.lot;
                   const days = t ? holdingDays(t) : null;
                   return (
-                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""}>
+                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""} title={rowTitle(r)}>
                       <td><input type="checkbox" checked={chosen.has(r.key)} onChange={() => toggle(r.key)} /></td>
                       <td><b>{t ? t.symbol : o.symbol}</b></td>
                       <td className="cell-num">{fmtQty(t ? t.qty : o.qty)}</td>
@@ -244,12 +258,6 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                       <td className="cell-num">{t ? fmtMoney(t.exitPrice) : ""}</td>
                       <td className="cell-num" style={t ? { color: t.net > 0 ? "var(--win)" : t.net < 0 ? "var(--loss)" : "" } : undefined}>
                         {t ? fmtMoney(t.net) : <span className="field-hint">{fmtMoney(o.value)} vốn</span>}
-                      </td>
-                      <td className="cell-soft">
-                        {r.dup ? "đã có trong nhật ký" : null}
-                        {t && t.source === "tinh" ? <span style={{ color: "var(--loss)" }}> chưa có lãi vay</span> : null}
-                        {t && t.cashRatio > 0 && t.cashRatio < 1 ? ` margin ${Math.round((1 - t.cashRatio) * 100)}%` : null}
-                        {o && o.cashRatio > 0 && o.cashRatio < 1 ? ` margin ${Math.round((1 - o.cashRatio) * 100)}%` : null}
                       </td>
                     </tr>
                   );
