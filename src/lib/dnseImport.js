@@ -4,7 +4,7 @@
 //   - "Lịch sử lãi lỗ":        có lãi vay và con số sàn chốt — nhưng KHÔNG có ngày mua.
 // Nên file sao kê là bắt buộc (dựng được lệnh trọn vẹn), file lãi lỗ là tuỳ chọn để bù
 // lãi vay. Ghép hai file bằng khoá (mã + giây bán).
-import { emptyTrade } from "./helpers.js";
+import { computeResult, emptyTrade } from "./helpers.js";
 import { excelDateParts } from "./xlsx.js";
 
 export const DNSE_FILLED = "Đã khớp";
@@ -310,6 +310,32 @@ export function tradeFromDnseTrip(trip, account, symbols) {
     entryTime: trip.entryTime,
     exitDate: trip.exitDate,
     exitTime: trip.exitTime,
+    profit: money(trip.gross),
+    fees: money(-trip.costs),
+  };
+}
+
+// Lệnh đã ghi tay lúc còn ĐANG MỞ, giờ sàn báo đã đóng — đó vẫn là một vị thế, không phải
+// lệnh mới. Ghép theo mã + ngày vào lệnh, chỉ ghép với lệnh chưa điền lợi nhuận. Thiếu bước
+// này thì mỗi lần nhập lại đẻ thêm một bản sao, mà bản ghi tay mới là bản có setup và đánh giá.
+export function findOpenMatch(trades, account, symbol, entryDate, usedIds) {
+  const used = usedIds || new Set();
+  return (trades || []).find((t) => {
+    if (!t || used.has(t.id)) return false;
+    if (account && t.account !== account) return false;
+    if (String(t.symbol || "").trim().toUpperCase() !== symbol) return false;
+    if ((t.entryDate || "") !== entryDate) return false;
+    return computeResult(t).status === "open";
+  }) || null;
+}
+
+// Điền kết quả của sàn vào lệnh đang mở. Chỉ đụng bốn ô sàn biết chắc — setup, đánh giá,
+// ghi chú, ảnh, chấm điểm... giữ nguyên hết, đó mới là phần công sức của người dùng.
+export function applyDnseTripTo(trade, trip) {
+  return {
+    ...trade,
+    exitDate: trip.exitDate,
+    exitTime: trip.exitTime || trade.exitTime || "",
     profit: money(trip.gross),
     fees: money(-trip.costs),
   };

@@ -3,7 +3,7 @@ import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wa
 import { Field, ResourceSelect, StatCard } from "./ui.jsx";
 import { readXlsx, xlsxSupported } from "../lib/xlsx.js";
 import {
-  buildDnseTrips, fmtMoney, fmtQty, holdingDays,
+  applyDnseTripTo, buildDnseTrips, findOpenMatch, fmtMoney, fmtQty, holdingDays,
   parseDnseOrders, parseDnsePnl, tradeFromDnseOpen, tradeFromDnseTrip,
 } from "../lib/dnseImport.js";
 
@@ -58,7 +58,8 @@ function rowNote(r) {
   if (r.trip) bits.push(`phí+thuế ${fmtMoney(r.trip.costs)}đ`);
   return (
     <>
-      {r.dup ? <span>đã có trong nhật ký · </span> : null}
+      {r.mode === "dup" ? <span>đã có trong nhật ký · </span> : null}
+      {r.mode === "update" ? <span style={{ color: "var(--accent)" }}>điền kết quả vào lệnh đang mở · </span> : null}
       {r.trip && r.trip.source === "tinh" ? <span style={{ color: "var(--loss)" }}>chưa có lãi vay · </span> : null}
       {bits.join(" · ")}
     </>
@@ -96,7 +97,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
   const [pnlFile, setPnlFile] = useState(null);
   const [account, setAccount] = useState(() => guessVnAccount(accounts, trades));
   const [picked, setPicked] = useState(null);
-  const [added, setAdded] = useState(0);
+  const [added, setAdded] = useState(null);
 
   const pick = async (f, kind) => {
     const { rows, error } = await readXlsx(await f.arrayBuffer());
@@ -109,7 +110,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
     const next = { name: f.name, error: res.error, ...res };
     if (kind === "orders") setOrderFile(next); else setPnlFile(next);
     setPicked(null);
-    setAdded(0);
+    setAdded(null);
   };
 
   const result = useMemo(() => {
@@ -120,19 +121,30 @@ export function DnseImport({ trades, resources, onAddTrades }) {
   const rows = useMemo(() => {
     if (!result) return [];
     const counts = existingCounts(trades, account);
-    const trips = result.trips.map((t) => ({
-      kind: "closed", key: t.id, trip: t,
-      dup: takeDup(counts, `${t.symbol}|${t.entryDate}|${t.exitDate}`),
-    }));
+    // Một lệnh trong nhật ký chỉ được một dòng nhập "nhận", không thì hai lô cùng mã cùng
+    // ngày sẽ cùng trỏ vào một lệnh rồi ghi đè lẫn nhau.
+    const claimed = new Set();
+    const trips = result.trips.map((t) => {
+      if (takeDup(counts, `${t.symbol}|${t.entryDate}|${t.exitDate}`)) {
+        return { kind: "closed", key: t.id, trip: t, mode: "dup" };
+      }
+      // Chưa có bản đã đóng, nhưng có thể đã ghi tay từ lúc lệnh còn mở.
+      const open = findOpenMatch(trades, account, t.symbol, t.entryDate, claimed);
+      if (open) {
+        claimed.add(open.id);
+        return { kind: "closed", key: t.id, trip: t, mode: "update", target: open };
+      }
+      return { kind: "closed", key: t.id, trip: t, mode: "add" };
+    });
     const opens = result.open.map((o) => ({
       kind: "open", key: o.id, lot: o,
-      dup: takeDup(counts, `${o.symbol}|${o.date}|`),
+      mode: takeDup(counts, `${o.symbol}|${o.date}|`) ? "dup" : "add",
     }));
     return [...trips, ...opens];
   }, [result, trades, account]);
 
   // Mặc định tick những lệnh chưa có trong nhật ký. Người dùng bấm thì giữ đúng ý người dùng.
-  const chosen = picked || new Set(rows.filter((r) => !r.dup).map((r) => r.key));
+  const chosen = picked || new Set(rows.filter((r) => r.mode !== "dup").map((r) => r.key));
   const toggle = (key) => {
     const next = new Set(chosen);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -140,23 +152,28 @@ export function DnseImport({ trades, resources, onAddTrades }) {
   };
   // Ô tick đầu bảng chỉ chọn những lệnh CHƯA có trong nhật ký. Chọn hết bằng một cú bấm mà
   // gồm cả lệnh đã có là nhân đôi lãi lỗ — muốn thêm lại thì vẫn tick tay từng dòng được.
-  const fresh = rows.filter((r) => !r.dup);
+  const fresh = rows.filter((r) => r.mode !== "dup");
   const toggleAll = () => {
     const allFresh = fresh.length > 0 && fresh.every((r) => chosen.has(r.key));
     setPicked(allFresh ? new Set() : new Set(fresh.map((r) => r.key)));
   };
-  const dupChosen = rows.filter((r) => r.dup && chosen.has(r.key));
-  const dupList = [...new Set(rows.filter((r) => r.dup).map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)))];
+  const dupChosen = rows.filter((r) => r.mode === "dup" && chosen.has(r.key));
+  const dupList = [...new Set(rows.filter((r) => r.mode === "dup").map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)))];
+  const chosenRows = rows.filter((r) => chosen.has(r.key));
+  const toUpdate = chosenRows.filter((r) => r.mode === "update");
+  const toAdd = chosenRows.filter((r) => r.mode !== "update");
 
   const add = () => {
-    const list = rows.filter((r) => chosen.has(r.key)).map((r) => (
+    const picks = rows.filter((r) => chosen.has(r.key));
+    const fresh = picks.filter((r) => r.mode !== "update").map((r) => (
       r.kind === "closed"
         ? tradeFromDnseTrip(r.trip, account, symbols)
         : tradeFromDnseOpen(r.lot, account, symbols)
     ));
-    if (!list.length) return;
-    onAddTrades(list);
-    setAdded(list.length);
+    const patched = picks.filter((r) => r.mode === "update").map((r) => applyDnseTripTo(r.target, r.trip));
+    if (!fresh.length && !patched.length) return;
+    onAddTrades(fresh, patched);
+    setAdded({ added: fresh.length, updated: patched.length });
     setPicked(new Set());
   };
 
@@ -205,8 +222,10 @@ export function DnseImport({ trades, resources, onAddTrades }) {
             <StatCard label="Lệnh đã đóng" value={String(result.trips.length)}
               sub={`Lãi lỗ ${fmtMoney(closedNet)}đ`} tone={closedNet > 0 ? "win" : closedNet < 0 ? "loss" : ""} />
             <StatCard label="Đang cầm" value={String(result.open.length)} sub={`Vốn ${fmtMoney(openValue)}đ`} />
-            <StatCard label="Sẽ thêm vào nhật ký" value={String(chosen.size)}
-              sub={dupList.length ? `Đã có sẵn, bỏ tick: ${dupList.join(", ")}` : "Chưa lệnh nào trùng nhật ký"} />
+            <StatCard label="Sẽ ghi vào nhật ký" value={toUpdate.length ? `${toAdd.length}+${toUpdate.length}` : String(toAdd.length)}
+              sub={toUpdate.length
+                ? `${toUpdate.length} lệnh bạn đã ghi tay lúc còn mở — điền kết quả vào, không tạo bản mới`
+                : dupList.length ? `Đã có sẵn, bỏ tick: ${dupList.join(", ")}` : "Chưa lệnh nào trùng nhật ký"} />
           </div>
 
           {noPnl.length ? (
@@ -270,7 +289,7 @@ export function DnseImport({ trades, resources, onAddTrades }) {
                   const o = r.lot;
                   const days = t ? holdingDays(t) : null;
                   return (
-                    <tr key={r.key} className={r.dup ? "dnse-row-dup" : ""}>
+                    <tr key={r.key} className={r.mode === "dup" ? "dnse-row-dup" : r.mode === "update" ? "dnse-row-update" : ""}>
                       <td><input type="checkbox" checked={chosen.has(r.key)} onChange={() => toggle(r.key)} /></td>
                       <td><b>{t ? t.symbol : o.symbol}</b></td>
                       <td className="cell-num">{fmtQty(t ? t.qty : o.qty)}</td>
@@ -298,13 +317,25 @@ export function DnseImport({ trades, resources, onAddTrades }) {
             </p>
           ) : null}
           <div className="form-actions" style={{ marginTop: 12 }}>
-            {added ? <span className="field-hint" style={{ color: "var(--win)" }}><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> Đã thêm {added} lệnh vào nhật ký</span> : null}
+            {added ? (
+              <span className="field-hint" style={{ color: "var(--win)" }}>
+                <CheckCircle2 size={13} style={{ verticalAlign: -2 }} />
+                {added.added ? ` Đã thêm ${added.added} lệnh` : ""}
+                {added.added && added.updated ? " ·" : ""}
+                {added.updated ? ` Đã điền kết quả cho ${added.updated} lệnh đang mở` : ""}
+              </span>
+            ) : null}
             <button type="button" className="btn btn-primary" onClick={add} disabled={!account || chosen.size === 0}>
-              <PlusCircle size={14} /> Thêm {chosen.size} lệnh vào nhật ký
+              <PlusCircle size={14} />
+              {toUpdate.length
+                ? `Thêm ${toAdd.length} · cập nhật ${toUpdate.length} lệnh`
+                : `Thêm ${toAdd.length} lệnh vào nhật ký`}
             </button>
           </div>
           <p className="field-hint" style={{ marginTop: 8 }}>
-            Lệnh nhập vào chỉ mang những gì sàn biết chắc: mã, ngày, lãi lỗ và phí. <b>Ô ghi chú để trống</b> —
+            Lệnh nào bạn đã ghi tay từ lúc còn mở thì app <b>điền kết quả vào chính lệnh đó</b> (ngày thoát,
+            lãi lỗ, phí) — setup, chấm điểm, ảnh, đánh giá của bạn giữ nguyên, không đẻ thêm bản trùng.
+            Lệnh nhập mới chỉ mang những gì sàn biết chắc: mã, ngày, lãi lỗ và phí. <b>Ô ghi chú để trống</b> —
             cột Ghi chú ở đây chỉ phục vụ lúc chọn, không ghi vào lệnh. Setup, lý do vào lệnh, tâm lý và
             đánh giá cũng để trống cho bạn tự viết. Khối lượng và giá thì xem ở bảng trên trước khi nhập.
           </p>

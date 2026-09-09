@@ -453,10 +453,16 @@ function AppShell({ onSignOut, userEmail }) {
   };
   // Nhập từ file sàn thêm cả loạt lệnh một lượt. Bỏ trùng theo id cho chắc — bấm nhanh
   // hai lần thì lần sau không được nhân đôi.
-  const handleAddTrades = (list) => {
+  // Nhập từ file sàn vừa thêm lệnh mới vừa điền kết quả vào lệnh đang mở. PHẢI gộp làm một
+  // lần ghi: gọi hai hàm persist liên tiếp thì hàm sau dựng lại từ `trades` cũ và xoá mất
+  // việc của hàm trước.
+  const handleAddTrades = (list, patches) => {
     const have = new Set(trades.map((t) => t.id));
     const fresh = (list || []).filter((t) => t && !have.has(t.id));
-    if (fresh.length) persistTrades([...trades, ...fresh]);
+    const byId = new Map((patches || []).filter(Boolean).map((t) => [t.id, t]));
+    if (!fresh.length && !byId.size) return;
+    const next = byId.size ? trades.map((x) => (byId.has(x.id) ? byId.get(x.id) : x)) : trades;
+    persistTrades([...next, ...fresh]);
   };
   const handleDuplicateTrades = (ids) => {
     const idSet = new Set(ids);

@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
         .app { --bg:#0a0b0d; --surface:#131519; --surface-2:#191c21; --border:#252930;
+          /* Dấu "chưa điền" dùng màu riêng, KHÔNG dùng --loss: đỏ trên form đọc thành "sai",
+             mà mục chưa điền thì chỉ là chưa điền. Vàng-xanh sáng nổi rõ trên nền tối. */
+          --pending:#cddc39; --pending-rgb:205,220,57;
           --text:#eae7e0; --text-dim:#8d9198; --accent:#d4a24e; --accent-2:#c98f38;
           --win:#4caf7d; --loss:#e0615a;
           background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif;
@@ -20,24 +23,26 @@
           .form-toc { display:block; position:sticky; top:0; padding-top:2px; }
         }
         .form-toc-title { display:block; font-size:10px; font-weight:600; color:var(--text-dim);
-          text-transform:uppercase; letter-spacing:0.8px; padding:0 10px 8px; opacity:0.7; }
-        .form-toc-list { list-style:none; margin:0; padding:0 0 0 10px; display:flex; flex-direction:column;
+          text-transform:uppercase; letter-spacing:0.8px; padding:0 4px 8px 19px; opacity:0.7; }
+        /* Chấm nằm ở left:-17px so với item, nên xương sống phải thụt vào 5px — không thì chấm
+           thò ra ngoài khung mục lục và bị cắt mất ở màn hình hẹp. */
+        .form-toc-list { list-style:none; margin:0 0 0 5px; padding:0 0 0 12px; display:flex; flex-direction:column;
           border-left:2px solid var(--border); }
         .form-toc-item { position:relative; width:100%; display:flex; align-items:center; gap:8px;
           padding:6px 9px; border:1px solid transparent; border-radius:7px; background:none; cursor:pointer;
           color:var(--text-dim); font-size:12.5px; text-align:left; }
         .form-toc-item:hover { background:var(--surface-2); color:var(--text); }
         /* Chấm trên xương sống, canh đúng vào đường kẻ bên trái. */
-        .form-toc-item::before { content:""; position:absolute; left:-15px; top:50%; width:6px; height:6px;
+        .form-toc-item::before { content:""; position:absolute; left:-17px; top:50%; width:6px; height:6px;
           margin-top:-3px; border-radius:50%; background:var(--border); }
         .form-toc-active { background:var(--surface-2); color:var(--accent); border-color:var(--border); font-weight:600; }
         .form-toc-active::before { background:var(--accent); box-shadow:0 0 0 3px rgba(var(--accent-rgb),0.2); }
-        .form-toc-missing::before { background:var(--loss); }
+        .form-toc-missing::before { background:var(--pending); }
         .form-toc-num { flex:0 0 auto; min-width:20px; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
           font-weight:600; opacity:0.75; }
         .form-toc-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .form-toc-count { flex:0 0 auto; min-width:16px; height:16px; padding:0 4px; border-radius:8px;
-          background:rgba(var(--loss-rgb),0.18); border:1px solid rgba(var(--loss-rgb),0.5); color:var(--loss);
+          background:rgba(var(--pending-rgb),0.16); border:1px solid rgba(var(--pending-rgb),0.5); color:var(--pending);
           font-size:10px; font-weight:700; line-height:14px; text-align:center; }
         .form-toc-done { flex:0 0 auto; color:var(--win); opacity:0.75; }
         /* Thanh tiến độ ghim ở đỉnh cao ~62px — chừa chỗ để bấm mục lục không bị nó che mất tiêu đề. */
@@ -246,6 +251,7 @@
         .dnse-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
         .dnse-table td, .dnse-table th { white-space:nowrap; }
         .dnse-row-dup { opacity:0.55; }
+        .dnse-row-update td { background:rgba(var(--accent-rgb),0.06); }
         .symbol-hints { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; }
         .symbol-hint-chip { padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer;
           background:var(--surface-2); border:1px dashed var(--border); color:var(--text-dim); }
@@ -300,9 +306,9 @@
         .input[type="time"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
         /* Dấu "chưa điền" cũ là icon 11px màu --loss mờ 0.85 — trên nền tối gần như không thấy.
            Cho hẳn một chấm tròn có nền và viền: to hơn, sáng hơn, không phụ thuộc mỗi màu chữ. */
-        .field-missing-icon { color:var(--loss); vertical-align:-3px; margin-left:6px; opacity:1;
-          width:15px; height:15px; padding:1.5px; border-radius:50%; background:rgba(var(--loss-rgb),0.18);
-          border:1px solid rgba(var(--loss-rgb),0.55); box-sizing:border-box; }
+        .field-missing-icon { color:var(--pending); vertical-align:-3px; margin-left:6px; opacity:1;
+          width:15px; height:15px; padding:1.5px; border-radius:50%; background:rgba(var(--pending-rgb),0.16);
+          border:1px solid rgba(var(--pending-rgb),0.5); box-sizing:border-box; }
         .textarea { min-height:64px; resize:vertical; }
         .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
         .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
