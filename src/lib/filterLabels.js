@@ -32,6 +32,13 @@ export const CHECKLIST_FILTERS = [
   { id: "partial", label: "Đang làm dở" },
   { id: "none", label: "Chưa làm gì" },
 ];
+export const REVIEW_FILTERS = [
+  { id: "due", label: "Đã đến hạn nhìn lại" },
+  { id: "waiting", label: "Đã đánh dấu, chưa tới hạn" },
+  { id: "done", label: "Đã review xong" },
+  { id: "marked", label: "Mọi lệnh có đánh dấu" },
+  { id: "none", label: "Không đánh dấu" },
+];
 export const LESSON_FILTERS = [
   { id: "yes", label: "Có bài học" },
   { id: "no", label: "Không có bài học" },
@@ -71,6 +78,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   }
   if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
   if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
+  if (f.review) parts.push(`Cần review: ${pick(REVIEW_FILTERS, f.review)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
   if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);

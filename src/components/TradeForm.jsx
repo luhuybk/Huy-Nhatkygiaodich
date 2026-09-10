@@ -296,12 +296,19 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   const lateReview = lateReviewState(t);
   // Gỡ dấu thì thôi nhắc, nhưng giữ nguyên đoạn đã viết — xem lateReviewState().
   const setNeedsReview = (on) => setT((prev) => ({ ...prev, needsReview: !!on }));
-  // Đóng dấu ngày ngay lúc viết. Không có ngày thì hai tuần sau đọc lại không biết dòng này
-  // viết lúc nào — mà "viết lúc nào" chính là thứ khiến mục này có giá trị.
+  // Đóng dấu ngày ngay lúc động vào — viết chữ hay tick "đã review xong", cái nào trước cũng
+  // được. Không có ngày thì sau này đọc lại không biết mình nhìn lại lúc nào, mà "lúc nào"
+  // chính là thứ khiến mục này có giá trị. Xoá sạch cả hai thì ngày cũng đi theo.
+  const stampDate = (prev, active) => (active ? prev.lateReviewDate || todayStr() : "");
   const setLateReview = (v) => setT((prev) => ({
     ...prev,
     lateReviewNote: v,
-    lateReviewDate: String(v || "").trim() ? prev.lateReviewDate || todayStr() : "",
+    lateReviewDate: stampDate(prev, !!String(v || "").trim() || !!prev.lateReviewDone),
+  }));
+  const setLateReviewDone = (on) => setT((prev) => ({
+    ...prev,
+    lateReviewDone: !!on,
+    lateReviewDate: stampDate(prev, !!on || !!String(prev.lateReviewNote || "").trim()),
   }));
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
@@ -645,7 +652,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
               <strong>Nhìn lại sau {LATE_REVIEW_DAYS} ngày</strong>
               <span className="late-review-when">
                 {lateReview.done
-                  ? `đã viết${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
+                  ? `đã review xong${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
                   : lateReview.pendingExit
                     ? "chưa đóng lệnh — chưa tính được hạn"
                     : lateReview.ready
@@ -666,6 +673,17 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
               onChange={(e) => setLateReview(e.target.value)}
               placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
             />
+            <label className={`checklist-item late-review-done-box ${t.lateReviewDone ? "checklist-checked" : ""}`}>
+              <input type="checkbox" checked={!!t.lateReviewDone} onChange={(e) => setLateReviewDone(e.target.checked)} />
+              <span>Đã review xong{t.lateReviewDone && t.lateReviewDate ? ` · ${t.lateReviewDate}` : ""}</span>
+            </label>
+            <span className="field-hint">
+              {t.lateReviewDone
+                ? "Lệnh này hết nằm trong danh sách đến hạn."
+                : lateReview.hasNote
+                  ? "Đã viết nhưng chưa đánh dấu xong — vẫn còn trong danh sách đến hạn, phòng khi bạn viết dở."
+                  : "Tick vào đây là xong, kể cả khi không viết gì thêm — đọc lại thấy chẳng có gì để nói cũng là một kết luận."}
+            </span>
           </div>
         ) : null}
       </Section>

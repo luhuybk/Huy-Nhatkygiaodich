@@ -42,7 +42,7 @@ export function emptyTrade() {
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
     skills: [],
-    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewNote: "", lateReviewDate: "", checklist: {},
+    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewDone: false, lateReviewNote: "", lateReviewDate: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
 }
@@ -2025,15 +2025,18 @@ export const LATE_REVIEW_DAYS = 14;
 // tiến độ thì mọi lệnh mới đóng đều mắc kẹt dưới 100% vì một việc chưa tới lượt làm.
 export function lateReviewState(t, today) {
   if (!t) return null;
-  const done = !!String(t.lateReviewNote || "").trim();
-  // Đã viết rồi thì bỏ đánh dấu cũng không giấu đi: gỡ dấu là đổi ý về việc CÓ CẦN đọc lại,
-  // không phải lệnh xoá đoạn đã viết. Giấu đi thì đoạn đó nằm trong dữ liệu mà không sửa
-  // được ở đâu nữa.
-  if (!t.needsReview && !done) return null;
+  const hasNote = !!String(t.lateReviewNote || "").trim();
+  // "Xong" là ô tick, KHÔNG phải "đã gõ chữ vào". Có lệnh đọc lại xong thấy chẳng có gì để
+  // nói thêm — vẫn là đã review. Có lệnh viết dở nửa chừng — vẫn là chưa xong.
+  const done = !!t.lateReviewDone;
+  // Đã viết hoặc đã đánh dấu xong thì gỡ dấu "cần review" cũng không giấu đi: gỡ dấu là đổi ý
+  // về việc CÓ CẦN đọc lại, không phải lệnh xoá. Giấu đi thì đoạn đã viết nằm trong dữ liệu
+  // mà không sửa được ở đâu nữa.
+  if (!t.needsReview && !hasNote && !done) return null;
   const doneDate = t.lateReviewDate || "";
   const base = t.exitDate || "";
   if (!base || computeResult(t).status !== "closed") {
-    return { due: "", daysLeft: null, ready: false, done, doneDate, pendingExit: true };
+    return { due: "", daysLeft: null, ready: false, done, hasNote, doneDate, pendingExit: true };
   }
   const due = shiftDate(base, LATE_REVIEW_DAYS);
   const now = today || todayStr();
@@ -2043,18 +2046,35 @@ export function lateReviewState(t, today) {
     daysLeft: Number.isFinite(daysLeft) ? daysLeft : null,
     ready: Number.isFinite(daysLeft) ? daysLeft <= 0 : false,
     done,
+    hasNote,
     doneDate,
     pendingExit: false,
   };
 }
 
-// Đến hạn mà chưa viết. Dùng cho Sức khỏe nhật ký.
+// Thứ tự cho cột "Cần review": quá hạn lâu nhất lên đầu, rồi tới hạn gần, rồi lệnh chưa đóng,
+// rồi đã xong. Không đánh dấu trả null để luôn nằm cuối bảng.
+export function lateReviewRank(t, today) {
+  const s = lateReviewState(t, today);
+  if (!s) return null;
+  if (s.done) return 900;
+  if (s.pendingExit) return 500;
+  if (s.ready) return -1000 + Math.max(-999, s.daysLeft);
+  return Math.max(0, s.daysLeft);
+}
+
+// Đến hạn mà chưa tick xong. Dùng cho Sức khỏe nhật ký.
+// Phải còn đánh dấu `needsReview` mới nhắc: gỡ dấu là đã nói "lệnh này thôi không cần nữa",
+// nhắc tiếp chỉ vì trong đó còn một đoạn viết dở là cãi lại chính lựa chọn đó.
+export function isLateReviewDue(t, today) {
+  if (!t || !t.needsReview) return false;
+  const s = lateReviewState(t, today);
+  return !!s && !s.pendingExit && s.ready && !s.done;
+}
+
 export function lateReviewDue(trades, today) {
   const now = today || todayStr();
-  return (trades || []).filter((t) => {
-    const s = lateReviewState(t, now);
-    return !!s && !s.pendingExit && s.ready && !s.done;
-  });
+  return (trades || []).filter((t) => isLateReviewDue(t, now));
 }
 
 // Không tính vào % hoàn thành: Phiên, Bonus, Điểm cấu trúc (tùy chọn theo cặp/loại lệnh),
@@ -2618,6 +2638,7 @@ export function tradeSortValue(t, key, resources) {
       const cp = checklistProgress(t, resources);
       return cp ? cp.checked / cp.total : null;
     }
+    case "review": return lateReviewRank(t);
     case "grade": {
       const g = GRADE_OPTIONS.find((x) => x.id === t.tradeGrade);
       return g ? (g.tone === "win" ? 0 : 1) : null;
@@ -2697,6 +2718,7 @@ const CSV_COLUMNS = [
   ["Cảm nghĩ tâm lý", (t) => t.psychologyNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
   ["Cần nhìn lại", (t) => (t.needsReview ? "Có" : "")],
+  ["Đã review xong", (t) => (t.lateReviewDone ? "Có" : "")],
   ["Nhìn lại sau", (t) => t.lateReviewNote || ""],
   ["Ngày nhìn lại", (t) => t.lateReviewDate || ""],
 ];
@@ -2895,6 +2917,14 @@ export function applyFilters(trades, filters, resources) {
       else if (filters.score === "low" && s > 2) return false;
       else if (filters.score === "mid" && (s <= 2 || s >= 4)) return false;
       else if (filters.score === "high" && s < 4) return false;
+    }
+    if (filters.review) {
+      const lr = lateReviewState(t);
+      if (filters.review === "marked" && !lr) return false;
+      if (filters.review === "due" && !isLateReviewDue(t)) return false;
+      if (filters.review === "waiting" && !(lr && t.needsReview && !lr.done && (lr.pendingExit || !lr.ready))) return false;
+      if (filters.review === "done" && !(lr && lr.done)) return false;
+      if (filters.review === "none" && lr) return false;
     }
     if (filters.checklist) {
       const cp = checklistProgress(t, resources);
