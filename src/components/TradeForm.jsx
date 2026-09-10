@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, TRADE_FORM_SECTIONS, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, lateReviewState, todayStr, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, TRADE_FORM_SECTIONS, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -288,6 +288,14 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
   const missing = (key) => isFieldMissing(t, key);
+  const lateReview = lateReviewState(t);
+  // Đóng dấu ngày ngay lúc viết. Không có ngày thì hai tuần sau đọc lại không biết dòng này
+  // viết lúc nào — mà "viết lúc nào" chính là thứ khiến mục này có giá trị.
+  const setLateReview = (v) => setT((prev) => ({
+    ...prev,
+    lateReviewNote: v,
+    lateReviewDate: String(v || "").trim() ? prev.lateReviewDate || todayStr() : "",
+  }));
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
   const partial = partialExitStats(t);
@@ -592,9 +600,35 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
           })}
         </div>
         <span className="field-hint">2 lựa chọn khớp với Kết quả hiện tại (Thắng/Thua) sẽ bật lên, 2 lựa chọn còn lại tự mờ đi.</span>
-        <Field label="Nhận xét / Review">
+        <Field label="Nhận xét / Review" hint="Viết ngay bây giờ, lúc còn nhớ rõ mình đã nghĩ gì">
           <textarea className="input textarea" value={t.reviewNote} onChange={(e) => set("reviewNote")(e.target.value)} placeholder="Ghi chú, bài học rút ra..." />
         </Field>
+        {lateReview ? (
+          <div className={`late-review ${lateReview.done ? "late-review-done" : lateReview.ready ? "late-review-due" : "late-review-wait"}`}>
+            <div className="late-review-head">
+              <History size={14} />
+              <strong>Nhìn lại sau {LATE_REVIEW_DAYS} ngày</strong>
+              <span className="late-review-when">
+                {lateReview.done
+                  ? `đã viết${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
+                  : lateReview.ready
+                    ? `đến hạn từ ${lateReview.due}`
+                    : `tới hạn ${lateReview.due} · còn ${lateReview.daysLeft} ngày`}
+              </span>
+            </div>
+            <span className="field-hint">
+              {lateReview.ready || lateReview.done
+                ? "Đọc lại phần Nhận xét / Review ngay phía trên trước khi viết. Giờ đã biết giá đi tiếp thế nào — lúc đó bạn nhìn đúng, hay chỉ đang thắng nên thấy gì cũng đúng?"
+                : "Chưa tới lúc. Để nguội cho hết cảm xúc của chính lệnh này rồi hãy đọc lại — viết sớm thì vẫn là góc nhìn cũ. Muốn viết trước vẫn được."}
+            </span>
+            <textarea
+              className="input textarea"
+              value={t.lateReviewNote || ""}
+              onChange={(e) => setLateReview(e.target.value)}
+              placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
+            />
+          </div>
+        ) : null}
         <button
           type="button"
           className={`lesson-toggle-btn ${t.hasLesson ? "lesson-toggle-active lesson-toggle-glow" : ""}`}

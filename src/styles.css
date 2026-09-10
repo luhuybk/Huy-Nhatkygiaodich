@@ -252,6 +252,26 @@
         .dnse-table td, .dnse-table th { white-space:nowrap; }
         .dnse-row-dup { opacity:0.55; }
         .dnse-row-update td { background:rgba(var(--accent-rgb),0.06); }
+        /* Nhìn lại sau: một khối riêng chứ không phải một Field nữa, vì nó có trạng thái theo
+           thời gian — chưa tới hạn thì mờ đi, tới hạn thì sáng lên, viết xong thì xanh. */
+        .late-review { margin-top:12px; padding:11px 12px 12px; border-radius:10px;
+          border:1px solid var(--border); background:var(--surface-2); }
+        .late-review-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:4px; }
+        .late-review-head strong { font-size:13px; }
+        .late-review-head svg { flex:none; }
+        .late-review-when { font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:20px;
+          background:var(--surface); border:1px solid var(--border); color:var(--text-dim); }
+        .late-review .field-hint { display:block; margin:0 0 8px; }
+        .late-review .textarea { min-height:70px; }
+        .late-review-wait { opacity:0.78; }
+        .late-review-due { border-color:rgba(var(--pending-rgb),0.5); background:rgba(var(--pending-rgb),0.07); }
+        .late-review-due .late-review-head svg,
+        .late-review-due .late-review-head strong { color:var(--pending); }
+        .late-review-due .late-review-when { color:var(--pending); border-color:rgba(var(--pending-rgb),0.45);
+          background:rgba(var(--pending-rgb),0.12); }
+        .late-review-done { border-color:rgba(76,175,125,0.4); background:rgba(76,175,125,0.06); }
+        .late-review-done .late-review-head svg,
+        .late-review-done .late-review-head strong { color:var(--win); }
         .symbol-hints { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; }
         .symbol-hint-chip { padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer;
           background:var(--surface-2); border:1px dashed var(--border); color:var(--text-dim); }

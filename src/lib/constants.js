@@ -89,7 +89,10 @@ export const DEFAULT_RESOURCES = {
   riskActions: ["Nâng vốn", "Giữ vốn", "Giảm risk"],
   timeframes: ["M15", "H1", "H3", "H4", "H8", "D", "W"],
   sessions: ["Á (Tokyo)", "Âu (London)", "Mỹ (New York)", "Âu-Mỹ chồng lấn"],
-  checklistItems: ["Có Screenshot", "Có Ghi lại nhật ký", "Có Review"],
+  // "Có Screenshot" đã bỏ: ảnh vào lệnh và ảnh thoát lệnh đều nằm trong % hoàn thành rồi,
+  // tick thêm một ô nữa chỉ là nói lại cùng một việc. "Có Review" cũng đã bỏ — review nguội
+  // giờ là mục "Nhìn lại sau" ở phần Đánh giá giao dịch, có hạn ngày hẳn hoi (LATE_REVIEW_DAYS).
+  checklistItems: ["Có Ghi lại nhật ký"],
   missReasons: ["Bất khả kháng", "Lỗi cá nhân", "Không nhận ra setup"],
   skipReasons: ["Không đủ tự tin", "Risk quá cao", "Ngoài giờ theo dõi", "Chưa đủ tín hiệu xác nhận", "Đang có lệnh khác"],
   lessonCategories: ["Quản trị vốn", "Tâm lý", "Kỷ luật vào lệnh", "Kỹ năng trong lệnh", "Kỹ năng thoát lệnh", "Kiến thức / Setup", "Khác"],

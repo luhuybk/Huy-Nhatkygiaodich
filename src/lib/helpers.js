@@ -42,7 +42,7 @@ export function emptyTrade() {
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
     skills: [],
-    tradeGrade: "", reviewNote: "", checklist: {},
+    tradeGrade: "", reviewNote: "", lateReviewNote: "", lateReviewDate: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
 }
@@ -1246,8 +1246,17 @@ export function normalizeResources(rs) {
   );
   if (!merged.sessions || !merged.sessions.length) merged.sessions = DEFAULT_RESOURCES.sessions;
   merged.fxRates = { ...DEFAULT_RESOURCES.fxRates, ...(merged.fxRates || {}), USD: 1 };
+  // Dọn một lần hai mục checklist đã có chỗ khác lo: ảnh vào/ra lệnh nằm trong % hoàn thành,
+  // còn review nguội thành mục "Nhìn lại sau" có hạn ngày. Cờ checklistTrimmed để nếu bạn tự
+  // thêm lại đúng hai tên đó thì lần sau không bị dọn nữa — dọn một lần rồi thôi.
+  if (!merged.checklistTrimmed) {
+    merged.checklistItems = (merged.checklistItems || []).filter((x) => !LEGACY_CHECKLIST_ITEMS.has(String(x || "").trim().toLowerCase()));
+    merged.checklistTrimmed = true;
+  }
   return merged;
 }
+
+const LEGACY_CHECKLIST_ITEMS = new Set(["có screenshot", "co screenshot", "có review", "co review"]);
 
 // Forex/hàng hoá vào ra trong ngày nên giờ khớp lệnh mới là thứ đáng tin; cổ phiếu giữ
 // nhiều ngày thì chỉ cần đúng ngày. Bỏ trống = có đồng bộ giờ, để tài khoản cũ giữ nguyên
@@ -2000,6 +2009,40 @@ export function checklistProgress(t, resources) {
   return { checked, total: items.length };
 }
 
+// ---- Nhìn lại sau ------------------------------------------------------------
+// Review viết ngay lúc vừa đóng lệnh vẫn còn dính cảm xúc của chính lệnh đó: vừa thắng thì
+// cái gì cũng đúng, vừa thua thì cái gì cũng sai. Đọc lại sau hai tuần — giá đã đi tiếp,
+// mình đã nguội — mới thấy được góc nhìn lúc ấy sai ở đâu. Nên đây là một mục có HẠN NGÀY,
+// không phải một ô tick: tick được ngay thì nó không còn là nhìn lại nữa.
+export const LATE_REVIEW_DAYS = 14;
+
+// Cố tình KHÔNG nằm trong tradeCompletionFields: mục này hai tuần nữa mới làm được, tính vào
+// tiến độ thì mọi lệnh mới đóng đều mắc kẹt dưới 100% vì một việc chưa tới lượt làm.
+export function lateReviewState(t, today) {
+  if (!t) return null;
+  const base = t.exitDate || "";
+  if (!base || computeResult(t).status !== "closed") return null;
+  const due = shiftDate(base, LATE_REVIEW_DAYS);
+  const now = today || todayStr();
+  const daysLeft = Math.round((Date.parse(`${due}T00:00:00`) - Date.parse(`${now}T00:00:00`)) / 86400000);
+  return {
+    due,
+    daysLeft: Number.isFinite(daysLeft) ? daysLeft : null,
+    ready: Number.isFinite(daysLeft) ? daysLeft <= 0 : false,
+    done: !!String(t.lateReviewNote || "").trim(),
+    doneDate: t.lateReviewDate || "",
+  };
+}
+
+// Đến hạn mà chưa viết. Dùng cho Sức khỏe nhật ký.
+export function lateReviewDue(trades, today) {
+  const now = today || todayStr();
+  return (trades || []).filter((t) => {
+    const s = lateReviewState(t, now);
+    return !!s && s.ready && !s.done;
+  });
+}
+
 // Không tính vào % hoàn thành: Phiên, Bonus, Điểm cấu trúc (tùy chọn theo cặp/loại lệnh),
 // Lý do (quản trị vốn), Lý do vào lệnh (kiến thức), Nhận xét/Review (đánh giá giao dịch) và Checklist
 // — đây đều là các mục điền hoặc không tùy ý, không phản ánh mức độ điền đầy đủ của một lệnh.
@@ -2320,6 +2363,14 @@ export function journalHealth(trades, resources, setupErrors, presets, skills) {
     filter: { completion: "under100" },
   });
 
+  const dueReview = lateReviewDue(closed);
+  add({
+    id: "lateReview", tone: "warn",
+    label: `Đã đến hạn nhìn lại (sau ${LATE_REVIEW_DAYS} ngày)`,
+    hint: `Những lệnh này đóng đã hơn ${LATE_REVIEW_DAYS} ngày. Mở ra đọc lại nhận xét mình viết lúc đó rồi ghi vào mục "Nhìn lại sau" — giờ đã nguội, đã biết giá đi tiếp thế nào, mới thấy được lúc ấy mình nhìn đúng hay chỉ là đang thắng.`,
+    ids: dueReview.map((t) => t.id),
+  });
+
   add({
     id: "unreviewedErrors", tone: "warn",
     label: "Lệnh đã đóng nhưng chưa soi lỗi setup",
@@ -2621,6 +2672,8 @@ const CSV_COLUMNS = [
   ["Cảm nhận kỹ năng", (t) => t.skillNote],
   ["Cảm nghĩ tâm lý", (t) => t.psychologyNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
+  ["Nhìn lại sau", (t) => t.lateReviewNote || ""],
+  ["Ngày nhìn lại", (t) => t.lateReviewDate || ""],
 ];
 
 export function tradesToCsv(trades) {

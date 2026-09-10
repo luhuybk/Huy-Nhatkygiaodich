@@ -327,6 +327,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
               <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
+              <DetailRow prose label={`Nhìn lại sau${t.lateReviewDate ? ` (${t.lateReviewDate})` : ""}`} value={t.lateReviewNote} />
               <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} />
               <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
             </DetailGroup>
