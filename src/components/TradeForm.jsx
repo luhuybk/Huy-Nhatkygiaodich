@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, lateReviewState, todayStr, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, TRADE_FORM_SECTIONS, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, lateReviewState, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -39,9 +39,9 @@ function scrollBoxTo(box, top) {
   requestAnimationFrame(step);
 }
 
-function FormToc({ trade }) {
+function FormToc({ trade, sections }) {
   const progress = tradeSectionProgress(trade);
-  const [active, setActive] = useState(TRADE_FORM_SECTIONS[0].id);
+  const [active, setActive] = useState(sections[0].id);
   const clicked = useRef(0);
 
   // Tô sáng mục đang xem. Dùng sự kiện cuộn chứ KHÔNG dùng IntersectionObserver: đo được là
@@ -49,7 +49,7 @@ function FormToc({ trade }) {
   // mục 1. Đọc 11 cái getBoundingClientRect mỗi lần cuộn thì rẻ, mà chắc chắn chạy.
   // Sau khi bấm thì khoá một nhịp, không thì các mục lướt qua sẽ thi nhau sáng lên rồi tắt.
   useEffect(() => {
-    const nodes = TRADE_FORM_SECTIONS.map((sec) => document.getElementById(sec.id)).filter(Boolean);
+    const nodes = sections.map((sec) => document.getElementById(sec.id)).filter(Boolean);
     const box = nodes.length ? nodes[0].closest(".body") : null;
     if (!box) return undefined;
     const pick = () => {
@@ -65,7 +65,7 @@ function FormToc({ trade }) {
     pick();
     box.addEventListener("scroll", pick, { passive: true });
     return () => box.removeEventListener("scroll", pick);
-  }, []);
+  }, [sections]);
 
   const go = (id) => {
     const el = document.getElementById(id);
@@ -82,7 +82,7 @@ function FormToc({ trade }) {
     <nav className="form-toc" aria-label="Mục lục form">
       <span className="form-toc-title">Các mục</span>
       <ul className="form-toc-list">
-        {TRADE_FORM_SECTIONS.map((sec) => {
+        {sections.map((sec) => {
           const p = progress.get(sec.id) || { missing: 0, total: 0 };
           const done = p.total > 0 && p.missing === 0;
           return (
@@ -288,7 +288,14 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
   const missing = (key) => isFieldMissing(t, key);
+  // Khoá memo theo SỐ mục checklist chứ không theo cả object resources: object đó có thể là
+  // một tham chiếu mới mỗi lần render, mà `sections` lại nằm trong deps của effect bắt cuộn
+  // trong mục lục — đổi tham chiếu mỗi render là gắn/gỡ listener mỗi render.
+  const checklistCount = ((resources && resources.checklistItems) || []).length;
+  const sections = useMemo(() => visibleFormSections(resources), [checklistCount]); // eslint-disable-line react-hooks/exhaustive-deps
   const lateReview = lateReviewState(t);
+  // Gỡ dấu thì thôi nhắc, nhưng giữ nguyên đoạn đã viết — xem lateReviewState().
+  const setNeedsReview = (on) => setT((prev) => ({ ...prev, needsReview: !!on }));
   // Đóng dấu ngày ngay lúc viết. Không có ngày thì hai tuần sau đọc lại không biết dòng này
   // viết lúc nào — mà "viết lúc nào" chính là thứ khiến mục này có giá trị.
   const setLateReview = (v) => setT((prev) => ({
@@ -603,32 +610,6 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         <Field label="Nhận xét / Review" hint="Viết ngay bây giờ, lúc còn nhớ rõ mình đã nghĩ gì">
           <textarea className="input textarea" value={t.reviewNote} onChange={(e) => set("reviewNote")(e.target.value)} placeholder="Ghi chú, bài học rút ra..." />
         </Field>
-        {lateReview ? (
-          <div className={`late-review ${lateReview.done ? "late-review-done" : lateReview.ready ? "late-review-due" : "late-review-wait"}`}>
-            <div className="late-review-head">
-              <History size={14} />
-              <strong>Nhìn lại sau {LATE_REVIEW_DAYS} ngày</strong>
-              <span className="late-review-when">
-                {lateReview.done
-                  ? `đã viết${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
-                  : lateReview.ready
-                    ? `đến hạn từ ${lateReview.due}`
-                    : `tới hạn ${lateReview.due} · còn ${lateReview.daysLeft} ngày`}
-              </span>
-            </div>
-            <span className="field-hint">
-              {lateReview.ready || lateReview.done
-                ? "Đọc lại phần Nhận xét / Review ngay phía trên trước khi viết. Giờ đã biết giá đi tiếp thế nào — lúc đó bạn nhìn đúng, hay chỉ đang thắng nên thấy gì cũng đúng?"
-                : "Chưa tới lúc. Để nguội cho hết cảm xúc của chính lệnh này rồi hãy đọc lại — viết sớm thì vẫn là góc nhìn cũ. Muốn viết trước vẫn được."}
-            </span>
-            <textarea
-              className="input textarea"
-              value={t.lateReviewNote || ""}
-              onChange={(e) => setLateReview(e.target.value)}
-              placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
-            />
-          </div>
-        ) : null}
         <button
           type="button"
           className={`lesson-toggle-btn ${t.hasLesson ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
@@ -644,9 +625,54 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         ) : null}
       </Section>
 
-      <Section id="sec-8" num="8" title="Checklist" subtitle="Kiểm tra nhanh trước khi chốt lệnh — quản lý danh sách ở tab Tài nguyên">
+      <Section id="sec-8" num="8" title="Nhìn lại sau" subtitle={`Đánh dấu lệnh đáng đọc lại sau ${LATE_REVIEW_DAYS} ngày`}>
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${t.needsReview ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
+          onClick={() => setNeedsReview(!t.needsReview)}
+        >
+          <History size={15} /> {t.needsReview ? `📌 Cần nhìn lại sau ${LATE_REVIEW_DAYS} ngày` : "Đánh dấu là cần nhìn lại sau"}
+        </button>
+        <span className="field-hint" style={{ display: "block", marginTop: 7 }}>
+          {t.needsReview
+            ? "Đến hạn, lệnh này sẽ hiện ở Sức khỏe nhật ký để bạn mở ra đọc lại."
+            : "Tùy chọn — không phải lệnh nào cũng cần. Đánh dấu những lệnh mà bây giờ bạn chưa chắc mình đúng hay chỉ là may."}
+        </span>
+        {lateReview ? (
+          <div className={`late-review ${lateReview.done ? "late-review-done" : lateReview.pendingExit ? "late-review-wait" : lateReview.ready ? "late-review-due" : "late-review-wait"}`}>
+            <div className="late-review-head">
+              <History size={14} />
+              <strong>Nhìn lại sau {LATE_REVIEW_DAYS} ngày</strong>
+              <span className="late-review-when">
+                {lateReview.done
+                  ? `đã viết${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
+                  : lateReview.pendingExit
+                    ? "chưa đóng lệnh — chưa tính được hạn"
+                    : lateReview.ready
+                      ? `đến hạn từ ${lateReview.due}`
+                      : `tới hạn ${lateReview.due} · còn ${lateReview.daysLeft} ngày`}
+              </span>
+            </div>
+            <span className="field-hint">
+              {lateReview.pendingExit
+                ? `Hạn đếm từ ngày thoát lệnh, nên điền Ngày exit ở mục 1C xong mới có hạn. Đánh dấu trước từ bây giờ cũng được — lúc còn đang trong lệnh mới nhớ rõ vì sao mình muốn đọc lại.`
+                : lateReview.ready || lateReview.done
+                  ? "Đọc lại phần Nhận xét / Review ở mục 7 trước khi viết. Giờ đã biết giá đi tiếp thế nào — lúc đó bạn nhìn đúng, hay chỉ đang thắng nên thấy gì cũng đúng?"
+                  : "Chưa tới lúc. Để nguội cho hết cảm xúc của chính lệnh này rồi hãy đọc lại — viết sớm thì vẫn là góc nhìn cũ. Muốn viết trước vẫn được."}
+            </span>
+            <textarea
+              className="input textarea"
+              value={t.lateReviewNote || ""}
+              onChange={(e) => setLateReview(e.target.value)}
+              placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
+            />
+          </div>
+        ) : null}
+      </Section>
+
+      {sections.some((sec) => sec.id === "sec-9") ? (
+      <Section id="sec-9" num="9" title="Checklist" subtitle="Kiểm tra nhanh trước khi chốt lệnh — quản lý danh sách ở tab Tài nguyên">
         <div className="pillar-grid">
-          {resources.checklistItems.length === 0 ? <p className="empty-note">Chưa có mục checklist nào — thêm ở Tài nguyên → Checklist.</p> : null}
           {resources.checklistItems.map((item) => {
             const checked = !!(t.checklist && t.checklist[item]);
             return (
@@ -658,6 +684,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
           })}
         </div>
       </Section>
+      ) : null}
 
       {formError ? <p className="error-text form-error">{formError}</p> : null}
       <div className="form-actions">
@@ -665,7 +692,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         <button type="button" className="btn btn-primary" onClick={submit}><Save size={15} /> Lưu giao dịch</button>
       </div>
       </div>
-      <FormToc trade={t} />
+      <FormToc trade={t} sections={sections} />
     </div>
   );
 }

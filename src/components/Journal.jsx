@@ -6,7 +6,7 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, checklistProgress, computeResult, computeRiskAlerts, dateKey, lateReviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -251,7 +251,11 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
   const partialRows = partialExitsOf(t);
   const score = avgPillarScore(t);
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
-  const checklistEntries = Object.entries(t.checklist || {});
+  const lr = lateReviewState(t);
+  // Chỉ hiện mục ĐÃ tick. Mục checklist bị gỡ khỏi Tài nguyên vẫn nằm lại trong lệnh cũ, và
+  // hiện dấu ✗ đỏ cho một mục không còn tồn tại thì đọc thành "lệnh này làm thiếu" — trong khi
+  // sự thật chỉ là mục đó đã bỏ. Cái đã tick thì giữ, vì đó là chuyện đã xảy ra thật.
+  const checklistEntries = Object.entries(t.checklist || {}).filter(([, checked]) => checked);
   const completion = tradeCompletion(t);
   const shots = tradeImageShots(t);
   const errorState = tradeErrorState(t);
@@ -327,7 +331,11 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
               <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
-              <DetailRow prose label={`Nhìn lại sau${t.lateReviewDate ? ` (${t.lateReviewDate})` : ""}`} value={t.lateReviewNote} />
+              {t.needsReview || t.lateReviewNote ? (
+                <DetailRow prose label={`Nhìn lại sau${t.lateReviewDate ? ` (${t.lateReviewDate})` : ""}`}
+                  value={t.lateReviewNote || (lr && lr.pendingExit ? "📌 Đã đánh dấu — hạn tính từ ngày thoát lệnh"
+                    : lr ? `📌 Đã đánh dấu — ${lr.ready ? `đến hạn từ ${lr.due}` : `tới hạn ${lr.due}`}` : "📌 Đã đánh dấu")} />
+              ) : null}
               <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} />
               <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
             </DetailGroup>
@@ -365,8 +373,8 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
             <DetailGroup title="Checklist">
               <div className="pillar-grid" style={{ marginBottom: 0 }}>
                 {checklistEntries.map(([item, checked]) => (
-                  <div key={item} className={`checklist-item ${checked ? "checklist-checked" : ""}`} style={{ cursor: "default" }}>
-                    {checked ? <Check size={14} color="var(--win)" /> : <X size={14} color="var(--loss)" />}
+                  <div key={item} className="checklist-item checklist-checked" style={{ cursor: "default" }}>
+                    <Check size={14} color="var(--win)" />
                     <span>{item}</span>
                   </div>
                 ))}

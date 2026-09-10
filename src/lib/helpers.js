@@ -42,7 +42,7 @@ export function emptyTrade() {
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
     skills: [],
-    tradeGrade: "", reviewNote: "", lateReviewNote: "", lateReviewDate: "", checklist: {},
+    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewNote: "", lateReviewDate: "", checklist: {},
     hasLesson: false, lessonNote: "",
   };
 }
@@ -1256,7 +1256,7 @@ export function normalizeResources(rs) {
   return merged;
 }
 
-const LEGACY_CHECKLIST_ITEMS = new Set(["có screenshot", "co screenshot", "có review", "co review"]);
+const LEGACY_CHECKLIST_ITEMS = new Set(["có screenshot", "co screenshot", "có review", "co review", "có ghi lại nhật ký", "co ghi lai nhat ky"]);
 
 // Forex/hàng hoá vào ra trong ngày nên giờ khớp lệnh mới là thứ đáng tin; cổ phiếu giữ
 // nhiều ngày thì chỉ cần đúng ngày. Bỏ trống = có đồng bộ giờ, để tài khoản cũ giữ nguyên
@@ -2012,16 +2012,29 @@ export function checklistProgress(t, resources) {
 // ---- Nhìn lại sau ------------------------------------------------------------
 // Review viết ngay lúc vừa đóng lệnh vẫn còn dính cảm xúc của chính lệnh đó: vừa thắng thì
 // cái gì cũng đúng, vừa thua thì cái gì cũng sai. Đọc lại sau hai tuần — giá đã đi tiếp,
-// mình đã nguội — mới thấy được góc nhìn lúc ấy sai ở đâu. Nên đây là một mục có HẠN NGÀY,
-// không phải một ô tick: tick được ngay thì nó không còn là nhìn lại nữa.
+// mình đã nguội — mới thấy được góc nhìn lúc ấy sai ở đâu.
+//
+// Là thứ TỰ ĐÁNH DẤU chứ không bật cho mọi lệnh: phần lớn lệnh đúng quy trình thì hai tuần
+// sau đọc lại cũng chẳng thêm được gì, bắt nhìn lại tất thì cái danh sách đến hạn dài ra
+// tới mức không ai mở nữa. Đánh dấu ít thì mỗi lệnh trong đó mới đáng mở.
 export const LATE_REVIEW_DAYS = 14;
 
+// null = lệnh này không đánh dấu cần nhìn lại. pendingExit = đã đánh dấu nhưng chưa đóng lệnh
+// nên chưa có mốc để đếm ngày.
 // Cố tình KHÔNG nằm trong tradeCompletionFields: mục này hai tuần nữa mới làm được, tính vào
 // tiến độ thì mọi lệnh mới đóng đều mắc kẹt dưới 100% vì một việc chưa tới lượt làm.
 export function lateReviewState(t, today) {
   if (!t) return null;
+  const done = !!String(t.lateReviewNote || "").trim();
+  // Đã viết rồi thì bỏ đánh dấu cũng không giấu đi: gỡ dấu là đổi ý về việc CÓ CẦN đọc lại,
+  // không phải lệnh xoá đoạn đã viết. Giấu đi thì đoạn đó nằm trong dữ liệu mà không sửa
+  // được ở đâu nữa.
+  if (!t.needsReview && !done) return null;
+  const doneDate = t.lateReviewDate || "";
   const base = t.exitDate || "";
-  if (!base || computeResult(t).status !== "closed") return null;
+  if (!base || computeResult(t).status !== "closed") {
+    return { due: "", daysLeft: null, ready: false, done, doneDate, pendingExit: true };
+  }
   const due = shiftDate(base, LATE_REVIEW_DAYS);
   const now = today || todayStr();
   const daysLeft = Math.round((Date.parse(`${due}T00:00:00`) - Date.parse(`${now}T00:00:00`)) / 86400000);
@@ -2029,8 +2042,9 @@ export function lateReviewState(t, today) {
     due,
     daysLeft: Number.isFinite(daysLeft) ? daysLeft : null,
     ready: Number.isFinite(daysLeft) ? daysLeft <= 0 : false,
-    done: !!String(t.lateReviewNote || "").trim(),
-    doneDate: t.lateReviewDate || "",
+    done,
+    doneDate,
+    pendingExit: false,
   };
 }
 
@@ -2039,7 +2053,7 @@ export function lateReviewDue(trades, today) {
   const now = today || todayStr();
   return (trades || []).filter((t) => {
     const s = lateReviewState(t, now);
-    return !!s && s.ready && !s.done;
+    return !!s && !s.pendingExit && s.ready && !s.done;
   });
 }
 
@@ -2118,8 +2132,18 @@ export const TRADE_FORM_SECTIONS = [
   { id: "sec-5", num: "5", title: "Tâm lý", fields: ["psychology", "ratingPsychology"] },
   { id: "sec-6", num: "6", title: "Chấm điểm", fields: [] },
   { id: "sec-7", num: "7", title: "Đánh giá giao dịch", fields: ["tradeGrade"] },
-  { id: "sec-8", num: "8", title: "Checklist", fields: [] },
+  { id: "sec-8", num: "8", title: "Nhìn lại sau", fields: [] },
+  // Checklist chỉ hiện khi Tài nguyên còn mục nào — mặc định đã rỗng. Form lọc theo
+  // visibleFormSections() và mục lục dùng chính danh sách đã lọc, không thì bấm vào một
+  // mục không được vẽ ra sẽ không nhảy đi đâu cả.
+  { id: "sec-9", num: "9", title: "Checklist", fields: [], optional: true, needsChecklist: true },
 ];
+
+// Danh sách mục thực sự được vẽ ra, dùng chung cho form và mục lục.
+export function visibleFormSections(resources) {
+  const hasChecklist = (((resources && resources.checklistItems) || []).length) > 0;
+  return TRADE_FORM_SECTIONS.filter((sec) => !sec.needsChecklist || hasChecklist);
+}
 
 // Mỗi section còn thiếu mấy mục. Trả về Map id -> { missing, total } để mục lục vừa chấm dấu
 // vừa nói được là thiếu bao nhiêu.
@@ -2367,7 +2391,7 @@ export function journalHealth(trades, resources, setupErrors, presets, skills) {
   add({
     id: "lateReview", tone: "warn",
     label: `Đã đến hạn nhìn lại (sau ${LATE_REVIEW_DAYS} ngày)`,
-    hint: `Những lệnh này đóng đã hơn ${LATE_REVIEW_DAYS} ngày. Mở ra đọc lại nhận xét mình viết lúc đó rồi ghi vào mục "Nhìn lại sau" — giờ đã nguội, đã biết giá đi tiếp thế nào, mới thấy được lúc ấy mình nhìn đúng hay chỉ là đang thắng.`,
+    hint: `Bạn đã tự đánh dấu những lệnh này là cần nhìn lại, và chúng đóng đã hơn ${LATE_REVIEW_DAYS} ngày. Mở ra đọc lại nhận xét mình viết lúc đó rồi ghi vào mục "Nhìn lại sau" — giờ đã nguội, đã biết giá đi tiếp thế nào, mới thấy được lúc ấy mình nhìn đúng hay chỉ là đang thắng.`,
     ids: dueReview.map((t) => t.id),
   });
 
@@ -2672,6 +2696,7 @@ const CSV_COLUMNS = [
   ["Cảm nhận kỹ năng", (t) => t.skillNote],
   ["Cảm nghĩ tâm lý", (t) => t.psychologyNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
+  ["Cần nhìn lại", (t) => (t.needsReview ? "Có" : "")],
   ["Nhìn lại sau", (t) => t.lateReviewNote || ""],
   ["Ngày nhìn lại", (t) => t.lateReviewDate || ""],
 ];
