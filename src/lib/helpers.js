@@ -102,10 +102,19 @@ export function countByLevel(items) {
 }
 
 // KẾ HOẠCH GIAO DỊCH
-// Dùng lại đúng thang 1-2-3 của bài học (cùng số, cùng màu) nhưng khác chữ: cấp 3 của bài học
-// là "chi tiết nhỏ", còn cấp 3 của kế hoạch là tình huống HIẾM chứ không hề nhỏ — lệnh chạy
-// quá xa mà không có đường xử lý thì mất nhiều hơn cả một mục cấp 2 làm sai.
+// Cấp 1-2-3 nằm ở CẢ HAI tầng, và cố ý mang nghĩa khác nhau. Ở tầng ngoài, cấp nói kế hoạch
+// nào lớn hơn: chiến lược đi vốn chi phối mọi thứ, còn cách xử lý riêng một mã chỉ là nhánh
+// bên dưới nó. Ở tầng trong, cấp nói mục nào trong CÙNG một kế hoạch là nặng nhất. Trộn hai
+// thang này làm một sẽ mất đúng cái phân biệt đó: một mục vặt trong kế hoạch lớn nhất không
+// vì thế mà quan trọng hơn cả một kế hoạch nhỏ.
 export const PLAN_LEVELS = [
+  { id: 1, label: "Cấp 1 — Chiến lược", hint: "Khung lớn chi phối mọi lệnh: đi vốn, phân bổ, khi nào đứng ngoài" },
+  { id: 2, label: "Cấp 2 — Xử lý cụ thể", hint: "Từng nhóm, từng mã, từng lệnh đang chạy" },
+  { id: 3, label: "Cấp 3 — Phụ trợ", hint: "Việc bên lề, có thì tốt" },
+];
+
+// Thang trong một kế hoạch: so các mục với nhau, không so với kế hoạch khác.
+export const PLAN_ITEM_LEVELS = [
   { id: 1, label: "Cấp 1 — Xương sống", hint: "Sai là hỏng cả kế hoạch" },
   { id: 2, label: "Cấp 2 — Vận hành", hint: "Việc cơ bản chạy hằng ngày" },
   { id: 3, label: "Cấp 3 — Tình huống", hint: "Hiếm gặp, nhưng phải biết đường xử lý" },
@@ -115,44 +124,53 @@ export function planLevelMeta(level) {
   return PLAN_LEVELS.find((x) => x.id === lessonLevel({ level })) || null;
 }
 
+export function planItemLevelMeta(level) {
+  return PLAN_ITEM_LEVELS.find((x) => x.id === lessonLevel({ level })) || null;
+}
+
 export function emptyPlan() {
-  return { id: null, name: "", scope: "", note: "", active: true, items: [] };
+  return { id: null, name: "", scope: "", note: "", level: 0, active: true, items: [] };
 }
 
 export function emptyPlanItem() {
   return { id: null, level: 0, when: "", then: "", note: "" };
 }
 
-// Nhóm mục theo cấp, GIỮ NGUYÊN thứ tự người dùng xếp trong từng nhóm — kế hoạch đọc theo
-// trình tự ("trước tiên... sau đó..."), sắp lại theo ngày là làm hỏng mạch đọc.
-export function groupPlanItems(items) {
+// Nhóm theo cấp, GIỮ NGUYÊN thứ tự người dùng xếp trong từng nhóm — kế hoạch đọc theo trình
+// tự ("trước tiên... sau đó..."), sắp lại theo ngày hay theo tên là làm hỏng mạch đọc. Dùng
+// chung cho cả hai tầng: danh sách kế hoạch và danh sách mục trong một kế hoạch.
+export function groupByPlanLevel(list) {
   const groups = new Map();
-  (items || []).forEach((it) => {
+  (list || []).forEach((it) => {
     const lv = lessonLevel(it);
     if (!groups.has(lv)) groups.set(lv, []);
     groups.get(lv).push(it);
   });
   return Array.from(groups.entries())
-    .map(([level, list]) => ({ level, list }))
+    .map(([level, items]) => ({ level, list: items }))
     .sort((a, b) => (a.level === 0) - (b.level === 0) || a.level - b.level);
 }
 
-// Các mục cấp 1 của những kế hoạch đang bật — thứ được ghim lên Tổng quan.
+// Các mục cấp 1 của những kế hoạch đang bật — thứ được ghim lên Tổng quan, và chỉ ghim được
+// vài dòng. Kế hoạch cấp cao đứng trước để nếu phải cắt thì cắt từ nhánh nhỏ trở đi: mục
+// xương sống của chiến lược đi vốn phải thắng mục xương sống của một kế hoạch phụ trợ.
 export function corePlanItems(plans) {
   const out = [];
   (plans || []).forEach((p) => {
     if (!p || p.active === false) return;
+    const planLv = lessonLevel(p);
     (p.items || []).forEach((it) => {
-      if (lessonLevel(it) === 1) out.push({ ...it, planId: p.id, planName: p.name || "" });
+      if (lessonLevel(it) === 1) out.push({ ...it, planId: p.id, planName: p.name || "", planLevel: planLv });
     });
   });
-  return out;
+  // Kế hoạch chưa phân cấp (0) xuống cuối chứ không được coi là cấp cao nhất.
+  return out.sort((a, b) => (a.planLevel === 0) - (b.planLevel === 0) || a.planLevel - b.planLevel);
 }
 
-// Đổi chỗ hai mục CÙNG CẤP trong danh sách gốc. Hai mục cạnh nhau trên màn hình có thể nằm
-// cách nhau vài mục khác cấp trong mảng, nên phải tìm hàng xóm cùng cấp rồi mới hoán vị —
-// đổi chỗ theo vị trí hiển thị sẽ làm thứ tự các nhóm khác nhảy lung tung.
-export function movePlanItem(items, id, dir) {
+// Đổi chỗ hai phần tử CÙNG CẤP trong danh sách gốc. Hai phần tử cạnh nhau trên màn hình có
+// thể nằm cách nhau vài phần tử khác cấp trong mảng, nên phải tìm hàng xóm cùng cấp rồi mới
+// hoán vị — đổi chỗ theo vị trí hiển thị sẽ làm thứ tự các nhóm khác nhảy lung tung.
+export function moveWithinLevel(items, id, dir) {
   const list = items || [];
   const target = list.find((it) => it.id === id);
   if (!target) return list;

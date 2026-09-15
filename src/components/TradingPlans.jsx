@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, Map as MapIcon, Pencil, Plus } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, FormModal } from "./ui.jsx";
-import { emptyPlan, emptyPlanItem, groupPlanItems, lessonLevel, movePlanItem, planItemLine, planLevelMeta, PLAN_LEVELS, uid } from "../lib/helpers.js";
+import { emptyPlan, emptyPlanItem, groupByPlanLevel, lessonLevel, moveWithinLevel, planItemLevelMeta, planItemLine, planLevelMeta, PLAN_ITEM_LEVELS, PLAN_LEVELS, uid } from "../lib/helpers.js";
 
 // Kế hoạch là thứ ĐỌC TRƯỚC khi vào lệnh, không phải nhật ký ghi lại sau. Nên ở đây không có
 // ngày tháng, không có tick "đã làm": một danh sách đầy dấu tick cũ là danh sách không ai đọc
@@ -23,9 +23,9 @@ function PlanItemForm({ form, setForm, onSave, onRemove, onClose, error }) {
         <textarea className="input textarea" style={{ minHeight: 80 }} value={form.then}
           onChange={(e) => setF("then")(e.target.value)} placeholder="VD: Hạ tỷ trọng về 30%, chỉ giữ mã đang có lãi..." />
       </Field>
-      <Field label="Mức độ quan trọng" hint="Cấp 1 sẽ được ghim lên trang Tổng quan. Để trống cũng được — phân cấp sau ngay trên thẻ.">
+      <Field label="Mức độ trong kế hoạch này" hint="So các mục với nhau trong cùng kế hoạch. Cấp 1 được ghim lên Tổng quan. Để trống cũng được — phân cấp sau ngay trên thẻ.">
         <div className="lsn-pick">
-          {PLAN_LEVELS.map((L) => (
+          {PLAN_ITEM_LEVELS.map((L) => (
             <button key={L.id} type="button"
               className={`lsn-pick-btn ${lessonLevel(form) === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
               onClick={() => setF("level")(lessonLevel(form) === L.id ? 0 : L.id)}>
@@ -51,7 +51,7 @@ function PlanItemForm({ form, setForm, onSave, onRemove, onClose, error }) {
 function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
   const [form, setForm] = useState(null);
   const [error, setError] = useState("");
-  const groups = useMemo(() => groupPlanItems(plan.items), [plan.items]);
+  const groups = useMemo(() => groupByPlanLevel(plan.items), [plan.items]);
   const items = plan.items || [];
 
   const openNew = () => { setForm(emptyPlanItem()); setError(""); };
@@ -69,7 +69,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
   const remove = (id) => { setItems(items.filter((it) => it.id !== id)); if (form && form.id === id) close(); };
   const setLevel = (id, level) => setItems(items.map((it) => (it.id === id ? { ...it, level: lessonLevel(it) === level ? 0 : level } : it)));
 
-  const move = (id, dir) => setItems(movePlanItem(items, id, dir));
+  const move = (id, dir) => setItems(moveWithinLevel(items, id, dir));
 
   return (
     <div>
@@ -79,6 +79,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
       </div>
       <div className="plan-detail-head">
         <h3 className="plan-detail-name">
+          {planLevelMeta(plan.level) ? <span className={`plan-lv-chip plan-lv-chip-${lessonLevel(plan)}`} title={planLevelMeta(plan.level).label}>C{lessonLevel(plan)}</span> : null}
           {plan.name}
           {plan.active === false ? <span className="plan-off-tag">đang tắt</span> : null}
         </h3>
@@ -101,7 +102,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
       ) : (
         <div className="var-groups" style={{ marginTop: 14 }}>
           {groups.map((g) => {
-            const meta = planLevelMeta(g.level);
+            const meta = planItemLevelMeta(g.level);
             return (
               <section key={g.level} className="var-group">
                 <h4 className="var-group-head">
@@ -126,7 +127,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
                       </div>
                       <div className="plan-item-tools">
                         <div className="lsn-pick lsn-pick-mini">
-                          {PLAN_LEVELS.map((L) => (
+                          {PLAN_ITEM_LEVELS.map((L) => (
                             <button key={L.id} type="button" title={L.label}
                               className={`lsn-pick-btn ${g.level === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
                               onClick={() => setLevel(it.id, L.id)}>{L.id}</button>
@@ -155,6 +156,7 @@ export function TradingPlanSection({ items, onChange }) {
   const [error, setError] = useState("");
   const plans = items || [];
   const open = plans.find((p) => p.id === openId) || null;
+  const planGroups = useMemo(() => groupByPlanLevel(plans), [plans]);
 
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
   const openNew = () => { setForm(emptyPlan()); setError(""); };
@@ -169,6 +171,8 @@ export function TradingPlanSection({ items, onChange }) {
     setOpenId(payload.id);
   };
   const updatePlan = (next) => onChange(plans.map((p) => (p.id === next.id ? next : p)));
+  const setPlanLevel = (p, level) => updatePlan({ ...p, level: lessonLevel(p) === level ? 0 : level });
+  const movePlan = (id, dir) => onChange(moveWithinLevel(plans, id, dir));
   const remove = (id) => { onChange(plans.filter((p) => p.id !== id)); setOpenId(null); close(); };
   const toggleActive = (p) => updatePlan({ ...p, active: p.active === false });
 
@@ -181,6 +185,17 @@ export function TradingPlanSection({ items, onChange }) {
       <Field label="Phạm vi áp dụng" hint="Một dòng ngắn: thị trường nào, tài khoản nào, giai đoạn nào.">
         <input className="input" value={form.scope} onChange={(e) => setF("scope")(e.target.value)}
           placeholder="VD: Cổ phiếu Việt Nam, tài khoản chính" />
+      </Field>
+      <Field label="Cấp của kế hoạch" hint="So kế hoạch này với các kế hoạch khác. Cấp 1 là khung lớn chi phối mọi lệnh; cấp 2 là cách xử lý riêng từng nhóm, từng mã.">
+        <div className="lsn-pick lsn-pick-lg">
+          {PLAN_LEVELS.map((L) => (
+            <button key={L.id} type="button"
+              className={`lsn-pick-btn ${lessonLevel(form) === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
+              onClick={() => setF("level")(lessonLevel(form) === L.id ? 0 : L.id)}>
+              {L.label}
+            </button>
+          ))}
+        </div>
       </Field>
       <Field label="Mục tiêu / ghi chú chung">
         <textarea className="input textarea" style={{ minHeight: 70 }} value={form.note}
@@ -226,43 +241,74 @@ export function TradingPlanSection({ items, onChange }) {
           Chưa có kế hoạch nào — VD "Kế hoạch đi vốn cho VN Stock", bên trong ghi các tình huống thị trường và cách xử lý.
         </p>
       ) : (
-        <div className="plan-grid">
-          {plans.map((p) => {
-            const counts = { 1: 0, 2: 0, 3: 0, 0: 0 };
-            (p.items || []).forEach((it) => { counts[lessonLevel(it)] += 1; });
-            const core = (p.items || []).filter((it) => lessonLevel(it) === 1).slice(0, 2);
+        <div className="var-groups">
+          {planGroups.map((g) => {
+            const meta = planLevelMeta(g.level);
             return (
-              <article key={p.id} className={`plan-card ${p.active === false ? "plan-card-off" : ""}`} role="button" tabIndex={0}
-                onClick={() => setOpenId(p.id)}
-                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpenId(p.id); } }}>
-                <div className="var-card-head">
-                  <b className="plan-card-name">{p.name}</b>
-                  <span className="var-card-tools" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="row-btn" aria-label="Sửa kế hoạch" onClick={() => openEdit(p)}><Pencil size={13} /></button>
-                    <ConfirmButton onConfirm={() => remove(p.id)} />
-                  </span>
+              <section key={g.level} className="var-group">
+                <h4 className="var-group-head">
+                  <MapIcon size={14} />
+                  <span className={meta ? "" : "var-group-none"}>{meta ? meta.label : "Chưa phân cấp"}</span>
+                  {meta ? <span className="lsn-head-hint">{meta.hint}</span> : null}
+                  <span className="var-group-count">{g.list.length} kế hoạch</span>
+                </h4>
+                <div className="plan-grid">
+                  {g.list.map((p, i) => {
+                    const counts = { 1: 0, 2: 0, 3: 0, 0: 0 };
+                    (p.items || []).forEach((it) => { counts[lessonLevel(it)] += 1; });
+                    const core = (p.items || []).filter((it) => lessonLevel(it) === 1).slice(0, 2);
+                    return (
+                      <article key={p.id} className={`plan-card plan-card-lv${g.level} ${p.active === false ? "plan-card-off" : ""}`} role="button" tabIndex={0}
+                        onClick={() => setOpenId(p.id)}
+                        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpenId(p.id); } }}>
+                        <div className="var-card-head">
+                          <b className="plan-card-name">{p.name}</b>
+                          <span className="var-card-tools" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" className="row-btn" aria-label="Lên trên" disabled={i === 0} onClick={() => movePlan(p.id, -1)}><ArrowUp size={13} /></button>
+                            <button type="button" className="row-btn" aria-label="Xuống dưới" disabled={i === g.list.length - 1} onClick={() => movePlan(p.id, 1)}><ArrowDown size={13} /></button>
+                            <button type="button" className="row-btn" aria-label="Sửa kế hoạch" onClick={() => openEdit(p)}><Pencil size={13} /></button>
+                            <ConfirmButton onConfirm={() => remove(p.id)} />
+                          </span>
+                        </div>
+                        {p.scope ? <p className="plan-card-scope">{p.scope}</p> : null}
+                        {/* Đổi cấp của cả kế hoạch ngay trên thẻ, khỏi mở form — giống hệt cách
+                            đổi cấp từng mục ở bên trong. */}
+                        <div className="lsn-pick lsn-pick-mini" onClick={(e) => e.stopPropagation()}>
+                          <span className="lsn-pick-label">Cấp</span>
+                          {PLAN_LEVELS.map((L) => (
+                            <button key={L.id} type="button" title={L.label}
+                              className={`lsn-pick-btn ${g.level === L.id ? `lsn-pick-on lsn-pick-on-${L.id}` : ""}`}
+                              onClick={() => setPlanLevel(p, L.id)}>{L.id}</button>
+                          ))}
+                        </div>
+                        {/* Hai hàng số cạnh nhau rất dễ đọc nhầm thành một, nên hàng nào cũng
+                            phải nói rõ nó đếm cái gì: "Cấp" là cấp của kế hoạch, "Mục" là số
+                            mục bên trong theo từng cấp. */}
+                        <div className="plan-card-levels">
+                          <span className="lsn-pick-label">Mục</span>
+                          {PLAN_ITEM_LEVELS.map((L) => (
+                            <span key={L.id} className={`plan-lv-chip plan-lv-chip-${L.id} ${counts[L.id] ? "" : "plan-lv-chip-empty"}`} title={`Mục ${L.label.toLowerCase()}`}>
+                              C{L.id} · {counts[L.id]}
+                            </span>
+                          ))}
+                          {counts[0] ? <span className="plan-lv-chip plan-lv-chip-empty" title="Mục chưa phân cấp">? · {counts[0]}</span> : null}
+                        </div>
+                        {core.length ? (
+                          <ul className="plan-card-core">
+                            {core.map((it) => <li key={it.id}>{planItemLine(it)}</li>)}
+                          </ul>
+                        ) : null}
+                        <div className="plan-card-foot" onClick={(e) => e.stopPropagation()}>
+                          <label className="plan-active-toggle">
+                            <input type="checkbox" checked={p.active !== false} onChange={() => toggleActive(p)} />
+                            <span>{p.active === false ? "Đang tắt" : "Đang dùng"}</span>
+                          </label>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                {p.scope ? <p className="plan-card-scope">{p.scope}</p> : null}
-                <div className="plan-card-levels">
-                  {PLAN_LEVELS.map((L) => (
-                    <span key={L.id} className={`plan-lv-chip plan-lv-chip-${L.id} ${counts[L.id] ? "" : "plan-lv-chip-empty"}`} title={L.label}>
-                      C{L.id} · {counts[L.id]}
-                    </span>
-                  ))}
-                  {counts[0] ? <span className="plan-lv-chip plan-lv-chip-empty" title="Chưa phân cấp">? · {counts[0]}</span> : null}
-                </div>
-                {core.length ? (
-                  <ul className="plan-card-core">
-                    {core.map((it) => <li key={it.id}>{planItemLine(it)}</li>)}
-                  </ul>
-                ) : null}
-                <div className="plan-card-foot" onClick={(e) => e.stopPropagation()}>
-                  <label className="plan-active-toggle">
-                    <input type="checkbox" checked={p.active !== false} onChange={() => toggleActive(p)} />
-                    <span>{p.active === false ? "Đang tắt" : "Đang dùng"}</span>
-                  </label>
-                </div>
-              </article>
+              </section>
             );
           })}
         </div>
