@@ -1152,3 +1152,77 @@
   position: absolute; right: 3px; bottom: 3px; padding: 1px 5px; border-radius: 4px;
   font-size: 10px; color: var(--text); background: rgba(0, 0, 0, .62);
 }
+
+/* KẾ HOẠCH GIAO DỊCH — dùng chung thang màu 1-2-3 với bài học để nhìn là quen mắt */
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 16px; }
+.plan-card {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 13px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  border-left: 3px solid var(--accent); cursor: pointer;
+}
+.plan-card:hover { border-color: rgba(var(--accent-rgb), .45); border-left-color: var(--accent); }
+.plan-card-off { border-left-color: var(--border); opacity: .68; }
+.plan-card-name { font-size: 13.5px; line-height: 1.4; flex: 1; min-width: 0; }
+.plan-card-scope { margin: 0; font-size: 11.5px; color: var(--text-dim); }
+.plan-card-levels { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.plan-lv-chip {
+  padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  border: 1px solid var(--border); color: var(--text-dim);
+}
+.plan-lv-chip-1 { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.plan-lv-chip-2 { background: rgba(var(--accent-rgb), .16); border-color: rgba(var(--accent-rgb), .5); color: var(--accent); }
+.plan-lv-chip-3 { background: var(--surface-2); color: var(--text); }
+.plan-lv-chip-empty { background: transparent; border-color: var(--border); color: var(--text-dim); font-weight: 600; }
+.plan-card-core {
+  margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; line-height: 1.5; color: var(--text-dim);
+}
+.plan-card-foot { margin-top: auto; padding-top: 4px; border-top: 1px dashed var(--border); }
+.plan-active-toggle { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); cursor: pointer; }
+
+.plan-detail-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+.plan-detail-name { margin: 0; font-size: 16px; flex: 1; min-width: 0; }
+.plan-off-tag {
+  margin-left: 8px; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.plan-detail-note {
+  margin: 8px 0 0; padding: 9px 11px; border-radius: 8px;
+  font-size: 12.5px; line-height: 1.55; color: var(--text-dim);
+  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2);
+}
+.plan-item-list { display: flex; flex-direction: column; gap: 8px; }
+/* flex-wrap thay cho media query: hàng nút chiếm 164px, hẹp quá thì phần chữ chỉ còn hơn
+   100px — không đọc nổi. Cho nút tự rớt xuống dòng dưới khi chữ không còn đủ 180px, ăn theo
+   bề ngang THẬT của hàng nên đúng cả khi thanh bên đang mở trên màn hình vừa. */
+.plan-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+}
+.plan-item-lv1 { border-left: 3px solid var(--accent); }
+.plan-item-lv2 { border-left: 3px solid rgba(var(--accent-rgb), .45); }
+.plan-item-lv3 { border-left: 3px solid var(--border); }
+.plan-item-lv0 { border-left: 3px dashed var(--border); }
+.plan-item-body { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.plan-item-when, .plan-item-then {
+  margin: 0; font-size: 13px; line-height: 1.55; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.plan-item-when { color: var(--text-dim); }
+/* Từ khóa "Nếu"/"Thì" in đậm màu nhấn: mắt bắt được cấu trúc điều kiện mà không cần đọc hết */
+.plan-item-kw { font-weight: 700; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; }
+.plan-item-note {
+  margin: 2px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-dim);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.plan-item-tools { display: flex; align-items: center; gap: 3px; flex-shrink: 0; margin-left: auto; }
+.plan-item-tools .row-btn:disabled { opacity: .3; cursor: default; }
+.lsn-pick-mini { margin-top: 0; padding-top: 0; gap: 2px; margin-right: 4px; }
+.lsn-pick-mini .lsn-pick-btn { min-width: 20px; padding: 2px 5px; font-size: 10.5px; }
+
+/* Kế hoạch cấp 1 ghim trên Tổng quan — cùng khung với Bài học cốt lõi */
+.core-plan-tag {
+  margin-right: 6px; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+

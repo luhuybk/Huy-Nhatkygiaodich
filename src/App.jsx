@@ -10,7 +10,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
-  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch,
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, writeLocalUi,
 } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
@@ -97,6 +97,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [processImprovements, setProcessImprovements] = useState([]);
   const [problemLogs, setProblemLogs] = useState([]);
   const [newsLogs, setNewsLogs] = useState([]);
+  const [tradingPlans, setTradingPlans] = useState([]);
   const [skills, setSkills] = useState([]);
   const [filterPresets, setFilterPresets] = useState([]);
   const [principles, setPrinciples] = useState(DEFAULT_PRINCIPLES);
@@ -132,7 +133,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk, fp] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk, fp, tp] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -160,6 +161,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("setupErrors", []),
         safeGet("skills", []),
         safeGet("journalFilterPresets", []),
+        safeGet("tradingPlans", []),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -169,6 +171,7 @@ function AppShell({ onSignOut, userEmail }) {
       setProcessImprovements(pi);
       setProblemLogs(pl);
       setNewsLogs(nl);
+      setTradingPlans(Array.isArray(tp) ? tp : []);
       setSkills(sk);
       setFilterPresets(fp);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
@@ -220,6 +223,7 @@ function AppShell({ onSignOut, userEmail }) {
         const snap = makeSnapshot({
           trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
           processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr, skills: sk, journalFilterPresets: fp,
+          tradingPlans: tp,
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
@@ -278,6 +282,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); noteSave("processImprovements", next, await safeSet("processImprovements", next)); }, []);
   const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); noteSave("problemLogs", next, await safeSet("problemLogs", next)); }, []);
   const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); noteSave("newsLogs", next, await safeSet("newsLogs", next)); }, []);
+  const persistTradingPlans = useCallback(async (next) => { setTradingPlans(next); noteSave("tradingPlans", next, await safeSet("tradingPlans", next)); }, []);
   const persistSkills = useCallback(async (next) => { setSkills(next); noteSave("skills", next, await safeSet("skills", next)); }, []);
   const persistFilterPresets = useCallback(async (next) => { setFilterPresets(next); noteSave("journalFilterPresets", next, await safeSet("journalFilterPresets", next)); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); noteSave("principles", next, await safeSet("principles", next)); }, []);
@@ -494,6 +499,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.processImprovements) persistProcessImprovements(data.processImprovements);
     if (data.problemLogs) persistProblemLogs(data.problemLogs);
     if (data.newsLogs) persistNewsLogs(data.newsLogs);
+    if (data.tradingPlans) persistTradingPlans(data.tradingPlans);
     if (data.principles) persistPrinciples({ ...DEFAULT_PRINCIPLES, ...data.principles });
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
@@ -519,6 +525,7 @@ function AppShell({ onSignOut, userEmail }) {
     ["setupLibrary", setupLibrary, persistSetupLibrary],
     ["problemLogs", problemLogs, persistProblemLogs],
     ["newsLogs", newsLogs, persistNewsLogs],
+    ["tradingPlans", tradingPlans, persistTradingPlans],
     ["skills", skills, persistSkills],
     ["missedSetups", missedSetups, persistMissedSetups],
     ["skippedSetups", skippedSetups, persistSkippedSetups],
@@ -558,7 +565,7 @@ function AppShell({ onSignOut, userEmail }) {
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
-      journalFilterPresets: filterPresets,
+      journalFilterPresets: filterPresets, tradingPlans,
       principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
@@ -576,6 +583,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistProcessImprovements([]);
     persistProblemLogs([]);
     persistNewsLogs([]);
+    persistTradingPlans([]);
     persistSkills([]);
     persistFilterPresets([]);
     persistPrinciples(DEFAULT_PRINCIPLES);
@@ -697,7 +705,8 @@ function AppShell({ onSignOut, userEmail }) {
           <div className="body">
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
-              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => goTo("lessons")} /> :
+              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => goTo("lessons")}
+                tradingPlans={tradingPlans} onGoToPlans={() => { writeLocalUi("journeyTab", "plan"); goTo("lessons"); }} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} onAddTrades={handleAddTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
@@ -736,6 +745,7 @@ function AppShell({ onSignOut, userEmail }) {
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
+                  tradingPlans={tradingPlans} onChangeTradingPlans={persistTradingPlans}
                   skills={skills} onChangeSkills={persistSkills} onChangeTrades={persistTrades}
                   avoidPrinciples={principles.avoid || []} onOpenTrade={setViewingTrade} />
               ) :
@@ -748,7 +758,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} skills={skills} journalFilterPresets={filterPresets} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} tradingPlans={tradingPlans} skills={skills} journalFilterPresets={filterPresets} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}

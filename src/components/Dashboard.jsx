@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { LayoutDashboard, ChevronLeft, ChevronDown, ChevronRight, GraduationCap } from "lucide-react";
+import { LayoutDashboard, ChevronLeft, ChevronDown, ChevronRight, GraduationCap, Map as MapIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { accountFamily, accountOptions, lessonLevel, lessonTitle, readLocalUi, writeLocalUi, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { accountFamily, accountOptions, corePlanItems, lessonLevel, lessonTitle, planItemLine, readLocalUi, writeLocalUi, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -95,7 +95,45 @@ function CoreLessons({ lessons, onGoToLessons }) {
   );
 }
 
-export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons }) {
+// Cùng lý do với Bài học cốt lõi, và đúng hơn nữa: kế hoạch là thứ phải đọc TRƯỚC khi bấm
+// lệnh. Chỉ lấy cấp 1 của những kế hoạch đang bật — kế hoạch đã tắt vẫn giữ nội dung để đọc
+// lại, nhưng không được chen lên đây.
+const PLAN_SHOWN = 4;
+
+function CorePlan({ plans, onGoToPlans }) {
+  const [open, setOpen] = useState(() => readLocalUi("dashCorePlanOpen", "1") !== "0");
+  const core = useMemo(() => corePlanItems(plans), [plans]);
+  const manyPlans = useMemo(() => new Set(core.map((it) => it.planId)).size > 1, [core]);
+  if (!core.length) return null;
+  const toggle = () => { const next = !open; setOpen(next); writeLocalUi("dashCorePlanOpen", next ? "1" : "0"); };
+  return (
+    <div className="core-lessons core-plan">
+      <button type="button" className="core-lessons-head" onClick={toggle}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <MapIcon size={14} />
+        <b>Kế hoạch cấp 1</b>
+        <span className="var-group-count">{core.length}</span>
+      </button>
+      {open ? (
+        <>
+          <ul className="core-lessons-list">
+            {core.slice(0, PLAN_SHOWN).map((it) => (
+              <li key={it.id}>
+                {manyPlans && it.planName ? <span className="core-plan-tag">{it.planName}</span> : null}
+                {planItemLine(it)}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="core-lessons-more" onClick={onGoToPlans}>
+            {core.length > PLAN_SHOWN ? `Xem tất cả ${core.length} mục cấp 1` : "Mở trang kế hoạch"}
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
@@ -111,6 +149,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
     return (
       <div>
         <RiskAlertBanner alerts={riskAlerts} />
+        <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
         <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
         {scopeBar}
         <div className="empty-state">
@@ -173,6 +212,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   return (
     <div>
       <RiskAlertBanner alerts={riskAlerts} />
+      <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
       <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Chỉ số quan trọng</h3>

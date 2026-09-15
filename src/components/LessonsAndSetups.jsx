@@ -1,11 +1,12 @@
 import { useState, useMemo, Suspense, lazy } from "react";
-import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
+import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
+const TradingPlanSection = lazy(() => import("./TradingPlans.jsx").then((m) => ({ default: m.TradingPlanSection })));
 
 // `showWatch` chỉ bật ở Bị miss / Bị skip. Biến thể không có khái niệm theo dõi, hiện ô lọc
 // đó ở đấy chỉ tổ khiến người dùng tưởng mình quên đánh dấu.
@@ -1214,8 +1215,8 @@ export function NewsLogSection({ items, onChange }) {
   );
 }
 
-export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples, onOpenTrade }) {
-  const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["skills", "lessons", "process", "problems", "news"]);
+export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, tradingPlans, onChangeTradingPlans, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples, onOpenTrade }) {
+  const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["plan", "skills", "lessons", "process", "problems", "news"]);
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
     const thisMonday = startOfWeek(todayStr());
@@ -1240,13 +1241,18 @@ export function JourneySection({ lessons, resources, trades, onChangeTrades, onC
         </div>
       ) : null}
       <div className="subtabs">
+        <button className={`subtab ${tab === "plan" ? "subtab-active" : ""}`} onClick={() => setTab("plan")}><MapIcon size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Kế hoạch</button>
         <button className={`subtab ${tab === "skills" ? "subtab-active" : ""}`} onClick={() => setTab("skills")}><Dumbbell size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Kỹ năng</button>
         <button className={`subtab ${tab === "lessons" ? "subtab-active" : ""}`} onClick={() => setTab("lessons")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Bài học</button>
         <button className={`subtab ${tab === "process" ? "subtab-active" : ""}`} onClick={() => setTab("process")}><ClipboardList size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Cải thiện quy trình</button>
         <button className={`subtab ${tab === "problems" ? "subtab-active" : ""}`} onClick={() => setTab("problems")}><Wrench size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Xử lý vấn đề</button>
         <button className={`subtab ${tab === "news" ? "subtab-active" : ""}`} onClick={() => setTab("news")}><Newspaper size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Nhật ký tin tức</button>
       </div>
-      {tab === "skills" ? (
+      {tab === "plan" ? (
+        <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
+          <TradingPlanSection items={tradingPlans} onChange={onChangeTradingPlans} />
+        </Suspense>
+      ) : tab === "skills" ? (
         <Suspense fallback={<p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>}>
           <SkillsPage items={skills} trades={trades} resources={resources} onChange={onChangeSkills} onTradesChange={onChangeTrades} />
         </Suspense>

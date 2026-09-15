@@ -101,6 +101,82 @@ export function countByLevel(items) {
   return out;
 }
 
+// KẾ HOẠCH GIAO DỊCH
+// Dùng lại đúng thang 1-2-3 của bài học (cùng số, cùng màu) nhưng khác chữ: cấp 3 của bài học
+// là "chi tiết nhỏ", còn cấp 3 của kế hoạch là tình huống HIẾM chứ không hề nhỏ — lệnh chạy
+// quá xa mà không có đường xử lý thì mất nhiều hơn cả một mục cấp 2 làm sai.
+export const PLAN_LEVELS = [
+  { id: 1, label: "Cấp 1 — Xương sống", hint: "Sai là hỏng cả kế hoạch" },
+  { id: 2, label: "Cấp 2 — Vận hành", hint: "Việc cơ bản chạy hằng ngày" },
+  { id: 3, label: "Cấp 3 — Tình huống", hint: "Hiếm gặp, nhưng phải biết đường xử lý" },
+];
+
+export function planLevelMeta(level) {
+  return PLAN_LEVELS.find((x) => x.id === lessonLevel({ level })) || null;
+}
+
+export function emptyPlan() {
+  return { id: null, name: "", scope: "", note: "", active: true, items: [] };
+}
+
+export function emptyPlanItem() {
+  return { id: null, level: 0, when: "", then: "", note: "" };
+}
+
+// Nhóm mục theo cấp, GIỮ NGUYÊN thứ tự người dùng xếp trong từng nhóm — kế hoạch đọc theo
+// trình tự ("trước tiên... sau đó..."), sắp lại theo ngày là làm hỏng mạch đọc.
+export function groupPlanItems(items) {
+  const groups = new Map();
+  (items || []).forEach((it) => {
+    const lv = lessonLevel(it);
+    if (!groups.has(lv)) groups.set(lv, []);
+    groups.get(lv).push(it);
+  });
+  return Array.from(groups.entries())
+    .map(([level, list]) => ({ level, list }))
+    .sort((a, b) => (a.level === 0) - (b.level === 0) || a.level - b.level);
+}
+
+// Các mục cấp 1 của những kế hoạch đang bật — thứ được ghim lên Tổng quan.
+export function corePlanItems(plans) {
+  const out = [];
+  (plans || []).forEach((p) => {
+    if (!p || p.active === false) return;
+    (p.items || []).forEach((it) => {
+      if (lessonLevel(it) === 1) out.push({ ...it, planId: p.id, planName: p.name || "" });
+    });
+  });
+  return out;
+}
+
+// Đổi chỗ hai mục CÙNG CẤP trong danh sách gốc. Hai mục cạnh nhau trên màn hình có thể nằm
+// cách nhau vài mục khác cấp trong mảng, nên phải tìm hàng xóm cùng cấp rồi mới hoán vị —
+// đổi chỗ theo vị trí hiển thị sẽ làm thứ tự các nhóm khác nhảy lung tung.
+export function movePlanItem(items, id, dir) {
+  const list = items || [];
+  const target = list.find((it) => it.id === id);
+  if (!target) return list;
+  const lv = lessonLevel(target);
+  const sameLevel = list.filter((it) => lessonLevel(it) === lv);
+  const pos = sameLevel.findIndex((it) => it.id === id);
+  const neighbour = sameLevel[pos + dir];
+  if (!neighbour) return list;
+  const a = list.findIndex((it) => it.id === id);
+  const b = list.findIndex((it) => it.id === neighbour.id);
+  const next = list.slice();
+  next[a] = list[b];
+  next[b] = list[a];
+  return next;
+}
+
+// Một mục hiện ra sao khi chỉ có một dòng: có điều kiện thì "Nếu A → B", không thì chỉ còn B.
+export function planItemLine(it) {
+  const when = String((it && it.when) || "").trim();
+  const then = String((it && it.then) || "").trim();
+  if (when && then) return `Nếu ${when} → ${then}`;
+  return then || when || "";
+}
+
 export const LESSON_MAX_IMAGES = 4;
 
 export function lessonAttachments(lesson) {
