@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, lateReviewState, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -296,6 +296,9 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   const lateReview = lateReviewState(t);
   // Gỡ dấu thì thôi nhắc, nhưng giữ nguyên đoạn đã viết — xem lateReviewState().
   const setNeedsReview = (on) => setT((prev) => ({ ...prev, needsReview: !!on }));
+  const setHasMistake = (on) => setT((prev) => ({ ...prev, hasMistake: !!on }));
+  const mistakeText = !!String(t.mistakeNote || "").trim();
+  const mistakeShots = mistakeImages(t).length > 0;
   // Đóng dấu ngày ngay lúc động vào — viết chữ hay tick "đã review xong", cái nào trước cũng
   // được. Không có ngày thì sau này đọc lại không biết mình nhìn lại lúc nào, mà "lúc nào"
   // chính là thứ khiến mục này có giá trị. Xoá sạch cả hai thì ngày cũng đi theo.
@@ -632,7 +635,7 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
         ) : null}
       </Section>
 
-      <Section id="sec-8" num="8" title="Nhìn lại sau" subtitle={`Đánh dấu lệnh đáng đọc lại sau ${LATE_REVIEW_DAYS} ngày`}>
+      <Section id="sec-8" num="8" title="Nhìn lại sau / Lỗi" subtitle={`Đọc lại sau ${LATE_REVIEW_DAYS} ngày, và ghi lại lỗi đã mắc trong lệnh này`}>
         <button
           type="button"
           className={`lesson-toggle-btn ${t.needsReview ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
@@ -673,6 +676,11 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
               onChange={(e) => setLateReview(e.target.value)}
               placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
             />
+            {/* Sau 14 ngày giá đã đi tiếp một đoạn dài — chính cái ảnh chart "về sau" mới là
+                thứ nói được lúc đó mình nhìn đúng hay sai, chữ không tả lại được. */}
+            <Field label="Ảnh chart lúc nhìn lại" hint={`Chụp lại chart sau ${LATE_REVIEW_DAYS} ngày để so với lúc vào lệnh — tối đa ${LATE_REVIEW_MAX_IMAGES} ảnh/link`}>
+              <MultiImageOrLink items={t.lateReviewImages} onChange={set("lateReviewImages")} label="late-review" max={LATE_REVIEW_MAX_IMAGES} />
+            </Field>
             <label className={`checklist-item late-review-done-box ${t.lateReviewDone ? "checklist-checked" : ""}`}>
               <input type="checkbox" checked={!!t.lateReviewDone} onChange={(e) => setLateReviewDone(e.target.checked)} />
               <span>Đã review xong{t.lateReviewDone && t.lateReviewDate ? ` · ${t.lateReviewDate}` : ""}</span>
@@ -683,6 +691,48 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
                 : lateReview.hasNote
                   ? "Đã viết nhưng chưa đánh dấu xong — vẫn còn trong danh sách đến hạn, phòng khi bạn viết dở."
                   : "Tick vào đây là xong, kể cả khi không viết gì thêm — đọc lại thấy chẳng có gì để nói cũng là một kết luận."}
+            </span>
+          </div>
+        ) : null}
+
+        <div className="section-divider" />
+        {/* Tách hẳn khỏi "Lỗi của setup" ở mục 3: mục đó tick theo bộ lỗi khai sẵn cho từng
+            setup, còn đây là chỗ ghi tay mọi thứ đã sai trong chính lệnh này — vào sớm, dời
+            dừng lỗ, phá kế hoạch — kể cả khi bản thân setup không lỗi gì. */}
+        <button
+          type="button"
+          className={`lesson-toggle-btn ${t.hasMistake ? "mistake-toggle-active" : ""}`}
+          onClick={() => setHasMistake(!t.hasMistake)}
+        >
+          <AlertTriangle size={15} /> {t.hasMistake ? "Lệnh này có lỗi" : "Đánh dấu là lệnh có lỗi"}
+        </button>
+        <span className="field-hint" style={{ display: "block", marginTop: 7 }}>
+          {t.hasMistake
+            ? "Lọc được ở Nhật ký bằng ô \"Lỗi\" để xem lại cả cụm lệnh đã mắc lỗi."
+            : "Khác \"Lỗi của setup\" ở mục 3 — chỗ đó chấm setup, chỗ này ghi cái bạn đã làm sai trong lệnh này, kể cả khi setup không lỗi gì."}
+        </span>
+        {t.hasMistake || mistakeText || mistakeShots ? (
+          <div className="mistake-box">
+            <div className="late-review-head">
+              <AlertTriangle size={14} />
+              <strong>Lỗi trong lệnh này</strong>
+              {!t.hasMistake && (mistakeText || mistakeShots) ? (
+                <span className="late-review-when">đã ghi nhưng chưa đánh dấu</span>
+              ) : null}
+            </div>
+            <textarea
+              className="input textarea"
+              value={t.mistakeNote || ""}
+              onChange={(e) => set("mistakeNote")(e.target.value)}
+              placeholder="Sai ở đâu, và đúng ra phải làm gì? VD: vào sớm một nhịp vì sợ lỡ, đúng ra phải đợi đóng nến..."
+            />
+            <Field label="Ảnh minh họa lỗi" hint={`Khoanh đúng chỗ đã sai trên chart — tối đa ${MISTAKE_MAX_IMAGES} ảnh/link`}>
+              <MultiImageOrLink items={t.mistakeImages} onChange={set("mistakeImages")} label="mistake" max={MISTAKE_MAX_IMAGES} />
+            </Field>
+            <span className="field-hint">
+              {t.hasMistake && !mistakeText && !mistakeShots
+                ? "Đã đánh dấu có lỗi nhưng chưa ghi gì — vài tuần nữa mở ra sẽ không còn nhớ lỗi gì. Lọc \"Có lỗi nhưng chưa ghi gì\" ở Nhật ký để viết nốt."
+                : "Ghi cả cách xử lý cho lần sau, chứ chỉ gọi tên lỗi thì lần sau vẫn mắc lại."}
             </span>
           </div>
         ) : null}

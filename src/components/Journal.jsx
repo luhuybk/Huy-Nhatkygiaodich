@@ -5,7 +5,7 @@ import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
+import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
 import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, toFilterList, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, lateReviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
@@ -145,6 +145,10 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
             </optgroup>
           ))}
         </select>
+        <select className="input" value={filters.mistake || ""} onChange={(e) => set("mistake")(e.target.value)}>
+          <option value="">Lỗi đã đánh dấu</option>
+          {MISTAKE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
         <select className="input" value={filters.skill || ""} onChange={(e) => set("skill")(e.target.value)}>
           <option value="">Kỹ năng đã dùng</option>
           {SKILL_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -249,6 +253,12 @@ function tradeImageShots(t) {
     if (row.image || row.link) shots.push({ key: `part-${i}`, label: `Chốt bớt lần ${i + 1}`, image: row.image, link: row.link });
   });
   if (t.exitImage || t.exitLink) shots.push({ key: "exit", label: "Thoát lệnh", image: t.exitImage, link: t.exitLink });
+  (t.mistakeImages || []).forEach((img, i) => {
+    if (img && (img.image || img.link)) shots.push({ key: `mis-${i}`, label: `Lỗi ${i + 1}`, image: img.image, link: img.link });
+  });
+  (t.lateReviewImages || []).forEach((img, i) => {
+    if (img && (img.image || img.link)) shots.push({ key: `lr-${i}`, label: `Nhìn lại ${i + 1}`, image: img.image, link: img.link });
+  });
   return shots;
 }
 
@@ -348,6 +358,13 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
                       : lr.ready ? `📌 Đã đến hạn từ ${lr.due}` : `📌 Tới hạn ${lr.due} · còn ${lr.daysLeft} ngày`}
                     tone={lr.done ? "text-win" : lr.ready && !lr.pendingExit ? "text-pending" : ""} />
                   <DetailRow prose label="Nhìn lại sau" value={t.lateReviewNote} />
+                </>
+              ) : null}
+              {t.hasMistake || String(t.mistakeNote || "").trim() ? (
+                <>
+                  <DetailRow label="Lỗi trong lệnh" tone={t.hasMistake ? "text-loss" : ""}
+                    value={t.hasMistake ? "⚠ Có lỗi" : "Đã ghi nhưng chưa đánh dấu"} />
+                  <DetailRow prose label="Lỗi đã ghi" value={t.mistakeNote} />
                 </>
               ) : null}
               <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} />

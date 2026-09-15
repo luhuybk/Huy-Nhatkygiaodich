@@ -282,6 +282,22 @@
         .late-review-done { border-color:rgba(76,175,125,0.4); background:rgba(76,175,125,0.06); }
         .late-review-done .late-review-head svg,
         .late-review-done .late-review-head strong { color:var(--win); }
+        /* Vạch ngăn giữa hai nửa của mục 8: cùng một mục nhưng hai việc khác nhau — một cái
+           để dành cho hai tuần nữa, một cái ghi ngay bây giờ. */
+        .section-divider { height:1px; margin:18px 0 14px; background:var(--border); }
+        /* Lỗi dùng --loss được: ở đây đỏ đúng nghĩa "đã sai", không phải "còn thiếu" */
+        .lesson-toggle-btn.mistake-toggle-active { border:1px solid var(--loss); border-style:solid;
+          color:var(--loss); background:rgba(224,97,90,0.12); }
+        .mistake-box { margin-top:12px; padding:11px 12px 12px; border-radius:10px;
+          border:1px solid rgba(224,97,90,0.4); background:rgba(224,97,90,0.05); }
+        .mistake-box .late-review-head svg, .mistake-box .late-review-head strong { color:var(--loss); }
+        .mistake-box .field-hint { display:block; margin:0 0 8px; }
+        .mistake-box .textarea { min-height:70px; }
+        .mistake-box .field { margin-top:10px; }
+        /* Dấu lỗi trong ô chi tiết lệnh */
+        .mistake-tag { display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
+          font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:20px;
+          color:var(--loss); border:1px solid rgba(224,97,90,0.45); background:rgba(224,97,90,0.1); }
         .symbol-hints { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; }
         .symbol-hint-chip { padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer;
           background:var(--surface-2); border:1px dashed var(--border); color:var(--text-dim); }

@@ -20,6 +20,13 @@ export const ERROR_FILTERS = [
   { id: "any", label: "Có lỗi (bất kỳ)" },
   { id: "unreviewed", label: "Chưa soi lỗi" },
 ];
+// Khác ERROR_FILTERS ở trên: cái kia lọc theo bộ lỗi khai sẵn của setup, cái này lọc theo
+// dấu "lệnh này có lỗi" bạn tự bật ở mục 8. Nhãn phải nói rõ để không chọn nhầm.
+export const MISTAKE_FILTERS = [
+  { id: "yes", label: "Có lỗi (tự đánh dấu)", short: "có lỗi" },
+  { id: "blank", label: "Có lỗi nhưng chưa ghi gì", short: "có lỗi, chưa ghi" },
+  { id: "no", label: "Không đánh dấu lỗi", short: "không đánh dấu lỗi" },
+];
 export const SCORE_FILTERS = [
   { id: "under5", label: "Chưa đạt 5 sao" },
   { id: "low", label: "Thấp (≤ 2 sao)" },
@@ -79,6 +86,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
   if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
   if (f.review) parts.push(`Cần review: ${pick(REVIEW_FILTERS, f.review)}`);
+  if (f.mistake) parts.push(`Lỗi: ${pick(MISTAKE_FILTERS, f.mistake)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
   if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);

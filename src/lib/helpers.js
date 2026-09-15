@@ -42,7 +42,10 @@ export function emptyTrade() {
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
     skills: [],
-    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewDone: false, lateReviewNote: "", lateReviewDate: "", checklist: {},
+    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewDone: false, lateReviewNote: "", lateReviewDate: "",
+    lateReviewImages: [{ link: "", image: "" }],
+    hasMistake: false, mistakeNote: "", mistakeImages: [{ link: "", image: "" }],
+    checklist: {},
     hasLesson: false, lessonNote: "",
   };
 }
@@ -2112,6 +2115,23 @@ export function checklistProgress(t, resources) {
 // sau đọc lại cũng chẳng thêm được gì, bắt nhìn lại tất thì cái danh sách đến hạn dài ra
 // tới mức không ai mở nữa. Đánh dấu ít thì mỗi lệnh trong đó mới đáng mở.
 export const LATE_REVIEW_DAYS = 14;
+export const LATE_REVIEW_MAX_IMAGES = 4;
+export const MISTAKE_MAX_IMAGES = 4;
+
+// "Lỗi của setup" ở mục 3 chỉ tick được khi setup đó đã khai sẵn bộ lỗi, và chỉ nói được
+// những lỗi thuộc về setup. Cái này là chỗ ghi tay mọi thứ đã sai trong CHÍNH lệnh này —
+// vào sớm, dời dừng lỗ, bỏ kế hoạch — kể cả khi setup không có lỗi nào.
+export function hasMistake(t) {
+  return !!(t && t.hasMistake);
+}
+
+export function mistakeImages(t) {
+  return ((t && t.mistakeImages) || []).filter((x) => x && (x.link || x.image));
+}
+
+export function lateReviewImages(t) {
+  return ((t && t.lateReviewImages) || []).filter((x) => x && (x.link || x.image));
+}
 
 // null = lệnh này không đánh dấu cần nhìn lại. pendingExit = đã đánh dấu nhưng chưa đóng lệnh
 // nên chưa có mốc để đếm ngày.
@@ -2246,7 +2266,7 @@ export const TRADE_FORM_SECTIONS = [
   { id: "sec-5", num: "5", title: "Tâm lý", fields: ["psychology", "ratingPsychology"] },
   { id: "sec-6", num: "6", title: "Chấm điểm", fields: [] },
   { id: "sec-7", num: "7", title: "Đánh giá giao dịch", fields: ["tradeGrade"] },
-  { id: "sec-8", num: "8", title: "Nhìn lại sau", fields: [] },
+  { id: "sec-8", num: "8", title: "Nhìn lại sau / Lỗi", fields: [] },
   // Checklist chỉ hiện khi Tài nguyên còn mục nào — mặc định đã rỗng. Form lọc theo
   // visibleFormSections() và mục lục dùng chính danh sách đã lọc, không thì bấm vào một
   // mục không được vẽ ra sẽ không nhảy đi đâu cả.
@@ -2814,6 +2834,8 @@ const CSV_COLUMNS = [
   ["Cần nhìn lại", (t) => (t.needsReview ? "Có" : "")],
   ["Đã review xong", (t) => (t.lateReviewDone ? "Có" : "")],
   ["Nhìn lại sau", (t) => t.lateReviewNote || ""],
+  ["Có lỗi", (t) => (t.hasMistake ? "Có" : "")],
+  ["Lỗi đã ghi", (t) => t.mistakeNote || ""],
   ["Ngày nhìn lại", (t) => t.lateReviewDate || ""],
 ];
 
@@ -2988,6 +3010,15 @@ export function applyFilters(trades, filters, resources) {
       if (filters.setupError === "any" && state !== "errors") return false;
       if (filters.setupError === "unreviewed" && state !== "unreviewed") return false;
       if (!["clean", "any", "unreviewed"].includes(filters.setupError) && !(t.setupErrors || []).includes(filters.setupError)) return false;
+    }
+    if (filters.mistake) {
+      const marked = hasMistake(t);
+      const written = !!String(t.mistakeNote || "").trim() || mistakeImages(t).length > 0;
+      if (filters.mistake === "yes" && !marked) return false;
+      // Đánh dấu có lỗi mà bỏ trống phần ghi thì vài tuần nữa mở ra chỉ còn đúng một chữ "có
+      // lỗi" — không nhớ nổi lỗi gì. Lọc riêng ra để còn viết nốt.
+      if (filters.mistake === "blank" && !(marked && !written)) return false;
+      if (filters.mistake === "no" && marked) return false;
     }
     if (filters.skill) {
       const state = tradeSkillState(t);
