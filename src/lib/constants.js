@@ -23,6 +23,8 @@ export const RESOURCE_GROUPS = [
       { key: "setups", label: "Setup", hint: "Các mẫu hình vào lệnh (RB, IRB, ARB...)" },
       { key: "setupBonus", label: "Bonus", hint: "Điểm cộng thêm cho setup (hợp lưu, volume, tin tức...)" },
       { key: "setupNotes", label: "Nhận xét setup", hint: "Đánh giá việc áp dụng setup (Tốt, Tệ, Sai setup...)" },
+      { key: "structureScores", label: "Điểm cấu trúc (ĐCT)", numeric: true,
+        hint: "Các mức điểm cấu trúc chọn được khi nhập lệnh. Chỉ nhận số (7,5 hay 7.5 đều được) và luôn tự xếp từ nhỏ đến lớn. Gỡ một mức ở đây thì lệnh cũ vẫn giữ nguyên điểm đã chấm." },
     ]
   },
   {
@@ -70,6 +72,36 @@ export const RESOURCE_GROUPS = [
   },
 ];
 
+// Thang ĐCT mặc định 0 → 7, bước 0.5 — đúng thang cũ, để người đang dùng không mất mức nào.
+// Muốn lên 11-12 thì thêm ở Tài nguyên → Kiến thức → Điểm cấu trúc.
+export const STRUCTURE_SCORES = Array.from({ length: 15 }, (_, i) => (i * 0.5).toString());
+
+// ĐCT là số nhưng lưu dạng chữ (giá trị của <select>). So sánh chữ thì "10" đứng trước "2",
+// nên mọi chỗ xếp thứ tự phải đổi ra số. Nhận cả dấu phẩy vì gõ tiếng Việt hay ra "7,5".
+export function structureScoreNumber(v) {
+  const raw = String(v === null || v === undefined ? "" : v).trim().replace(",", ".");
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Bỏ trùng, xếp theo số tăng dần. Mục nào không đọc ra số (dữ liệu cũ gõ tay lạ) thì xuống
+// cuối, giữ nguyên thứ tự — không được lặng lẽ vứt đi, vì có thể vẫn có lệnh đang mang nó.
+export function sortStructureScores(list) {
+  const seen = new Set();
+  const uniq = [];
+  (list || []).forEach((x) => {
+    if (x === null || x === undefined || x === "") return;
+    const k = String(x);
+    if (seen.has(k)) return;
+    seen.add(k);
+    uniq.push(k);
+  });
+  const nums = uniq.filter((x) => structureScoreNumber(x) !== null)
+    .sort((a, b) => structureScoreNumber(a) - structureScoreNumber(b));
+  return [...nums, ...uniq.filter((x) => structureScoreNumber(x) === null)];
+}
+
 export const DEFAULT_RESOURCES = {
   accounts: [],
   symbols: [
@@ -97,10 +129,9 @@ export const DEFAULT_RESOURCES = {
   missReasons: ["Bất khả kháng", "Lỗi cá nhân", "Không nhận ra setup"],
   skipReasons: ["Không đủ tự tin", "Risk quá cao", "Ngoài giờ theo dõi", "Chưa đủ tín hiệu xác nhận", "Đang có lệnh khác"],
   lessonCategories: ["Quản trị vốn", "Tâm lý", "Kỷ luật vào lệnh", "Kỹ năng trong lệnh", "Kỹ năng thoát lệnh", "Kiến thức / Setup", "Khác"],
+  structureScores: STRUCTURE_SCORES,
   fxRates: { USD: 1, VND: 26000, EUR: 0.92, GBP: 0.79, JPY: 150 },
 };
-
-export const STRUCTURE_SCORES = Array.from({ length: 15 }, (_, i) => (i * 0.5).toString());
 
 export const GRADE_OPTIONS = [
   { id: "tot-thang", label: "Giao dịch Tốt - Thắng", matches: "win", tone: "win" },
@@ -209,7 +240,16 @@ export const DIM_CONFIG = {
   symbol: { label: "symbol", backLabel: "Tất cả symbol", allItems: (trades, resources) => Array.from(new Set([...(resources.symbols || []), ...trades.map((t) => t.symbol).filter(Boolean)])).sort() },
   setup: { label: "setup", backLabel: "Tất cả setup", allItems: (trades, resources) => Array.from(new Set([...(resources.setups || []), ...trades.map((t) => t.setup).filter(Boolean)])).sort() },
   weekday: { label: "thứ", backLabel: "Tất cả các thứ", allItems: () => WEEKDAY_ORDER.map((wd) => WEEKDAY_LABEL[wd]) },
-  structure: { label: "ĐCT", backLabel: "Tất cả điểm cấu trúc", allItems: () => STRUCTURE_SCORES.map((s) => `ĐCT ${s}`) },
+  structure: {
+    label: "ĐCT", backLabel: "Tất cả điểm cấu trúc",
+    // Lấy cả điểm đang nằm trên lệnh chứ không chỉ thang trong Tài nguyên: gỡ một mức khỏi
+    // thang thì lệnh cũ vẫn mang mức đó, và trang này chỉ vẽ thẻ cho những gì có trong danh
+    // sách — thiếu là cả nhóm lệnh đó biến mất khỏi trang mà không báo gì.
+    allItems: (trades, resources) => sortStructureScores([
+      ...((resources && resources.structureScores) || STRUCTURE_SCORES),
+      ...(trades || []).map((t) => t.structureScore),
+    ]).map((s) => `ĐCT ${s}`),
+  },
 };
 
 export const CATEGORY_COLORS = [ACCENT, WIN, LOSS, "#4a90e2", "#9b7fe0", "#e0a15a", "#5ec8c8", "#c85ea1", "#8b93a0"];

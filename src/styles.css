@@ -1247,3 +1247,13 @@
   color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
 }
 
+
+/* Tài nguyên → ĐCT: thêm nhanh cả một dải điểm */
+.range-filler {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  margin-bottom: 14px; padding: 10px 12px; border-radius: 9px;
+  background: var(--surface-2); border: 1px dashed var(--border);
+}
+.range-filler-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-right: 2px; }
+.range-filler label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.range-filler .input { width: 64px; padding: 6px 8px; text-align: center; }

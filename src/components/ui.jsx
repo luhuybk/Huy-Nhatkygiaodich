@@ -172,10 +172,16 @@ export function FxWarning({ resources, trades, what = "Con số quy đổi USD" 
 }
 
 export function ResourceSelect({ value, onChange, options, placeholder }) {
+  // Giá trị đã bị gỡ khỏi Tài nguyên vẫn nằm nguyên trong lệnh cũ. Không có option nào khớp thì
+  // <select> hiện dòng đầu ("Chọn...") trong khi lệnh vẫn đang mang giá trị kia — nhìn như chưa
+  // chọn, bấm lưu lại vẫn giữ nguyên. Hiện nó ra kèm ghi chú để thấy đúng thứ đang được lưu.
+  const has = value !== "" && value !== null && value !== undefined;
+  const stale = has && !(options || []).some((o) => String(o) === String(value));
   return (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className="input" value={has ? value : ""} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder || "— Chọn —"}</option>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {stale ? <option value={value}>{value} (đã gỡ khỏi Tài nguyên)</option> : null}
+      {(options || []).map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   );
 }

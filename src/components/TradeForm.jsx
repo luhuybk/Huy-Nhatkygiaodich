@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
-import { GRADE_OPTIONS, STRUCTURE_SCORES } from "../lib/constants.js";
+import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
 import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
@@ -292,6 +292,13 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   // một tham chiếu mới mỗi lần render, mà `sections` lại nằm trong deps của effect bắt cuộn
   // trong mục lục — đổi tham chiếu mỗi render là gắn/gỡ listener mỗi render.
   const checklistCount = ((resources && resources.checklistItems) || []).length;
+  // Thang ĐCT lấy từ Tài nguyên. Nhãn "0 đến 12" tính từ chính thang đó, để câu gợi ý không
+  // còn nói "0 đến 7" khi thang đã lên 12.
+  const structureScale = useMemo(() => {
+    const options = sortStructureScores((resources && resources.structureScores) || STRUCTURE_SCORES);
+    const nums = options.map(structureScoreNumber).filter((n) => n !== null);
+    return { options, label: nums.length ? `${Math.min(...nums)} đến ${Math.max(...nums)}` : "chưa có mức nào" };
+  }, [resources && resources.structureScores]); // eslint-disable-line react-hooks/exhaustive-deps
   const sections = useMemo(() => visibleFormSections(resources), [checklistCount]); // eslint-disable-line react-hooks/exhaustive-deps
   const lateReview = lateReviewState(t);
   // Gỡ dấu thì thôi nhắc, nhưng giữ nguyên đoạn đã viết — xem lateReviewState().
@@ -468,8 +475,8 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
           <Field label="Nhận xét Setup" incomplete={missing("setupNote")}>
             <ResourceSelect value={t.setupNote} onChange={set("setupNote")} options={resources.setupNotes} placeholder="Chọn nhận xét" />
           </Field>
-          <Field label="Điểm cấu trúc (ĐCT)" hint="Cho cặp forex — thang 0 đến 7, bước 0.5">
-            <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={STRUCTURE_SCORES} placeholder="Chọn điểm (0-7)" />
+          <Field label="Điểm cấu trúc (ĐCT)" hint={`Cho cặp forex — thang ${structureScale.label}. Thêm/bớt mức ở Tài nguyên → Kiến thức → Điểm cấu trúc.`}>
+            <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={structureScale.options} placeholder={`Chọn điểm (${structureScale.label.replace(" đến ", "-")})`} />
           </Field>
         </div>
         <Field label="Lỗi của setup" hint="Soi lại lệnh: làm đúng thì chọn 'Không lỗi', mắc lỗi nào thì tick lỗi đó. Bỏ trống = chưa soi.">

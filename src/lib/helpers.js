@@ -1,5 +1,5 @@
 import { supabase } from "../supabaseClient.js";
-import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, WEEKDAY_LABEL } from "./constants.js";
+import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
 
 // Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
 // để ở localStorage cho tức thì thay vì chờ ghi lên máy chủ mỗi lần đổi trang.
@@ -1430,7 +1430,39 @@ export const RESOURCE_TRADE_FIELDS = {
   skipReasons: { skipped: ["reason"] },
   checklistItems: { checklistKey: true },
   lessonCategories: { lessonArray: ["categories"] },
+  structureScores: { trade: ["structureScore"] },
 };
+
+// Đọc ra số rồi viết lại theo một kiểu duy nhất: "7,5" → "7.5", "07" → "7". Lệnh cũ đều lưu
+// dạng "7.5" (dấu chấm), để "7,5" lọt vào thì thành hai mức khác nhau cho cùng một điểm, và
+// trang Phân tích ĐCT tách chúng ra làm hai thẻ.
+export function normalizeStructureScore(raw) {
+  const text = String(raw === null || raw === undefined ? "" : raw).trim();
+  if (!text) return { error: "" };
+  const n = structureScoreNumber(text);
+  if (n === null) return { error: `"${text}" không phải số — điểm cấu trúc chỉ nhận số, VD 7.5 hay 11.` };
+  if (n < 0) return { error: "Điểm cấu trúc không âm được." };
+  return { value: String(Math.round(n * 1e6) / 1e6) };
+}
+
+// Sinh một dải điểm đều nhau, VD 0 → 12 bước 0.5. Làm tròn từng mức vì cộng dồn 0.1 nhiều lần
+// sẽ ra 0.30000000000000004. Chặn 200 mức: gõ nhầm bước 0.001 thì ô chọn điểm dài cả nghìn
+// dòng, không ai chọn nổi.
+export const STRUCTURE_RANGE_MAX = 200;
+
+export function structureScaleRange(from, to, step) {
+  const a = structureScoreNumber(from);
+  const b = structureScoreNumber(to);
+  const st = structureScoreNumber(step);
+  if (a === null || b === null || st === null) return { error: "Điền đủ ba ô: từ, đến và bước." };
+  if (a < 0) return { error: "Điểm bắt đầu không âm được." };
+  if (st <= 0) return { error: "Bước phải lớn hơn 0." };
+  if (b < a) return { error: "Điểm kết thúc phải lớn hơn hoặc bằng điểm bắt đầu." };
+  const count = Math.floor((b - a) / st + 1e-9) + 1;
+  if (count > STRUCTURE_RANGE_MAX) return { error: `Dải này ra ${count} mức — quá nhiều để chọn trong một ô. Tăng bước lên.` };
+  const values = Array.from({ length: count }, (_, i) => String(Math.round((a + i * st) * 1e6) / 1e6));
+  return { values };
+}
 
 export function renameInList(items, fields, oldName, newName) {
   if (!fields || !fields.length) return { items, changed: false };
