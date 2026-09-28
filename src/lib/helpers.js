@@ -1281,6 +1281,34 @@ export function markSetupCheckDone(log, { accountId, accountName, date, hour }, 
   return list.map((e, n) => (n === i ? { ...e, checkedAt: e.checkedAt || at } : e));
 }
 
+// setupCheckLog bị BA bên cùng ghi: cron nhắc (thêm một mục mỗi lần gửi tin), webhook Telegram
+// (đánh dấu đã kiểm tra khi bấm nút), và web (tick trong Lịch trình). Web giữ bản đọc lúc mở
+// trang; ghi đè thẳng bản đó là xóa sạch mọi thứ hai bên kia ghi trong lúc trang đang mở —
+// % hoàn thành tuần và chuỗi ngày tụt mà không hiểu vì sao.
+// Nên chỉ đẩy lên ĐÚNG những mục người dùng vừa đổi trên web (so `prev` với `next`), còn lại
+// lấy theo server.
+const checkKey = (e) => `${(e && e.accountId) || ""}|${(e && e.date) || ""}|${(e && e.hour) || ""}`;
+
+export function mergeSetupCheckLog(server, prev, next) {
+  if (!Array.isArray(server)) return next || [];
+  const before = new Map((prev || []).map((e) => [checkKey(e), e]));
+  const after = new Map((next || []).map((e) => [checkKey(e), e]));
+  const changed = new Map();
+  const removed = new Set();
+  after.forEach((e, k) => { if (JSON.stringify(before.get(k)) !== JSON.stringify(e)) changed.set(k, e); });
+  before.forEach((_, k) => { if (!after.has(k)) removed.add(k); });
+  const out = [];
+  const seen = new Set();
+  server.forEach((e) => {
+    const k = checkKey(e);
+    if (removed.has(k) || seen.has(k)) return;
+    seen.add(k);
+    out.push(changed.has(k) ? changed.get(k) : e);
+  });
+  changed.forEach((e, k) => { if (!seen.has(k)) out.push(e); });
+  return out;
+}
+
 // Danh sách mọi lịch đang tồn tại, để chỉnh thời gian dự kiến riêng cho từng cái —
 // kiểm tra setup của Forex-H3 tốn 40 phút trong khi VN Stock chỉ 10.
 export function timelineSources({ settings, watches, reminders, durations, openTrades }) {

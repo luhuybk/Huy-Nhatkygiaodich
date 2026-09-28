@@ -10,7 +10,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
-  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi,
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog,
 } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
@@ -229,6 +229,9 @@ function AppShell({ onSignOut, userEmail }) {
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
+          // Lệnh lưu lỗi bằng id trỏ vào bộ này. Bản sao lưu tay có, bản tự động thì trước đây
+          // thiếu — khôi phục từ bản tự động là mọi dấu tick lỗi trỏ vào khoảng không.
+          setupErrors: Array.isArray(se) ? se : [],
         }, Date.now());
         const nextBackups = pruneBackups([snap, ...currentBackups]);
         setBackups(nextBackups);
@@ -340,7 +343,17 @@ function AppShell({ onSignOut, userEmail }) {
     setSlMutedTrades(merged);
     noteSave("slMutedTrades", merged, await safeSet("slMutedTrades", merged));
   }, [slMutedTrades]);
-  const persistSetupCheckLog = useCallback(async (next) => { setSetupCheckLog(next); noteSave("setupCheckLog", next, await safeSet("setupCheckLog", next)); }, []);
+  // Xem mergeSetupCheckLog: cron + webhook cũng ghi khóa này. `replace` dùng cho nhập file và
+  // xóa toàn bộ — lúc đó ý muốn là thay nguyên danh sách, không phải gộp.
+  const persistSetupCheckLog = useCallback(async (next, opts) => {
+    let merged = next;
+    if (!(opts && opts.replace)) {
+      const server = await safeGet("setupCheckLog", null);
+      merged = mergeSetupCheckLog(server, setupCheckLog, next);
+    }
+    setSetupCheckLog(merged);
+    noteSave("setupCheckLog", merged, await safeSet("setupCheckLog", merged));
+  }, [setupCheckLog]);
   // Chỉ web ghi khoá này, Edge Function chỉ đọc — nên ghi đè thẳng là an toàn.
   const persistTaskDone = useCallback(async (next) => { setTaskDoneMap(next); noteSave("timelineDone", next, await safeSet("timelineDone", next)); }, []);
 
@@ -514,7 +527,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
     if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
-    if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog);
+    if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog, { replace: true });
     if (data.setupErrors) persistSetupErrors(data.setupErrors);
     if (data.skills) persistSkills(data.skills);
     if (data.journalFilterPresets) persistFilterPresets(data.journalFilterPresets);
@@ -582,6 +595,9 @@ function AppShell({ onSignOut, userEmail }) {
     persistResources(DEFAULT_RESOURCES);
     persistLedger([]);
     persistNotes([]);
+    // Thiếu dòng này thì "xóa toàn bộ" xong, Bài học cốt lõi vẫn ghim trên Tổng quan và trỏ
+    // vào những lệnh không còn tồn tại.
+    persistLessons([]);
     persistProcessImprovements([]);
     persistProblemLogs([]);
     persistNewsLogs([]);
@@ -594,7 +610,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistMissedSetups([]);
     persistSkippedSetups([]);
     persistSetupVariants([]);
-    persistSetupCheckLog([]);
+    persistSetupCheckLog([], { replace: true });
     persistSlMutedTrades([]);
     persistReminders([]);
     persistCapitalAccounts([]);

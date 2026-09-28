@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Gauge, Pencil, Plus } from "lucide-react";
 import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
-import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLabel, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
+import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
   const lv = skillLevel(id);
