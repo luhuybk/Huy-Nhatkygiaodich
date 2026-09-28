@@ -1257,3 +1257,7 @@
 .range-filler-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-right: 2px; }
 .range-filler label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 .range-filler .input { width: 64px; padding: 6px 8px; text-align: center; }
+
+/* Báo ngay dưới ô symbol khi bộ gõ tiếng Việt đã biến phím thành dấu ("AJ" → "Ạ") */
+.telex-note { display: block; margin-top: 6px; color: var(--pending); }
+.telex-note b { color: var(--text); }

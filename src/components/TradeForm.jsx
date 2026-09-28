@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -292,6 +292,18 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   // một tham chiếu mới mỗi lần render, mà `sections` lại nằm trong deps của effect bắt cuộn
   // trong mục lục — đổi tham chiếu mỗi render là gắn/gỡ listener mỗi render.
   const checklistCount = ((resources && resources.checklistItems) || []).length;
+  const knownSymbols = useMemo(() => new Set([
+    ...((resources && resources.symbols) || []),
+    ...(trades || []).map((x) => x && x.symbol),
+  ].filter(Boolean).map((x) => String(x).toUpperCase())), [resources && resources.symbols, trades]); // eslint-disable-line react-hooks/exhaustive-deps
+  const applySymbol = (sym) => setT((prev) => {
+    const next = { ...prev, symbol: sym };
+    if (prev.entryTime && isForexSymbol(sym)) {
+      const guess = sessionFromTime(prev.entryTime);
+      if (guess && resources.sessions.includes(guess)) next.session = guess;
+    }
+    return next;
+  });
   // Thang ĐCT lấy từ Tài nguyên. Nhãn "0 đến 12" tính từ chính thang đó, để câu gợi ý không
   // còn nói "0 đến 7" khi thang đã lên 12.
   const structureScale = useMemo(() => {
@@ -343,8 +355,9 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
       return;
     }
     setFormError("");
-    // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn".
-    onSave(clearBrokerFilled(t));
+    // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn". Symbol dịch ngược
+    // Telex thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
+    onSave(clearBrokerFilled({ ...t, symbol: untelexSymbol(t.symbol, knownSymbols) }));
   };
 
   return (
@@ -365,19 +378,16 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
               className="input"
               list="symbol-suggestions"
               value={t.symbol}
-              onChange={(e) => {
-                const sym = e.target.value.toUpperCase();
-                setT((prev) => {
-                  const next = { ...prev, symbol: sym };
-                  if (prev.entryTime && isForexSymbol(sym)) {
-                    const guess = sessionFromTime(prev.entryTime);
-                    if (guess && resources.sessions.includes(guess)) next.session = guess;
-                  }
-                  return next;
-                });
-              }}
+              onChange={(e) => applySymbol(e.target.value.toUpperCase())}
+              // Dịch ngược Telex lúc rời ô chứ không phải lúc đang gõ — xem untelexSymbol.
+              onBlur={() => { if (looksTelexed(t.symbol)) applySymbol(untelexSymbol(t.symbol, knownSymbols)); }}
               placeholder="VD: XAUUSD, HPG..."
             />
+            {looksTelexed(t.symbol) ? (
+              <span className="field-hint telex-note">
+                Bộ gõ tiếng Việt đang bật — rời ô này sẽ tự sửa thành <b className="mono">{untelexSymbol(t.symbol, knownSymbols)}</b>.
+              </span>
+            ) : null}
             <datalist id="symbol-suggestions">
               {resources.symbols.map((s) => <option key={s} value={s} />)}
             </datalist>

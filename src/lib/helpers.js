@@ -612,9 +612,96 @@ export function emptySymbolWatch() {
 // Gõ nhanh nên nhận mọi kiểu ngăn cách: dấu phẩy, khoảng trắng, xuống dòng, chấm phẩy.
 // "XAUUSD EURUSD" và "XAUUSD, EURUSD" ra cùng một kết quả — không phải gõ dấu phẩy nữa.
 // Bỏ ký tự "|" vì nó là dấu phân cách trong callback_data của nút bấm Telegram.
-export function parseSymbolList(text) {
+// GÕ SYMBOL KHI ĐANG BẬT TELEX
+// Bộ gõ Telex biến phím thành dấu ngay trong ô: "AJ" thành "Ạ" (j = dấu nặng), "VIX" thành
+// "VĨ", "MWG" thành "MƯG", "DD" thành "Đ". Trang web không tắt được bộ gõ của máy, nên dịch
+// ngược: mã giao dịch không bao giờ có chữ tiếng Việt, thấy chữ có dấu thì trả về đúng các
+// phím đã gõ ra nó. Chỉ nhìn vào chữ kết quả nên chạy với mọi bộ gõ (Unikey, EVKey, OpenKey,
+// bộ gõ có sẵn của macOS).
+const TELEX_TONE_KEYS = { "\u0301": "S", "\u0300": "F", "\u0309": "R", "\u0303": "X", "\u0323": "J" };
+const TELEX_MAX_CANDIDATES = 400;
+
+function hasHorn(ch) {
+  return !!ch && ch.normalize("NFD").includes("\u031B");
+}
+
+// Một chữ → { keys: phần gốc kèm phím mũ/móc, tone: phím thanh }. null = không phải chữ Telex.
+function telexPiece(ch, next) {
+  if (ch === "Đ" || ch === "đ") return { keys: "DD", tone: "" };
+  const parts = Array.from(ch.normalize("NFD"));
+  const base = parts[0].toUpperCase();
+  if (!/^[A-Z]$/.test(base)) return null;
+  let keys = base;
+  let tone = "";
+  for (const m of parts.slice(1)) {
+    if (m === "\u0302") keys += base;                 // â ê ô ← aa ee oo
+    else if (m === "\u0306") keys += "W";              // ă ← aw
+    else if (m === "\u031B") {
+      // ư có hai đường: "uw" và gõ riêng một phím "w". Mã có W (MWG, DGW, BWE) nhiều hơn hẳn mã
+      // có "UW", nên ư đứng một mình đọc là W. Riêng cặp ươ thì là "uo" + w → UOW.
+      if (base === "U") keys = hasHorn(next) ? "U" : "W";
+      else keys += "W";                                // ơ ← ow
+    } else if (TELEX_TONE_KEYS[m]) tone = TELEX_TONE_KEYS[m];
+    else return null;
+  }
+  return { keys, tone };
+}
+
+// Phím thanh (s f r x j) gõ ở đâu thì bộ gõ cũng dời dấu về nguyên âm, nên không biết chắc nó
+// nằm chỗ nào trong mã. Nó chỉ có thể nằm từ sau nguyên âm mang dấu tới hết cụm chữ. Nếu có
+// danh sách mã đã biết thì thử hết các vị trí, khớp mã nào lấy mã đó; không thì đặt ở cuối
+// cụm — với mã 3 chữ, phím thanh gần như luôn là chữ cuối (VIX, GAS, HAX, IDJ, AJ).
+export function untelexSymbol(raw, known) {
+  const text = String(raw === null || raw === undefined ? "" : raw).trim();
+  if (!/[^\x00-\x7F]/.test(text)) return text.toUpperCase();
+  const chars = Array.from(text.normalize("NFC"));
+  let skeleton = "";
+  const tones = [];
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i];
+    if (/[\x00-\x7F]/.test(ch)) { skeleton += ch.toUpperCase(); continue; }
+    const piece = telexPiece(ch, chars[i + 1]);
+    if (!piece) { skeleton += ch.toUpperCase(); continue; }
+    skeleton += piece.keys;
+    if (piece.tone) tones.push({ key: piece.tone, min: skeleton.length });
+  }
+  tones.forEach((t) => {
+    let end = t.min;
+    while (end < skeleton.length && /[A-Z]/.test(skeleton[end])) end += 1;
+    t.max = end;
+  });
+  const build = (positions) => {
+    let out = skeleton;
+    // chèn từ phải sang trái để vị trí phía trước không bị xô lệch
+    positions.map((pos, i) => ({ pos, i })).sort((a, b) => b.pos - a.pos || b.i - a.i)
+      .forEach(({ pos, i }) => { out = out.slice(0, pos) + tones[i].key + out.slice(pos); });
+    return out;
+  };
+  const fallback = build(tones.map((t) => t.max));
+  const knownSet = known instanceof Set ? known : new Set((known || []).map((k) => String(k || "").toUpperCase()));
+  if (!knownSet.size || !tones.length) return fallback;
+  if (knownSet.has(fallback)) return fallback;
+  const total = tones.reduce((n, t) => n * (t.max - t.min + 1), 1);
+  if (total > TELEX_MAX_CANDIDATES) return fallback;
+  const pick = (i, acc) => {
+    if (i === tones.length) { const c = build(acc); return knownSet.has(c) ? c : null; }
+    for (let pos = tones[i].min; pos <= tones[i].max; pos += 1) {
+      const hit = pick(i + 1, [...acc, pos]);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return pick(0, []) || fallback;
+}
+
+// Có chữ tiếng Việt thì tức là bộ gõ đã can thiệp — dùng để báo cho người gõ biết.
+export function looksTelexed(raw) {
+  return /[^\x00-\x7F]/.test(String(raw || ""));
+}
+
+export function parseSymbolList(text, known) {
   return [...new Set(
-    String(text || "").split(/[,;\s]+/).map((x) => x.replace(/\|/g, "").trim().toUpperCase()).filter(Boolean)
+    String(text || "").split(/[,;\s]+/).map((x) => untelexSymbol(x.replace(/\|/g, ""), known)).filter(Boolean)
   )];
 }
 
@@ -653,9 +740,22 @@ export function symbolWatchText(w) {
 
 // Dữ liệu cũ: mỗi bản ghi là một symbol duy nhất ở trường `symbol`, done nằm ở cấp bản ghi.
 // Chuyển sang dạng nhóm, tách luôn chuỗi "A, B, C" nếu người dùng đã gõ nhiều symbol vào một ô.
+// Symbol đã lỡ lưu dạng "Ạ" thì sửa lại ngay lúc mở app, giữ nguyên id và trạng thái đã bấm
+// trên Telegram. Hai mục trùng tên sau khi sửa ("Ạ" và "AJ") thì giữ mục đầu.
+export function watchSymbolsNeedFix(w) {
+  return !!w && Array.isArray(w.symbols) && w.symbols.some((x) => looksTelexed(x && x.name));
+}
+
 export function normalizeSymbolWatch(w) {
   const base = { ...emptySymbolWatch(), ...w };
-  if (Array.isArray(w.symbols)) return { ...base, symbols: w.symbols };
+  if (Array.isArray(w.symbols)) {
+    if (!watchSymbolsNeedFix(w)) return { ...base, symbols: w.symbols };
+    const seen = new Set();
+    const symbols = w.symbols
+      .map((x) => ({ ...x, name: untelexSymbol(x.name) }))
+      .filter((x) => { if (!x.name || seen.has(x.name)) return false; seen.add(x.name); return true; });
+    return { ...base, symbols };
+  }
   const names = parseSymbolList(w.symbol);
   return {
     ...base,
@@ -3029,7 +3129,7 @@ export function applyFilters(trades, filters, resources) {
   const accountWanted = expandAccountFilter(filters.account, resources && resources.accounts);
   return trades.filter((t) => {
     const r = computeResult(t);
-    if (filters.q && !t.symbol.toLowerCase().includes(filters.q.toLowerCase())) return false;
+    if (filters.q && !String(t.symbol || "").toUpperCase().includes(untelexSymbol(filters.q))) return false;
     if (accountWanted && !accountWanted.has(t.account)) return false;
     if (!filterMatches(yearKey(t.entryDate), filters.year)) return false;
     if (!filterMatches((t.entryDate || "").slice(5, 7), filters.month)) return false;

@@ -3,9 +3,9 @@ import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle, X } from "lucide-re
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
-  mergeSymbolList, mutedFillDays, parseHoursInput,
+  looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
-  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, symbolSuggestions, uid, WEEKDAY_CODES,
+  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
@@ -428,18 +428,25 @@ const SYMBOL_SUGGEST_SHOWN = 12;
 function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus }) {
   const [text, setText] = useState("");
   const chosen = useMemo(() => new Set((items || []).map((x) => x.name)), [items]);
+  // Mã đã biết, để khi dịch ngược Telex mà có nhiều cách đọc thì chọn đúng mã có thật.
+  const known = useMemo(() => new Set(suggestions || []), [suggestions]);
+  const parse = (raw) => parseSymbolList(raw, known);
+  // Không sửa chữ ngay lúc đang gõ: bộ gõ vẫn đang giữ "ạ" trong bộ nhớ của nó, đổi chữ trong ô
+  // giữa chừng là phím kế tiếp nó sửa nhầm chỗ. Chỉ dịch ngược lúc chốt thành chip.
+  const telexed = looksTelexed(text);
+  const fixed = telexed ? untelexSymbol(text, known) : "";
   const hints = useMemo(() => {
-    const q = text.trim().toUpperCase();
+    const q = untelexSymbol(text, known);
     const rest = (suggestions || []).filter((sym) => !chosen.has(sym));
     return (q ? rest.filter((sym) => sym.includes(q)) : rest).slice(0, SYMBOL_SUGGEST_SHOWN);
-  }, [suggestions, chosen, text]);
+  }, [suggestions, chosen, text, known]);
 
   // Gõ hoặc dán có dấu phân cách thì chốt luôn phần trước dấu, giữ lại đuôi đang gõ dở.
   const onType = (raw) => {
     if (!/[,;\s]/.test(raw)) { setText(raw.toUpperCase()); return; }
     const parts = raw.split(/[,;\s]+/);
     const tail = /[,;\s]$/.test(raw) ? "" : parts.pop();
-    const names = parseSymbolList(parts.join(" "));
+    const names = parse(parts.join(" "));
     if (names.length) onAdd(names);
     setText((tail || "").toUpperCase());
   };
@@ -447,7 +454,7 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
   const onKeyDown = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      const names = parseSymbolList(text);
+      const names = parse(text);
       if (names.length) { onAdd(names); setText(""); return; }
       if (onSubmitEmpty) onSubmitEmpty();
       return;
@@ -481,12 +488,18 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
             const raw = e.clipboardData ? e.clipboardData.getData("text") : "";
             if (!/[,;\s]/.test(raw)) return;
             e.preventDefault();
-            const names = parseSymbolList(`${text}${raw}`);
+            const names = parse(`${text}${raw}`);
             if (names.length) onAdd(names);
             setText("");
           }}
-          onBlur={() => { const names = parseSymbolList(text); if (names.length) { onAdd(names); setText(""); } }} />
+          onBlur={() => { const names = parse(text); if (names.length) { onAdd(names); setText(""); } }} />
       </div>
+      {telexed && fixed ? (
+        <p className="field-hint telex-note">
+          Bộ gõ tiếng Việt đang bật — <b>{text.trim()}</b> sẽ được lưu thành <b className="mono">{fixed}</b>.
+          Sai thì gõ lại sau khi chuyển bộ gõ sang tiếng Anh.
+        </p>
+      ) : null}
       {hints.length ? (
         <div className="symbol-hints">
           <span className="field-hint">Gợi ý:</span>

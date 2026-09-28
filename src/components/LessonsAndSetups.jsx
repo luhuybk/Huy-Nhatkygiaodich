@@ -2,7 +2,7 @@ import { useState, useMemo, Suspense, lazy } from "react";
 import { X, Pencil, ImagePlus, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -198,7 +198,8 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-miss" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <input className="input" list="symbol-suggestions-miss" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
+                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
               <datalist id="symbol-suggestions-miss">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
             </Field>
             <Field label="Ngày miss">
@@ -308,7 +309,8 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-skip" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <input className="input" list="symbol-suggestions-skip" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
+                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
               <datalist id="symbol-suggestions-skip">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
             </Field>
             <Field label="Ngày skip">
@@ -428,7 +430,8 @@ export function SetupVariantsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup biến thể" : "Thêm setup biến thể"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-variant" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <input className="input" list="symbol-suggestions-variant" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
+                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
               <datalist id="symbol-suggestions-variant">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
             </Field>
             <Field label="Ngày">
@@ -682,7 +685,8 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
             </Field>
             <Field label="Symbol (tùy chọn)">
-              <input className="input" list="symbol-suggestions-lesson" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())} placeholder="VD: XAUUSD, HPG..." />
+              <input className="input" list="symbol-suggestions-lesson" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
+                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
               <datalist id="symbol-suggestions-lesson">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
             </Field>
           </div>

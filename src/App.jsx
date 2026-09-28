@@ -10,7 +10,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
-  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, writeLocalUi,
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi,
 } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
@@ -193,7 +193,9 @@ function AppShell({ onSignOut, userEmail }) {
       setSetupCheckLog(Array.isArray(scl) ? scl : []);
       setSlMutedTrades(Array.isArray(smt) ? smt : []);
       setTaskDoneMap(tdn && typeof tdn === "object" && !Array.isArray(tdn) ? tdn : {});
-      if (rawWatches.some((w) => !Array.isArray(w.symbols))) await safeSet("symbolWatches", normalizedWatches);
+      // Ghi lại khi có bản ghi dạng cũ, hoặc symbol đã lỡ dính dấu Telex ("Ạ" thay vì "AJ") —
+      // bot Telegram đọc thẳng từ cơ sở dữ liệu, sửa trong bộ nhớ thôi thì tin nhắc vẫn ra "Ạ".
+      if (rawWatches.some((w) => !Array.isArray(w.symbols) || watchSymbolsNeedFix(w))) await safeSet("symbolWatches", normalizedWatches);
 
       const mergedUi = { ...DEFAULT_UI_SETTINGS, ...us };
       if (!mergedUi.defaultRemindersSeeded) {
