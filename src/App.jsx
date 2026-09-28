@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
-  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope,
+  Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -26,6 +26,7 @@ const Analysis = lazy(() => import("./components/Analysis.jsx").then((m) => ({ d
 const TradeAnalysisPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.TradeAnalysisPage })));
 const HeatmapPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.HeatmapPage })));
 const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").then((m) => ({ default: m.SystemQualityPage })));
+const MistakeCostPage = lazy(() => import("./components/MistakeCost.jsx").then((m) => ({ default: m.MistakeCostPage })));
 const StreakPage = lazy(() => import("./components/Streaks.jsx").then((m) => ({ default: m.StreakPage })));
 const WeeklyReportPage = lazy(() => import("./components/WeeklyReport.jsx").then((m) => ({ default: m.WeeklyReportPage })));
 const AccountsSection = lazy(() => import("./components/Accounts.jsx").then((m) => ({ default: m.AccountsSection })));
@@ -62,6 +63,7 @@ const NAV_GROUPS = [
       { key: "weeklyreport", label: "Báo cáo tuần/tháng", icon: CalendarRange },
       { key: "streaks", label: "Chuỗi thắng / thua", icon: Activity },
       { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
+      { key: "mistakecost", label: "Lỗi tốn bao nhiêu R", icon: TrendingDown },
     ]
   },
   {
@@ -748,6 +750,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "weeklyreport" ? <WeeklyReportPage trades={trades} resources={resources} /> :
               view === "streaks" ? <StreakPage trades={trades} resources={resources} setupErrors={setupErrors} /> :
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
+              view === "mistakecost" ? <MistakeCostPage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}
                   onAccountsChange={handleAccountsChange} onMoveTrades={handleMoveTrades} onLedgerChange={persistLedger}

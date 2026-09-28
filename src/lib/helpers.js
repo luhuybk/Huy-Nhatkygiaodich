@@ -2613,6 +2613,126 @@ export function skillEffectiveness(trades, skills, resources, fromDate) {
   };
 }
 
+// ---- Lỗi tốn bao nhiêu R ----
+// Tổng R của các lệnh có lỗi KHÔNG phải là cái giá của lỗi: lệnh có lỗi vẫn có thể thắng, và
+// lệnh sạch cũng thua. Cái giá thật là phần chênh so với việc làm đúng:
+//     (R trung bình lệnh sạch − R trung bình lệnh có lỗi) × số lệnh có lỗi
+// tức là "nếu những lệnh này được làm như cách bạn làm lệnh sạch thì bạn có thêm bao nhiêu R".
+//
+// Cái bẫy nằm ở phía "lệnh sạch". Ô "lệnh có lỗi" ở mục 8 không có trạng thái "đã soi, không
+// lỗi" — bỏ trống có thể là sạch, cũng có thể là chưa từng xem lại (mọi lệnh ghi trước khi có
+// ô này đều bỏ trống). Trộn chúng vào nhóm sạch là so với một nhóm không có thật. Nên nhóm
+// sạch chỉ lấy lệnh từ ngày bạn bắt đầu đánh dấu lỗi, và mặc định chỉ lấy lệnh đã chấm mục 7
+// (đã xem lại thật). Lỗi setup ở mục 3 thì có sẵn "Không lỗi" rõ ràng, không cần đoán.
+export const MISTAKE_BASES = [
+  { id: "trade", label: "Lỗi trong lệnh (mục 8)" },
+  { id: "setup", label: "Lỗi setup (mục 3)" },
+  { id: "both", label: "Cả hai loại lỗi" },
+];
+export const MISTAKE_MIN_SAMPLE = 5;
+const MISTAKE_WORST_SHOWN = 10;
+
+export function isMistakeTrade(t, basis) {
+  if (!t) return false;
+  const marked = !!t.hasMistake;
+  const setup = tradeErrorState(t) === "errors";
+  if (basis === "setup") return setup;
+  if (basis === "both") return marked || setup;
+  return marked;
+}
+
+// Ngày ô "Lệnh này có lỗi" (mục 8) xuất hiện trong app. Lệnh trước ngày này KHÔNG THỂ được
+// đánh dấu, nên để trống không nói lên là sạch.
+export const MISTAKE_FLAG_SINCE = "2026-09-15";
+
+export function firstMistakeDate(trades) {
+  const days = (trades || []).filter((t) => t && t.hasMistake).map((t) => dateKey(t) || t.entryDate || "").filter(Boolean).sort();
+  return days[0] || "";
+}
+
+// Mốc mặc định cho nhóm "lệnh sạch". KHÔNG lấy ngày của lệnh lỗi đầu tiên: thực tế luôn là bắt
+// đầu dùng ô đánh dấu, vài lệnh sạch trôi qua, rồi mới mắc lỗi đầu tiên — lấy mốc đó là vứt đúng
+// những lệnh sạch ấy và trang báo "chưa có lệnh sạch để so". Lấy ngày ô này ra đời; nếu bạn đã
+// quay lại đánh dấu cả lệnh cũ hơn thì tức là đã xem lại tới đó, lùi mốc theo.
+export function mistakeBaselineDate(trades) {
+  const first = firstMistakeDate(trades);
+  return first && first < MISTAKE_FLAG_SINCE ? first : MISTAKE_FLAG_SINCE;
+}
+
+function hasR(t) {
+  const r = computeResult(t);
+  return r.status === "closed" && r.rr !== null && Number.isFinite(r.rr);
+}
+
+export function mistakeCost(trades, opts, resources) {
+  const o = opts || {};
+  const basis = o.basis || "trade";
+  const from = (o.from || "").trim();
+  const reviewedOnly = o.reviewedOnly !== false;
+  const all = (trades || []).filter(Boolean);
+  const flagged = all.filter((t) => isMistakeTrade(t, basis));
+  const rest = all.filter((t) => !isMistakeTrade(t, basis));
+
+  // Chỉ đếm những lệnh bị loại mà LẼ RA tính được R — đếm cả lệnh đang mở thì con số loại trừ
+  // phình ra, đọc tưởng bị bỏ sót nhiều hơn thật.
+  const excluded = { beforeFrom: 0, unreviewed: 0 };
+  const clean = rest.filter((t) => {
+    if (basis === "setup") {
+      if (tradeErrorState(t) === "clean") return true;
+      if (hasR(t)) excluded.unreviewed += 1;
+      return false;
+    }
+    if (from && (dateKey(t) || t.entryDate || "") < from) { if (hasR(t)) excluded.beforeFrom += 1; return false; }
+    if (reviewedOnly && !t.tradeGrade) { if (hasR(t)) excluded.unreviewed += 1; return false; }
+    return true;
+  });
+
+  const m = tradeSetSummary(flagged, resources);
+  const c = tradeSetSummary(clean, resources);
+  const gapR = m.avgR !== null && c.avgR !== null ? c.avgR - m.avgR : null;
+  const cost = gapR !== null ? gapR * m.rCount : null;
+  // Lệnh có lỗi đã đóng mà chưa điền rủi ro thì không ra R — nói ra để biết con số đang thiếu.
+  const flaggedNoR = flagged.filter((t) => computeResult(t).status === "closed" && !hasR(t)).length;
+
+  const byMonth = new Map();
+  flagged.filter(hasR).forEach((t) => {
+    const k = (dateKey(t) || t.entryDate || "").slice(0, 7) || "(chưa có ngày)";
+    if (!byMonth.has(k)) byMonth.set(k, { month: k, count: 0, sumR: 0, cleanCount: 0 });
+    const row = byMonth.get(k);
+    row.count += 1;
+    row.sumR += computeResult(t).rr;
+  });
+  clean.filter(hasR).forEach((t) => {
+    const k = (dateKey(t) || t.entryDate || "").slice(0, 7) || "(chưa có ngày)";
+    if (!byMonth.has(k)) byMonth.set(k, { month: k, count: 0, sumR: 0, cleanCount: 0 });
+    byMonth.get(k).cleanCount += 1;
+  });
+  // Từng tháng so với R trung bình lệnh sạch của CẢ giai đoạn: lấy mốc của riêng tháng đó thì
+  // tháng ít lệnh sạch sẽ nhảy lung tung, nhìn không ra xu hướng.
+  const months = Array.from(byMonth.values())
+    .map((r) => ({
+      ...r,
+      avgR: r.count ? r.sumR / r.count : null,
+      share: r.count + r.cleanCount ? (r.count / (r.count + r.cleanCount)) * 100 : null,
+      cost: r.count && c.avgR !== null ? (c.avgR - r.sumR / r.count) * r.count : null,
+    }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+
+  const worst = flagged.filter(hasR)
+    .map((t) => ({ trade: t, rr: computeResult(t).rr }))
+    .sort((a, b) => a.rr - b.rr)
+    .slice(0, MISTAKE_WORST_SHOWN);
+
+  const total = m.rCount + c.rCount;
+  return {
+    basis, from, reviewedOnly,
+    mistake: m, clean: c, gapR, cost,
+    share: total ? (m.rCount / total) * 100 : null,
+    smallSample: m.rCount < MISTAKE_MIN_SAMPLE || c.rCount < MISTAKE_MIN_SAMPLE,
+    excluded, flaggedNoR, months, worst,
+  };
+}
+
 // ---- Kiểm tra sức khỏe nhật ký ----
 // Mỗi mục là một cách dữ liệu tự mâu thuẫn, kèm đúng những lệnh dính phải. Nhắc "còn 13 lệnh
 // chưa điền xong" mà không chỉ ra lệnh nào thiếu gì thì không ai đi sửa.
