@@ -728,10 +728,28 @@ export function symbolSuggestions(resources, trades, exclude, limit) {
 // không làm mất trạng thái đã bấm trên Telegram và không làm hỏng nút của tin nhắn cũ.
 export function mergeSymbolList(text, existing) {
   const current = existing || [];
-  return parseSymbolList(text).map((name) => {
+  return sortWatchSymbols(parseSymbolList(text).map((name) => {
     const old = current.find((x) => x.name === name);
     return old || { id: uid(), name, done: false };
-  });
+  }));
+}
+
+// Symbol theo dõi luôn xếp theo ABC, gõ theo thứ tự nào cũng vậy. Với kiểu viết tắt forex
+// (AJ, AU, EJ, EU, GJ, GU...) xếp ABC là gom theo đồng tiền đứng trước, nhìn phát thấy ngay.
+// Xếp ngay lúc LƯU chứ không chỉ lúc vẽ: bot Telegram đọc thẳng thứ tự đã lưu, xếp riêng trên
+// màn hình thì tin nhắn và app lệch nhau. numeric: "US30" đứng trước "US500".
+const SYMBOL_ORDER = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+export function sortWatchSymbols(list) {
+  return (list || []).slice().sort((a, b) => SYMBOL_ORDER.compare(String((a && a.name) || ""), String((b && b.name) || "")));
+}
+
+export function sortSymbolNames(names) {
+  return (names || []).slice().sort((a, b) => SYMBOL_ORDER.compare(String(a || ""), String(b || "")));
+}
+
+function watchSymbolsSorted(list) {
+  return (list || []).every((x, i, arr) => i === 0 || SYMBOL_ORDER.compare(String((arr[i - 1] && arr[i - 1].name) || ""), String((x && x.name) || "")) <= 0);
 }
 
 export function symbolWatchText(w) {
@@ -740,10 +758,12 @@ export function symbolWatchText(w) {
 
 // Dữ liệu cũ: mỗi bản ghi là một symbol duy nhất ở trường `symbol`, done nằm ở cấp bản ghi.
 // Chuyển sang dạng nhóm, tách luôn chuỗi "A, B, C" nếu người dùng đã gõ nhiều symbol vào một ô.
-// Symbol đã lỡ lưu dạng "Ạ" thì sửa lại ngay lúc mở app, giữ nguyên id và trạng thái đã bấm
-// trên Telegram. Hai mục trùng tên sau khi sửa ("Ạ" và "AJ") thì giữ mục đầu.
+// Sửa ngay lúc mở app những danh sách đã lưu từ trước: symbol lỡ dính dấu ("Ạ" thay vì
+// "AJ"), và danh sách chưa xếp ABC. Giữ nguyên id và trạng thái đã bấm trên Telegram. Hai mục
+// trùng tên sau khi sửa ("Ạ" và "AJ") thì giữ mục đầu.
 export function watchSymbolsNeedFix(w) {
-  return !!w && Array.isArray(w.symbols) && w.symbols.some((x) => looksTelexed(x && x.name));
+  if (!w || !Array.isArray(w.symbols)) return false;
+  return w.symbols.some((x) => looksTelexed(x && x.name)) || !watchSymbolsSorted(w.symbols);
 }
 
 export function normalizeSymbolWatch(w) {
@@ -754,13 +774,13 @@ export function normalizeSymbolWatch(w) {
     const symbols = w.symbols
       .map((x) => ({ ...x, name: untelexSymbol(x.name) }))
       .filter((x) => { if (!x.name || seen.has(x.name)) return false; seen.add(x.name); return true; });
-    return { ...base, symbols };
+    return { ...base, symbols: sortWatchSymbols(symbols) };
   }
   const names = parseSymbolList(w.symbol);
   return {
     ...base,
     label: w.label || "",
-    symbols: names.map((name) => ({ id: uid(), name, done: !!w.done })),
+    symbols: sortWatchSymbols(names.map((name) => ({ id: uid(), name, done: !!w.done }))),
   };
 }
 

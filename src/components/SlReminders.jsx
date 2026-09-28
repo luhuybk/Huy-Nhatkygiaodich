@@ -5,7 +5,7 @@ import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
   looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, setupCheckStats, setupCheckStreak,
-  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
+  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
@@ -545,14 +545,14 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
   };
   const draftItems = draft.symbols.map((name) => ({ name }));
   const addDraftSymbols = (names) =>
-    setDraft((p) => ({ ...p, symbols: [...p.symbols, ...names.filter((n) => !p.symbols.includes(n))] }));
+    setDraft((p) => ({ ...p, symbols: sortSymbolNames([...p.symbols, ...names.filter((n) => !p.symbols.includes(n))]) }));
 
   // Thêm vào nhóm đã lưu: giữ nguyên symbol cũ (kèm trạng thái done) và bỏ qua trùng tên.
   const addWatchSymbols = (w, names) => {
     const cur = w.symbols || [];
     const have = new Set(cur.map((x) => x.name));
     const add = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, done: false }));
-    if (add.length) updateWatch(w.id, { symbols: [...cur, ...add] });
+    if (add.length) updateWatch(w.id, { symbols: sortWatchSymbols([...cur, ...add]) });
   };
   const removeWatchSymbol = (w, item) =>
     updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
