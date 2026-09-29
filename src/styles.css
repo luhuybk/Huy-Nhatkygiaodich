@@ -1387,3 +1387,17 @@
   .cap-grid { grid-template-columns: 1fr; }
   .cap-editor .grid-2 { grid-template-columns: 1fr; }
 }
+/* Mốc cầm chừng + tài khoản phụ */
+.cap-pick-hold { border-style: dashed; }
+.cap-tier-hold td { color: var(--text-dim); font-style: italic; }
+.cap-tier-hold.cap-tier-on td { color: var(--accent); }
+.cap-hold-tag { margin-left: 6px; font-size: 10.5px; font-style: normal; font-family: 'IBM Plex Sans', sans-serif; padding: 0 6px; border-radius: 999px; border: 1px dashed var(--border); }
+.cap-dd-streak { margin: 0; font-size: 11.5px; font-weight: 600; color: var(--pending); }
+.cap-side-check { padding-bottom: 0; align-items: flex-start; }
+.cap-side-check input { margin-top: 3px; }
+.cap-stat-dim { color: var(--text-dim); font-size: 15px !important; }
+.cap-add-side { min-height: 80px; }
+.cap-side-tag { margin-left: 5px; font-size: 10px; font-weight: 600; color: var(--text-dim); padding: 0 5px; border-radius: 999px; border: 1px solid var(--border); }
+.cap-chip-hold { border-style: dashed; }
+.cap-chip-hold-hint { border-color: var(--pending); color: var(--pending); border-style: solid; }
+.cap-chips-hold-note { font-size: 12px; color: var(--pending); }

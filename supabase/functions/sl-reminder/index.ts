@@ -158,7 +158,7 @@ function toUSD(amount: number, currency: string | undefined, fxRates: Record<str
 // và app nói hai con số sụt vốn khác nhau.
 type CapMarket = {
   id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
-  tiers?: number[]; defaultTier?: number; accountIds?: string[];
+  tiers?: number[]; defaultTier?: number; accountIds?: string[]; holdTier?: number | null; side?: boolean;
 };
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
 type CapAccount = { id: string; name: string; currency?: string; parentId?: string };
@@ -577,7 +577,8 @@ Deno.serve(async () => {
       if (!log[logKey]) {
         const { data: planRow } = await supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "capitalPlan").maybeSingle();
         const plan = (planRow?.value || null) as CapPlan | null;
-        const markets = plan && Array.isArray(plan.markets) ? plan.markets.filter((m) => m && m.id) : [];
+        // Tài khoản phụ (crypto, hàng hóa...) không cần chọn mức mỗi tuần — bỏ khỏi tin nhắc.
+        const markets = plan && Array.isArray(plan.markets) ? plan.markets.filter((m) => m && m.id && !m.side) : [];
         if (plan && markets.length) {
           const weekNow = shiftDateStr(today, -((todayWeekdayNum + 6) % 7));
           const weekNext = shiftDateStr(weekNow, 7);
@@ -595,7 +596,8 @@ Deno.serve(async () => {
               const ddText = !dd.linked ? "chưa gắn tài khoản"
                 : `sụt ${pctVN(dd.pct, 1)}${dd.name ? ` ở ${dd.name}` : ""}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}`;
               const nextText = next.explicit ? `✔ tuần sau ${pctVN(next.pct)}` : "⏳ chưa chọn";
-              return `• ${m.name || "?"}: tuần này ${pctVN(now.pct)}${money} · ${ddText} · ${nextText}`;
+              const holdText = now.pct !== null && Number(m.holdTier) === now.pct ? " cầm chừng" : "";
+              return `• ${m.name || "?"}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}`;
             });
             const text = buildMessage(
               "💰", "CHỌN MỨC ĐI VỐN", "⭐", `Tuần ${ddmm(weekNext)} – ${ddmm(shiftDateStr(weekNext, 6))}`, undefined,

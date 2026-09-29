@@ -19,6 +19,12 @@ export function emptyCapitalMarket() {
   return {
     id: uid(), name: "", currency: "USD", rate: 1, allocated: 0, accountCount: 1, deposited: 0,
     tiers: [0.6, 1.2, 1.6], defaultTier: 1.2, accountIds: [],
+    // Mốc cầm chừng: mức thấp nhất, dùng khi setup vẫn hợp lệ nhưng đang sụt sâu hoặc thua
+    // liên tiếp. Tách riêng khỏi `tiers` để app biết mà gợi ý đúng nó lúc chạm ngưỡng.
+    holdTier: null,
+    // Tài khoản phụ (crypto, hàng hóa...): vốn ước lượng, trade nhẹ — không tính vào hệ số
+    // cấp của quỹ chính và không bị nhắc chọn mức mỗi tuần.
+    side: false,
   };
 }
 
@@ -31,9 +37,9 @@ export function defaultCapitalPlan() {
     ddWarnPct: DD_WARN_DEFAULT,
     ddCutPct: DD_CUT_DEFAULT,
     markets: [
-      { ...emptyCapitalMarket(), id: "us-stock", name: "US Stock", allocated: 20000, deposited: 4800 },
-      { ...emptyCapitalMarket(), id: "vn-stock", name: "VN Stock", currency: "VND", rate: 25000, allocated: 20000, deposited: 500000000 },
-      { ...emptyCapitalMarket(), id: "fx", name: "FX", allocated: 37500, accountCount: 3, deposited: 3000, tiers: [0.6, 1.2, 1.4, 1.6] },
+      { ...emptyCapitalMarket(), id: "us-stock", name: "US Stock", allocated: 20000, deposited: 4800, holdTier: 0.3 },
+      { ...emptyCapitalMarket(), id: "vn-stock", name: "VN Stock", currency: "VND", rate: 25000, allocated: 20000, deposited: 500000000, holdTier: 0.3 },
+      { ...emptyCapitalMarket(), id: "fx", name: "FX", allocated: 37500, accountCount: 3, deposited: 3000, tiers: [0.6, 1.2, 1.4, 1.6], holdTier: 0.3 },
     ],
     picks: {},
   };
@@ -59,6 +65,8 @@ export function normalizeCapitalPlan(raw) {
       deposited: num(m.deposited, 0),
       tiers: sortTiers(m.tiers),
       accountIds: Array.isArray(m.accountIds) ? m.accountIds : [],
+      holdTier: num(m.holdTier, 0) > 0 ? num(m.holdTier, 0) : null,
+      side: !!m.side,
     })),
     picks: raw.picks && typeof raw.picks === "object" && !Array.isArray(raw.picks) ? raw.picks : {},
   };
@@ -67,8 +75,25 @@ export function normalizeCapitalPlan(raw) {
 // Hệ số cấp = tổng vốn đã chia / vốn tổng. Lớn hơn 1 là đang chia vượt vốn thật — có chủ ý,
 // vì không phải lúc nào mọi mảng cũng chịu rủi ro cùng lúc.
 export function capitalScale(plan) {
-  const allocated = (plan.markets || []).reduce((s, m) => s + num(m.allocated, 0), 0);
-  return { allocated, factor: plan.totalCapital ? allocated / plan.totalCapital : null };
+  const sum = (list) => list.reduce((s, m) => s + num(m.allocated, 0), 0);
+  const markets = plan.markets || [];
+  const allocated = sum(markets.filter((m) => !m.side));
+  return { allocated, side: sum(markets.filter((m) => m.side)), factor: plan.totalCapital ? allocated / plan.totalCapital : null };
+}
+
+// Mọi mức chọn được của một mảng, mốc cầm chừng đứng đầu. Cầm chừng trùng một mức thường thì
+// chỉ giữ một, gắn nhãn cầm chừng — không hiện hai nút cùng một con số.
+export function marketTierList(m) {
+  const hold = num(m.holdTier, 0) > 0 ? num(m.holdTier, 0) : null;
+  const list = (m.tiers || []).map((pct) => ({ pct, hold: pct === hold }));
+  if (hold !== null && !list.some((x) => x.hold)) list.unshift({ pct: hold, hold: true });
+  return list.sort((a, b) => a.pct - b.pct);
+}
+
+// Chạm ngưỡng "giảm risk hẳn" thì gợi ý về mốc cầm chừng; chưa đặt mốc đó thì về mức thấp nhất.
+export function safestTier(m) {
+  const list = marketTierList(m);
+  return list.length ? list[0].pct : null;
 }
 
 // Vốn tính rủi ro của MỘT tài khoản trong mảng, theo tiền của mảng. FX 37.500 chia 3 tài khoản
@@ -122,7 +147,7 @@ export function setPick(plan, week, marketId, pct) {
 // Cuối tuần (T7, CN) mà còn mảng chưa chọn mức cho tuần sau.
 export function marketsMissingNextPick(plan, dateStr) {
   const next = nextWeekKey(dateStr);
-  return (plan.markets || []).filter((m) => !pickedTier(plan, m.id, next).explicit);
+  return (plan.markets || []).filter((m) => !m.side && !pickedTier(plan, m.id, next).explicit);
 }
 
 export function isWeekend(dateStr) {
@@ -200,14 +225,17 @@ export function marketDrawdown(plan, m, trades, resources) {
   }
   if (!curves.length) curves = [{ name: "", ...curveDrawdown([], base) }];
   const worst = curves.reduce((w, c) => (c.pct > w.pct ? c : w), curves[0]);
-  return { pct: worst.pct, level: drawdownLevel(plan, worst.pct), worst, curves, tradeCount: closed.length, linked: names.size > 0 };
+  // Chuỗi thua đang chạy của cả mảng — lý do thứ hai để về mốc cầm chừng, bên cạnh sụt vốn.
+  let lossStreak = 0;
+  for (let i = closed.length - 1; i >= 0 && closed[i].r.profit < 0; i--) lossStreak++;
+  return { pct: worst.pct, level: drawdownLevel(plan, worst.pct), worst, curves, tradeCount: closed.length, linked: names.size > 0, lossStreak };
 }
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
 // rủi ro của từng mức. Tuần tính theo ngày vào lệnh, để sửa lệnh cũ vẫn thấy đúng mức lúc đó.
 export function riskTierOptions(plan, accountName, dateStr, accounts) {
   const m = marketForAccount(plan, accountName, accounts);
-  if (!m || !m.tiers.length) return null;
+  if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
   const picked = pickedTier(plan, m.id, week);
   return {
@@ -215,7 +243,7 @@ export function riskTierOptions(plan, accountName, dateStr, accounts) {
     week,
     picked,
     currency: m.currency,
-    tiers: m.tiers.map((pct) => ({ pct, money: tierMoney(m, pct), share: tierShareOfTotal(plan, m, pct), isPicked: pct === picked.pct })),
+    tiers: marketTierList(m).map(({ pct, hold }) => ({ pct, hold, money: tierMoney(m, pct), share: tierShareOfTotal(plan, m, pct), isPicked: pct === picked.pct })),
   };
 }
 

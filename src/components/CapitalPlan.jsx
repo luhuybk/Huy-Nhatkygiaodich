@@ -4,8 +4,8 @@ import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import {
-  capitalScale, emptyCapitalMarket, fmtPctVN, isWeekend, marketDrawdown, marketsMissingNextPick, marketUnitBase,
-  nextWeekKey, pickedTier, setPick, sortTiers, thisWeekKey, tierMoney, tierShareOfTotal,
+  capitalScale, emptyCapitalMarket, fmtPctVN, isWeekend, marketDrawdown, marketsMissingNextPick, marketTierList, marketUnitBase,
+  nextWeekKey, pickedTier, safestTier, setPick, sortTiers, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
 
 const WEEKDAY_FULL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
@@ -27,14 +27,16 @@ function BlurNumber({ value, onCommit, className = "input mono", step = "any", m
 }
 
 function TierPicker({ market, picked, onPick }) {
+  const list = marketTierList(market);
   return (
     <div className="lsn-pick cap-pick">
-      {market.tiers.map((pct) => (
-        <button key={pct} type="button" className={`lsn-pick-btn ${picked === pct ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => onPick(pct)}>
-          {fmtPctVN(pct)}
+      {list.map(({ pct, hold }) => (
+        <button key={pct} type="button" title={hold ? "Mốc cầm chừng" : undefined}
+          className={`lsn-pick-btn ${hold ? "cap-pick-hold" : ""} ${picked === pct ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => onPick(pct)}>
+          {hold ? "Cầm chừng " : ""}{fmtPctVN(pct)}
         </button>
       ))}
-      {picked !== null && !market.tiers.includes(picked) ? (
+      {picked !== null && !list.some((x) => x.pct === picked) ? (
         <span className="field-hint">Đang chọn {fmtPctVN(picked)} (đã gỡ khỏi danh sách mức)</span>
       ) : null}
     </div>
@@ -57,6 +59,9 @@ function DrawdownBar({ plan, dd, market }) {
         <span className="cap-dd-fill" style={{ width: `${width}%` }} />
         <span className="cap-dd-mark" style={{ left: `${warnAt}%` }} title={`Cảnh báo ${plan.ddWarnPct}%`} />
       </div>
+      {dd.linked && dd.lossStreak >= 2 ? (
+        <p className="cap-dd-streak">Đang thua {dd.lossStreak} lệnh liên tiếp</p>
+      ) : null}
       {!dd.linked ? (
         <p className="field-hint cap-dd-note">Chưa gắn tài khoản — bấm Sửa để chọn tài khoản thuộc mảng này.</p>
       ) : market.accountCount > 1 && dd.curves.length > 1 ? (
@@ -73,6 +78,7 @@ function DrawdownBar({ plan, dd, market }) {
 function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
   const [m, setM] = useState(market);
   const [tierText, setTierText] = useState(market.tiers.map((x) => String(x).replace(".", ",")).join("  "));
+  const [holdText, setHoldText] = useState(market.holdTier ? String(market.holdTier).replace(".", ",") : "");
   const set = (k) => (v) => setM((prev) => ({ ...prev, [k]: v }));
   const tiers = sortTiers(tierText.split(/[\s;]+/).map((x) => x.replace(",", ".")).filter(Boolean));
   const toggleAccount = (id) => set("accountIds")(m.accountIds.includes(id) ? m.accountIds.filter((x) => x !== id) : [...m.accountIds, id]);
@@ -80,6 +86,7 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
     const defaultTier = tiers.includes(Number(m.defaultTier)) ? Number(m.defaultTier) : tiers[Math.floor((tiers.length - 1) / 2)];
     onSave({
       ...m, name: m.name.trim() || "Mảng chưa đặt tên", tiers, defaultTier,
+      holdTier: numOr(holdText, 0) > 0 ? numOr(holdText, 0) : null,
       rate: m.currency === "USD" ? 1 : numOr(m.rate, 1) || 1,
       allocated: numOr(m.allocated, 0), deposited: numOr(m.deposited, 0),
       accountCount: Math.max(1, Math.round(numOr(m.accountCount, 1))),
@@ -94,7 +101,7 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
-        <Field label="Vốn phân chia (USD)"><MoneyInput value={m.allocated} onChange={set("allocated")} /></Field>
+        <Field label={m.side ? "Vốn ước lượng (USD)" : "Vốn phân chia (USD)"}><MoneyInput value={m.allocated} onChange={set("allocated")} /></Field>
         {m.currency !== "USD" ? (
           <Field label={`Tỷ giá cố định (${m.currency} / 1 USD)`} hint="Chỉ dùng cho bảng này, không đổi tỷ giá ở tab Tài khoản">
             <MoneyInput value={m.rate} onChange={set("rate")} />
@@ -107,9 +114,18 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
           <MoneyInput value={m.deposited} onChange={set("deposited")} />
         </Field>
       </div>
-      <Field label="Các mức rủi ro (%)" hint="Cách nhau bằng dấu cách, VD: 0,6  1,2  1,6">
-        <input className="input mono" value={tierText} onChange={(e) => setTierText(e.target.value)} />
-      </Field>
+      <div className="grid-2">
+        <Field label="Các mức rủi ro (%)" hint="Cách nhau bằng dấu cách, VD: 0,6  1,2  1,6">
+          <input className="input mono" value={tierText} onChange={(e) => setTierText(e.target.value)} />
+        </Field>
+        <Field label="Mốc cầm chừng (%)" hint={`Giảm risk tối đa khi setup hợp lệ nhưng đang sụt sâu / thua liên tiếp${numOr(holdText, 0) > 0 ? ` — ${fmtMoney(tierMoney({ ...m, allocated: numOr(m.allocated, 0), rate: numOr(m.rate, 1), accountCount: numOr(m.accountCount, 1) }, numOr(holdText, 0)), m.currency)} / lệnh` : ". Bỏ trống nếu không dùng"}`}>
+          <input className="input mono" value={holdText} onChange={(e) => setHoldText(e.target.value)} placeholder="VD: 0,3" />
+        </Field>
+      </div>
+      <label className="mc-check cap-side-check">
+        <input type="checkbox" checked={!!m.side} onChange={(e) => set("side")(e.target.checked)} />
+        <span>Tài khoản phụ (trade nhẹ, VD crypto, hàng hóa) — vốn ước lượng, không tính vào hệ số cấp, không nhắc chọn mức hằng tuần</span>
+      </label>
       {tiers.length ? (
         <Field label="Mức mặc định" hint="Dùng khi chưa từng chọn mức cho mảng này">
           <div className="lsn-pick">
@@ -142,7 +158,8 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
   const [editing, setEditing] = useState(!!startEditing);
   const now = pickedTier(plan, market.id, weeks.now);
   const next = pickedTier(plan, market.id, weeks.next);
-  const minTier = market.tiers[0];
+  const safest = safestTier(market);
+  const safestIsHold = safest !== null && safest === market.holdTier;
   const linked = accounts.filter((a) => market.accountIds.includes(a.id));
   if (editing) {
     return (
@@ -157,7 +174,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
       <div className="cap-card-head">
         <b className="cap-card-name">{market.name}</b>
         <span className="cap-card-sub mono">
-          {fmtMoney(market.allocated, "USD")}
+          {market.side ? "ước lượng " : ""}{fmtMoney(market.allocated, "USD")}
           {market.currency !== "USD" ? ` ≈ ${fmtMoney(market.allocated * market.rate, market.currency)}` : ""}
           {market.accountCount > 1 ? ` · ${market.accountCount} tk × ${fmtMoney(marketUnitBase(market), market.currency)}` : ""}
         </span>
@@ -167,9 +184,9 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
       <table className="cap-tiers">
         <thead><tr><th>Rủi ro</th><th>Tiền / lệnh</th><th>Quy ra vốn tổng</th></tr></thead>
         <tbody>
-          {market.tiers.map((pct) => (
-            <tr key={pct} className={pct === now.pct ? "cap-tier-on" : ""}>
-              <td className="mono">{fmtPctVN(pct)}</td>
+          {marketTierList(market).map(({ pct, hold }) => (
+            <tr key={pct} className={`${hold ? "cap-tier-hold" : ""} ${pct === now.pct ? "cap-tier-on" : ""}`}>
+              <td className="mono">{fmtPctVN(pct)}{hold ? <span className="cap-hold-tag">cầm chừng</span> : null}</td>
               <td className="mono">{fmtMoney(tierMoney(market, pct), market.currency)}</td>
               <td className="mono">{fmtPctVN(tierShareOfTotal(plan, market, pct))}{pct === now.pct ? <span className="cap-arrow"> ← tuần này</span> : null}</td>
             </tr>
@@ -181,7 +198,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
         <span className="cap-week-label">Tuần này <small>{weekLabel(weeks.now)}</small></span>
         <TierPicker market={market} picked={now.pct} onPick={(pct) => onPick(weeks.now, pct)} />
       </div>
-      <div className={`cap-week ${weeks.nudge && !next.explicit ? "cap-week-due" : ""}`}>
+      <div className={`cap-week ${weeks.nudge && !next.explicit && !market.side ? "cap-week-due" : ""}`}>
         <span className="cap-week-label">
           Tuần sau <small>{weekLabel(weeks.next)}</small>
           {!next.explicit ? <em className="cap-week-hint"> · chưa chọn, đang giữ {fmtPctVN(next.pct)}</em> : null}
@@ -190,10 +207,10 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
       </div>
 
       <DrawdownBar plan={plan} dd={dd} market={market} />
-      {dd.level === "cut" && now.pct !== null && minTier !== undefined && now.pct > minTier ? (
+      {dd.level === "cut" && now.pct !== null && safest !== null && now.pct > safest ? (
         <p className="cap-suggest">
-          Sụt quá {fmtPctVN(plan.ddCutPct, 0)} — nên hạ xuống {fmtPctVN(minTier)}.{" "}
-          <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onPick(weeks.now, minTier)}>Hạ tuần này về {fmtPctVN(minTier)}</button>
+          Sụt quá {fmtPctVN(plan.ddCutPct, 0)} — nên hạ xuống {safestIsHold ? "mốc cầm chừng " : ""}{fmtPctVN(safest)}.{" "}
+          <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onPick(weeks.now, safest)}>Hạ tuần này về {fmtPctVN(safest)}</button>
         </p>
       ) : null}
 
@@ -254,7 +271,18 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
     onChange({ ...plan, markets: plan.markets.filter((x) => x.id !== id), picks });
     if (id === newId) setNewId(null);
   };
-  const addMarket = () => { const m = emptyCapitalMarket(); setNewId(m.id); patch({ markets: [...plan.markets, m] }); };
+  const addMarket = (side) => {
+    const m = side ? { ...emptyCapitalMarket(), side: true, allocated: 1000, tiers: [0.5, 1], defaultTier: 0.5 } : emptyCapitalMarket();
+    setNewId(m.id);
+    patch({ markets: [...plan.markets, m] });
+  };
+  const card = (m) => (
+    <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
+      onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
+      onSave={saveMarket} onDelete={() => deleteMarket(m.id)} />
+  );
+  const mainMarkets = plan.markets.filter((m) => !m.side);
+  const sideMarkets = plan.markets.filter((m) => m.side);
 
   return (
     <div>
@@ -264,6 +292,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
         </div>
         <div className="cap-stat"><span>Hệ số cấp</span><b className="mono">{scale.factor === null ? "—" : scale.factor.toFixed(2).replace(".", ",")}</b></div>
         <div className="cap-stat"><span>Quy đổi vốn</span><b className="mono">{fmtMoney(scale.allocated, "USD")}</b></div>
+        {scale.side ? <div className="cap-stat"><span>Tài khoản phụ (ngoài)</span><b className="mono cap-stat-dim">{fmtMoney(scale.side, "USD")}</b></div> : null}
         <div className="cap-settings">
           <Field label="Tính sụt vốn từ ngày"><input type="date" className="input" value={plan.startDate || ""} onChange={(e) => patch({ startDate: e.target.value })} /></Field>
           <Field label="Cảnh báo khi sụt (%)"><BlurNumber value={plan.ddWarnPct} min="0" onCommit={(n) => patch({ ddWarnPct: n })} /></Field>
@@ -279,12 +308,18 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
       ) : null}
 
       <div className="cap-grid">
-        {plan.markets.map((m) => (
-          <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
-            onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
-            onSave={saveMarket} onDelete={() => deleteMarket(m.id)} />
-        ))}
-        <button type="button" className="cap-add" onClick={addMarket}><Plus size={16} /> Thêm mảng</button>
+        {mainMarkets.map(card)}
+        <button type="button" className="cap-add" onClick={() => addMarket(false)}><Plus size={16} /> Thêm mảng</button>
+      </div>
+
+      <h3 className="block-title">Tài khoản phụ · trade nhẹ</h3>
+      <p className="field-hint" style={{ marginTop: 4, marginBottom: 10 }}>
+        Crypto, hàng hóa... — ghi vốn ước lượng và vài mức risk nhỏ. Không tính vào hệ số cấp, không bị nhắc chọn mức mỗi tuần
+        (chưa chọn thì dùng mức mặc định), nhưng vẫn có chip gợi ý khi nhập lệnh và vẫn theo dõi sụt vốn.
+      </p>
+      <div className="cap-grid">
+        {sideMarkets.map(card)}
+        <button type="button" className="cap-add cap-add-side" onClick={() => addMarket(true)}><Plus size={16} /> Thêm tài khoản phụ</button>
       </div>
 
       <p className="field-hint" style={{ marginTop: 12 }}>
@@ -317,7 +352,7 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
       <div className="cap-summary-rows">
         {rows.map(({ m, pct, money, dd }) => (
           <div key={m.id} className={`cap-summary-row cap-summary-${dd.level}`}>
-            <span className="cap-summary-name">{m.name}</span>
+            <span className="cap-summary-name">{m.name}{m.side ? <small className="cap-side-tag">phụ</small> : null}</span>
             <b className="mono">{fmtPctVN(pct)}</b>
             <span className="mono">1R = {money === null ? "—" : fmtMoney(money, m.currency)}</span>
             <span className="mono cap-summary-dd" title="Sụt từ đỉnh">↓ {fmtPctVN(dd.pct, 1)}</span>
@@ -336,21 +371,33 @@ export function RiskTierChips({ options, dd, plan, riskAmount, onPick }) {
   const amt = Number(riskAmount);
   const over = allowed !== null && Number.isFinite(amt) && amt > allowed * 1.001 && String(riskAmount).trim() !== "";
   const selected = tiers.find((x) => Number.isFinite(amt) && Math.abs(x.money - amt) < 0.005 * Math.max(1, x.money));
+  // Sụt vượt ngưỡng cảnh báo hoặc đang thua liên tiếp: làm nổi mốc cầm chừng để nhớ tới nó.
+  const rough = !!dd && (dd.level !== "ok" || dd.lossStreak >= 2);
+  const hold = tiers.find((x) => x.hold);
   return (
     <div className="cap-chips">
       <div className="cap-chips-head">
         <span><b>{market.name}</b> · tuần này {fmtPctVN(picked.pct)}</span>
-        {dd ? <span className={`cap-chips-dd cap-chips-dd-${dd.level}`}>Sụt {fmtPctVN(dd.pct, 1)}{dd.level === "cut" ? " — nên giảm risk" : dd.level === "warn" ? " — cảnh báo" : " ✓"}</span> : null}
+        {dd ? (
+          <span className={`cap-chips-dd cap-chips-dd-${dd.level === "ok" && dd.lossStreak >= 2 ? "warn" : dd.level}`}>
+            Sụt {fmtPctVN(dd.pct, 1)}{dd.level === "cut" ? " — nên giảm risk" : dd.level === "warn" ? " — cảnh báo" : dd.lossStreak >= 2 ? "" : " ✓"}
+            {dd.lossStreak >= 2 ? ` · thua ${dd.lossStreak} lệnh liên tiếp` : ""}
+          </span>
+        ) : null}
       </div>
       <div className="cap-chips-row">
         {tiers.map((x) => (
-          <button key={x.pct} type="button" className={`cap-chip ${x.isPicked ? "cap-chip-week" : ""} ${selected && selected.pct === x.pct ? "cap-chip-on" : ""}`}
+          <button key={x.pct} type="button"
+            className={`cap-chip ${x.hold ? "cap-chip-hold" : ""} ${x.hold && rough ? "cap-chip-hold-hint" : ""} ${x.isPicked ? "cap-chip-week" : ""} ${selected && selected.pct === x.pct ? "cap-chip-on" : ""}`}
             onClick={() => onPick(x)}>
-            {x.isPicked ? "★ " : ""}{fmtPctVN(x.pct)} · {fmtMoney(x.money, currency)}
+            {x.isPicked ? "★ " : ""}{x.hold ? "Cầm chừng " : ""}{fmtPctVN(x.pct)} · {fmtMoney(x.money, currency)}
           </button>
         ))}
       </div>
       {selected && selected.share !== null ? <span className="field-hint">= {fmtPctVN(selected.share)} vốn tổng</span> : null}
+      {rough && hold && !(selected && selected.hold) ? (
+        <span className="cap-chips-hold-note">Setup hợp lệ mà thấy không ổn? Cân nhắc mốc cầm chừng {fmtPctVN(hold.pct)} ({fmtMoney(hold.money, currency)}).</span>
+      ) : null}
       {over ? (
         <span className="cap-chips-over"><X size={12} /> Vượt mức tuần này ({fmtMoney(allowed, currency)}{plan && plan.totalCapital ? ` · ${fmtPctVN(tierShareOfTotal(plan, market, picked.pct))} vốn tổng` : ""}).</span>
       ) : null}
