@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, X } from "lucide-react";
-import { ConfirmButton, Field, StatCard } from "./ui.jsx";
+import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X } from "lucide-react";
+import { ConfirmButton, DangerConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
   looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
@@ -567,6 +567,10 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
   };
   const removeWatchSymbol = (w, item) =>
     updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
+  // Dọn hẳn các mã đã ngừng (gạch ngang): một nhóm, hoặc mọi nhóm khi không truyền id.
+  const purgeDone = (id) => onWatchesChange(watches.map((w) => (
+    (!id || w.id === id) && (w.symbols || []).some((x) => x.done) ? { ...w, symbols: w.symbols.filter((x) => !x.done) } : w
+  )));
   const toggleDay = (w, day) => {
     const days = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
     updateWatch(w.id, { activeDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day] });
@@ -646,10 +650,15 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
       <div className="watch-list-head">
         <h3 className="block-title">Các nhóm đang theo dõi</h3>
         {doneTotal ? (
-          <button type="button" className="btn btn-ghost watch-hide-btn" onClick={toggleHideDone}
-            title={hideDone ? "Hiện lại các mã đã ngừng (gạch ngang)" : "Ẩn các mã đã ngừng (gạch ngang) cho gọn"}>
-            {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
-          </button>
+          <div className="watch-head-actions">
+            <button type="button" className="btn btn-ghost" onClick={toggleHideDone}
+              title={hideDone ? "Hiện lại các mã đã ngừng (gạch ngang)" : "Ẩn các mã đã ngừng (gạch ngang) cho gọn"}>
+              {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
+            </button>
+            <DangerConfirmButton onConfirm={() => purgeDone()}
+              label={<><Trash2 size={13} /> Xóa {doneTotal} mã đã ngừng</>}
+              confirmLabel={<><Trash2 size={13} /> Bấm lần nữa để xóa hẳn {doneTotal} mã</>} />
+          </div>
         ) : null}
       </div>
       {watches.length === 0 ? (
@@ -698,10 +707,19 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
                     Nhóm chưa có symbol nào — sẽ không gửi thông báo. Thêm vào ô trên, hoặc xóa nhóm nếu không dùng nữa.
                   </p>
                 ) : (
-                  <p className="field-hint" style={{ marginTop: 6 }}>
-                    {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
-                    {hideDone && symbols.length > remaining ? ` · đang ẩn ${symbols.length - remaining} mã đã ngừng` : ""}
-                  </p>
+                  <div className="watch-group-foot">
+                    <p className="field-hint" style={{ margin: 0 }}>
+                      {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
+                      {hideDone && symbols.length > remaining ? ` · đang ẩn ${symbols.length - remaining} mã đã ngừng` : ""}
+                    </p>
+                    {symbols.length > remaining ? (
+                      <span className="watch-purge-one">
+                        <DangerConfirmButton onConfirm={() => purgeDone(w.id)}
+                          label={<><Trash2 size={12} /> Xóa {symbols.length - remaining} mã đã ngừng</>}
+                          confirmLabel={<><Trash2 size={12} /> Bấm lần nữa để xóa</>} />
+                      </span>
+                    ) : null}
+                  </div>
                 )}
 
                 <div className="sl-reminder-days">
