@@ -163,16 +163,28 @@ type CapMarket = {
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
 type CapAccount = { id: string; name: string; currency?: string; parentId?: string };
 
-function capPicked(plan: CapPlan, m: CapMarket, week: string) {
+// Mảng nhiều tài khoản con: mỗi tài khoản con chọn mức riêng, khoá "fx/<id tài khoản>". Mức riêng
+// thắng mức chung của mảng trong cùng một tuần; mức chung cũ vẫn là điểm xuất phát.
+function capPicked(plan: CapPlan, m: CapMarket, week: string, accountId?: string) {
   const picks = plan.picks || {};
+  const own = accountId ? `${m.id}/${accountId}` : null;
+  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
   const keys = Object.keys(picks).filter((k) => k <= week).sort();
   for (let i = keys.length - 1; i >= 0; i--) {
-    const v = picks[keys[i]]?.[m.id];
-    if (v !== undefined && v !== null && (v as unknown) !== "") return { pct: Number(v), explicit: keys[i] === week };
+    const row = picks[keys[i]] || {};
+    const v = own && has(row[own]) ? row[own] : row[m.id];
+    if (has(v)) return { pct: Number(v), explicit: keys[i] === week };
   }
   const tiers = (m.tiers || []).map(Number).filter((x) => x > 0).sort((a, b) => a - b);
   const def = Number(m.defaultTier);
   return { pct: tiers.includes(def) ? def : (tiers[Math.floor((tiers.length - 1) / 2)] ?? null), explicit: false };
+}
+
+function capUnits(m: CapMarket, accounts: CapAccount[]) {
+  if ((Number(m.accountCount) || 1) <= 1) return [] as CapAccount[];
+  const names = capFamily(accounts, m);
+  const leaves = accounts.filter((a) => names.has(a.name) && !accounts.some((x) => x.parentId === a.id));
+  return leaves.length >= 2 ? leaves : [];
 }
 
 function capUnitBase(m: CapMarket) {
@@ -220,20 +232,29 @@ function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown
     for (const t of list) { eq += pnl(t); if (eq > peak) peak = eq; }
     return peak > 0 ? Math.max(0, ((peak - eq) / peak) * 100) : 0;
   };
+  const cut = Number(plan.ddCutPct) || 12, warn = Number(plan.ddWarnPct) || 8;
+  const levelOf = (pct: number) => (pct >= cut ? "cut" : pct >= warn ? "warn" : "ok");
+  const streakOf = (list: Record<string, unknown>[]) => {
+    let n = 0;
+    for (let i = list.length - 1; i >= 0 && Number(list[i].profit) + partialProfitOf(list[i]) + feesOf(list[i]) < 0; i--) n++;
+    return n;
+  };
   let worst = { name: "", pct: 0 };
+  const curves: { name: string; pct: number; level: string; lossStreak: number }[] = [];
   if ((Number(m.accountCount) || 1) > 1) {
     const isGroup = (a: CapAccount) => accounts.some((x) => x.parentId === a.id);
     const list = new Set([...names].filter((n) => { const a = accounts.find((x) => x.name === n); return a && !isGroup(a); }));
     closed.forEach((t) => list.add(t.account as string));
     [...list].sort().forEach((name, i) => {
-      const pct = curve(closed.filter((t) => t.account === name));
+      const own = closed.filter((t) => t.account === name);
+      const pct = curve(own);
+      curves.push({ name, pct, level: levelOf(pct), lossStreak: streakOf(own) });
       if (i === 0 || pct > worst.pct) worst = { name, pct };
     });
   } else {
     worst = { name: "", pct: curve(closed) };
   }
-  const cut = Number(plan.ddCutPct) || 12, warn = Number(plan.ddWarnPct) || 8;
-  return { ...worst, level: worst.pct >= cut ? "cut" : worst.pct >= warn ? "warn" : "ok", linked: names.size > 0 };
+  return { ...worst, level: levelOf(worst.pct), linked: names.size > 0, curves, lossStreak: streakOf(closed) };
 }
 
 const pctVN = (v: number | null, digits = 2) => (v === null || !Number.isFinite(v) ? "—" : `${Number(v.toFixed(digits))}%`.replace(".", ","));
@@ -583,21 +604,27 @@ Deno.serve(async () => {
           const weekNow = shiftDateStr(today, -((todayWeekdayNum + 6) % 7));
           const weekNext = shiftDateStr(weekNow, 7);
           const fxRates = (resourcesRow?.value?.fxRates || {}) as Record<string, number>;
-          const rows = markets.map((m) => {
-            const now = capPicked(plan, m, weekNow);
-            const next = capPicked(plan, m, weekNext);
+          // Mảng nhiều tài khoản con thì mỗi tài khoản con một dòng, chọn mức riêng.
+          const rows = markets.flatMap((m) => {
             const dd = capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates);
-            return { m, now, next, dd };
+            const units = capUnits(m, accounts as CapAccount[]);
+            if (!units.length) {
+              return [{ m, label: m.name || "?", now: capPicked(plan, m, weekNow), next: capPicked(plan, m, weekNext), dd: { pct: dd.pct, level: dd.level, name: dd.name, linked: dd.linked, lossStreak: dd.lossStreak } }];
+            }
+            return units.map((a) => {
+              const c = dd.curves.find((x) => x.name === a.name) || { pct: 0, level: "ok", lossStreak: 0 };
+              return { m, label: `${m.name || "?"} · ${a.name}`, now: capPicked(plan, m, weekNow, a.id), next: capPicked(plan, m, weekNext, a.id), dd: { ...c, name: "", linked: true } };
+            });
           });
           const missing = rows.filter((r) => !r.next.explicit);
           if (missing.length) {
-            const lines = rows.map(({ m, now, next, dd }) => {
+            const lines = rows.map(({ m, label, now, next, dd }) => {
               const money = now.pct === null ? "" : ` (${capMoney((capUnitBase(m) * now.pct) / 100, m.currency)})`;
               const ddText = !dd.linked ? "chưa gắn tài khoản"
-                : `sụt ${pctVN(dd.pct, 1)}${dd.name ? ` ở ${dd.name}` : ""}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}`;
+                : `sụt ${pctVN(dd.pct, 1)}${dd.name ? ` ở ${dd.name}` : ""}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}${dd.lossStreak >= 2 ? ` · thua ${dd.lossStreak} liên tiếp` : ""}`;
               const nextText = next.explicit ? `✔ tuần sau ${pctVN(next.pct)}` : "⏳ chưa chọn";
               const holdText = now.pct !== null && Number(m.holdTier) === now.pct ? " cầm chừng" : "";
-              return `• ${m.name || "?"}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}`;
+              return `• ${label}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}`;
             });
             const text = buildMessage(
               "💰", "CHỌN MỨC ĐI VỐN", "⭐", `Tuần ${ddmm(weekNext)} – ${ddmm(shiftDateStr(weekNext, 6))}`, undefined,

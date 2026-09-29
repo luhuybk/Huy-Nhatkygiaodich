@@ -120,14 +120,23 @@ export function tierShareOfTotal(plan, m, pct) {
 export function thisWeekKey(dateStr) { return weekStart(dateStr || todayStr()); }
 export function nextWeekKey(dateStr) { return shiftDate(thisWeekKey(dateStr), 7); }
 
+// Mảng nhiều tài khoản (FX 3 tài khoản con) thì mỗi tài khoản con chọn mức riêng — tuần này
+// H3 tệ thì đi cầm chừng, H8 đang tốt vẫn đi 1,2%. Khoá lưu dạng "fx/<id tài khoản>".
+export function unitKey(marketId, accountId) { return accountId ? `${marketId}/${accountId}` : marketId; }
+
 // Mức đang áp cho một tuần: lần chọn gần nhất tính tới tuần đó. Tuần mới mà chưa chọn thì giữ
-// mức tuần trước — quên chọn không có nghĩa là muốn quay về mặc định.
-export function pickedTier(plan, marketId, week) {
+// mức tuần trước — quên chọn không có nghĩa là muốn quay về mặc định. Có `accountId` thì mức
+// riêng của tài khoản con thắng mức chung của mảng trong cùng một tuần; mức chung (chọn từ
+// trước khi tách) vẫn là điểm xuất phát cho mọi tài khoản con.
+export function pickedTier(plan, marketId, week, accountId) {
   const m = (plan.markets || []).find((x) => x.id === marketId);
+  const own = accountId ? unitKey(marketId, accountId) : null;
   const keys = Object.keys(plan.picks || {}).filter((k) => k <= week).sort();
+  const has = (v) => v !== undefined && v !== null && v !== "";
   for (let i = keys.length - 1; i >= 0; i--) {
-    const v = plan.picks[keys[i]] && plan.picks[keys[i]][marketId];
-    if (v !== undefined && v !== null && v !== "") return { pct: num(v, 0), from: keys[i], explicit: keys[i] === week };
+    const row = plan.picks[keys[i]] || {};
+    const v = own && has(row[own]) ? row[own] : row[marketId];
+    if (has(v)) return { pct: num(v, 0), from: keys[i], explicit: keys[i] === week };
   }
   const tiers = m ? m.tiers : [];
   const fallback = m && tiers.includes(num(m.defaultTier, NaN)) ? num(m.defaultTier, 0) : tiers[Math.floor((tiers.length - 1) / 2)];
@@ -144,10 +153,22 @@ export function setPick(plan, week, marketId, pct) {
   return { ...plan, picks };
 }
 
-// Cuối tuần (T7, CN) mà còn mảng chưa chọn mức cho tuần sau.
-export function marketsMissingNextPick(plan, dateStr) {
+// Cuối tuần (T7, CN) mà còn mảng / tài khoản con chưa chọn mức cho tuần sau.
+export function marketsMissingNextPick(plan, dateStr, accounts) {
   const next = nextWeekKey(dateStr);
-  return (plan.markets || []).filter((m) => !m.side && !pickedTier(plan, m.id, next).explicit);
+  const out = [];
+  (plan.markets || []).forEach((m) => {
+    if (m.side) return;
+    const units = marketUnits(m, accounts);
+    if (!units.length) {
+      if (!pickedTier(plan, m.id, next).explicit) out.push({ id: m.id, name: m.name });
+      return;
+    }
+    units.forEach((a) => {
+      if (!pickedTier(plan, m.id, next, a.id).explicit) out.push({ id: unitKey(m.id, a.id), name: `${m.name} · ${a.name}` });
+    });
+  });
+  return out;
 }
 
 export function isWeekend(dateStr) {
@@ -169,6 +190,22 @@ export function marketAccountNames(m, accounts) {
   return out;
 }
 
+// Tài khoản con được chọn mức riêng: chỉ khi mảng chia cho nhiều tài khoản (số tài khoản > 1)
+// và gắn được ít nhất 2 tài khoản lá. Mảng 1 tài khoản mà gắn 2 sàn thì vẫn là chung một vốn.
+export function marketUnits(m, accounts) {
+  if (!m || num(m.accountCount, 1) <= 1) return [];
+  const names = marketAccountNames(m, accounts);
+  const leaves = (accounts || []).filter((a) => a && names.has(a.name) && !isGroup(accounts, a));
+  return leaves.length >= 2 ? leaves : [];
+}
+
+// Tên tài khoản con trong ngữ cảnh mảng: "FX H3" nằm trong mảng FX thì gọi gọn là "H3".
+export function unitLabel(m, account) {
+  const name = (account && account.name) || "";
+  const prefix = `${(m && m.name) || ""} `.toLowerCase();
+  return prefix.trim() && name.toLowerCase().startsWith(prefix) && name.length > prefix.length ? name.slice(prefix.length) : name;
+}
+
 export function marketForAccount(plan, accountName, accounts) {
   if (!plan || !accountName) return null;
   return (plan.markets || []).find((m) => marketAccountNames(m, accounts).has(accountName)) || null;
@@ -182,6 +219,19 @@ function toMarketCurrency(amount, accCurrency, m, fxRates) {
   const r = cur === "USD" ? 1 : num(fxRates && fxRates[cur], 0);
   const usd = r > 0 ? amount / r : amount;
   return usd * (m.currency === "USD" ? 1 : num(m.rate, 1));
+}
+
+function lossStreakOf(closed) {
+  let n = 0;
+  for (let i = closed.length - 1; i >= 0 && closed[i].r.profit < 0; i--) n++;
+  return n;
+}
+
+// Sụt vốn của riêng một tài khoản con (nếu mảng tính theo từng tài khoản), không thì của cả mảng.
+export function unitDrawdown(dd, accountName) {
+  if (!dd) return null;
+  const c = accountName ? dd.curves.find((x) => x.name === accountName) : null;
+  return c ? { pct: c.pct, level: c.level, lossStreak: c.lossStreak, current: c.current, name: c.name } : dd;
 }
 
 function curveDrawdown(events, base) {
@@ -219,15 +269,19 @@ export function marketDrawdown(plan, m, trades, resources) {
     const leaves = [...names].filter((n) => { const a = accounts.find((x) => x.name === n); return a && !isGroup(accounts, a); });
     const used = new Set(closed.map((x) => x.t.account));
     const list = [...new Set([...leaves, ...used])].sort();
-    curves = list.map((name) => ({ name, ...curveDrawdown(closed.filter((x) => x.t.account === name).map(pnl), base) }));
+    curves = list.map((name) => {
+      const own = closed.filter((x) => x.t.account === name);
+      const c = curveDrawdown(own.map(pnl), base);
+      return { name, ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(own) };
+    });
   } else {
-    curves = [{ name: "", ...curveDrawdown(closed.map(pnl), base) }];
+    const c = curveDrawdown(closed.map(pnl), base);
+    curves = [{ name: "", ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(closed) }];
   }
-  if (!curves.length) curves = [{ name: "", ...curveDrawdown([], base) }];
+  if (!curves.length) curves = [{ name: "", ...curveDrawdown([], base), level: "ok", lossStreak: 0 }];
   const worst = curves.reduce((w, c) => (c.pct > w.pct ? c : w), curves[0]);
   // Chuỗi thua đang chạy của cả mảng — lý do thứ hai để về mốc cầm chừng, bên cạnh sụt vốn.
-  let lossStreak = 0;
-  for (let i = closed.length - 1; i >= 0 && closed[i].r.profit < 0; i--) lossStreak++;
+  const lossStreak = lossStreakOf(closed);
   return { pct: worst.pct, level: drawdownLevel(plan, worst.pct), worst, curves, tradeCount: closed.length, linked: names.size > 0, lossStreak };
 }
 
@@ -237,9 +291,11 @@ export function riskTierOptions(plan, accountName, dateStr, accounts) {
   const m = marketForAccount(plan, accountName, accounts);
   if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
-  const picked = pickedTier(plan, m.id, week);
+  const unit = marketUnits(m, accounts).find((a) => a.name === accountName) || null;
+  const picked = pickedTier(plan, m.id, week, unit ? unit.id : undefined);
   return {
     market: m,
+    unit,
     week,
     picked,
     currency: m.currency,
