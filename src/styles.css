@@ -1437,10 +1437,8 @@
 .core-shortcut-count { min-width: 22px; padding: 1px 7px; text-align: center; font-size: 12px; font-weight: 700; border-radius: 999px;
   color: var(--bg); background: var(--accent); }
 @media (max-width: 560px) { .cap-tiles { grid-template-columns: 1fr 1fr; } .cap-tile-pct { font-size: 22px; } }
-.cap-tile-parent { font-size: 11px; font-weight: 600; color: var(--text-dim); }
 /* Hàng chọn mức: lưới chia đều một hàng (số cột đặt inline theo số mức) */
 .cap-pick { display: grid; gap: 5px; }
 .cap-pick .lsn-pick-btn { min-width: 0; padding: 5px 2px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: clip;
   display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
 @media (max-width: 400px) { .cap-pick .lsn-pick-btn { font-size: 11px; } }
-.cap-card-parent { font-size: 12px; font-weight: 600; color: var(--text-dim); }

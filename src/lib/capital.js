@@ -17,7 +17,7 @@ const num = (v, fallback) => {
 
 export function emptyCapitalMarket() {
   return {
-    id: uid(), name: "", currency: "USD", rate: 1, allocated: 0, accountCount: 1, deposited: 0,
+    id: uid(), name: "", currency: "USD", rate: 1, allocated: 0, deposited: 0,
     tiers: [0.6, 1.2, 1.6], defaultTier: 1.2, accountIds: [],
     // Mốc cầm chừng: mức thấp nhất, dùng khi setup vẫn hợp lệ nhưng đang sụt sâu hoặc thua
     // liên tiếp. Tách riêng khỏi `tiers` để app biết mà gợi ý đúng nó lúc chạm ngưỡng.
@@ -39,7 +39,9 @@ export function defaultCapitalPlan() {
     markets: [
       { ...emptyCapitalMarket(), id: "us-stock", name: "US Stock", allocated: 20000, deposited: 4800, holdTier: 0.3 },
       { ...emptyCapitalMarket(), id: "vn-stock", name: "VN Stock", currency: "VND", rate: 25000, allocated: 20000, deposited: 500000000, holdTier: 0.3 },
-      { ...emptyCapitalMarket(), id: "fx", name: "FX", allocated: 37500, accountCount: 3, deposited: 3000, tiers: [0.6, 1.2, 1.4, 1.6], holdTier: 0.3 },
+      // FX là 3 tài khoản riêng biệt, mỗi tài khoản một mảng — tuần này tài khoản này tệ, tài
+      // khoản kia tốt thì đi vốn khác nhau.
+      ...[1, 2, 3].map((i) => ({ ...emptyCapitalMarket(), id: `fx-${i}`, name: `FX ${i}`, allocated: 12500, deposited: 1000, tiers: [0.6, 1.2, 1.4, 1.6], holdTier: 0.3 })),
     ],
     picks: {},
   };
@@ -61,6 +63,7 @@ export function normalizeCapitalPlan(raw) {
       ...m,
       rate: m.currency === "USD" ? 1 : num(m.rate, 1) || 1,
       allocated: num(m.allocated, 0),
+      // Chỉ còn ở dữ liệu cũ (FX 37.500 "× 3 tài khoản"); splitMultiAccountMarkets tách nó ra.
       accountCount: Math.max(1, Math.round(num(m.accountCount, 1))),
       deposited: num(m.deposited, 0),
       tiers: sortTiers(m.tiers),
@@ -96,8 +99,8 @@ export function safestTier(m) {
   return list.length ? list[0].pct : null;
 }
 
-// Vốn tính rủi ro của MỘT tài khoản trong mảng, theo tiền của mảng. FX 37.500 chia 3 tài khoản
-// thì mỗi tài khoản 12.500 — rủi ro 1,2% là 150 chứ không phải 450.
+// Vốn tính rủi ro của mảng, theo tiền của mảng. (Chia cho accountCount chỉ để dữ liệu cũ chưa kịp
+// tách vẫn ra đúng số; sau khi tách thì luôn là 1.)
 export function marketUnitBase(m) {
   return (num(m.allocated, 0) * (m.currency === "USD" ? 1 : num(m.rate, 1))) / Math.max(1, num(m.accountCount, 1));
 }
@@ -120,28 +123,21 @@ export function tierShareOfTotal(plan, m, pct) {
 export function thisWeekKey(dateStr) { return weekStart(dateStr || todayStr()); }
 export function nextWeekKey(dateStr) { return shiftDate(thisWeekKey(dateStr), 7); }
 
-// Mảng nhiều tài khoản (FX 3 tài khoản con) thì mỗi tài khoản con chọn mức riêng — tuần này
-// H3 tệ thì đi cầm chừng, H8 đang tốt vẫn đi 1,2%. Khoá lưu dạng "fx/<id tài khoản>".
-export function unitKey(marketId, accountId) { return accountId ? `${marketId}/${accountId}` : marketId; }
-
 // Mức đang áp cho một tuần: lần chọn gần nhất tính tới tuần đó. Tuần mới mà chưa chọn thì giữ
-// mức tuần trước — quên chọn không có nghĩa là muốn quay về mặc định. Có `accountId` thì mức
-// riêng của tài khoản con thắng mức chung của mảng trong cùng một tuần; mức chung (chọn từ
-// trước khi tách) vẫn là điểm xuất phát cho mọi tài khoản con.
-export function pickedTier(plan, marketId, week, accountId) {
+// mức tuần trước — quên chọn không có nghĩa là muốn quay về mặc định.
+export function pickedTier(plan, marketId, week) {
   const m = (plan.markets || []).find((x) => x.id === marketId);
-  const own = accountId ? unitKey(marketId, accountId) : null;
   const keys = Object.keys(plan.picks || {}).filter((k) => k <= week).sort();
-  const has = (v) => v !== undefined && v !== null && v !== "";
   for (let i = keys.length - 1; i >= 0; i--) {
-    const row = plan.picks[keys[i]] || {};
-    const v = own && has(row[own]) ? row[own] : row[marketId];
+    const v = (plan.picks[keys[i]] || {})[marketId];
     if (has(v)) return { pct: num(v, 0), from: keys[i], explicit: keys[i] === week };
   }
   const tiers = m ? m.tiers : [];
   const fallback = m && tiers.includes(num(m.defaultTier, NaN)) ? num(m.defaultTier, 0) : tiers[Math.floor((tiers.length - 1) / 2)];
   return { pct: fallback === undefined ? null : fallback, from: "", explicit: false };
 }
+
+const has = (v) => v !== undefined && v !== null && v !== "";
 
 export function setPick(plan, week, marketId, pct) {
   const cur = { ...((plan.picks || {})[week] || {}) };
@@ -153,22 +149,10 @@ export function setPick(plan, week, marketId, pct) {
   return { ...plan, picks };
 }
 
-// Cuối tuần (T7, CN) mà còn mảng / tài khoản con chưa chọn mức cho tuần sau.
-export function marketsMissingNextPick(plan, dateStr, accounts) {
+// Cuối tuần (T7, CN) mà còn mảng chưa chọn mức cho tuần sau.
+export function marketsMissingNextPick(plan, dateStr) {
   const next = nextWeekKey(dateStr);
-  const out = [];
-  (plan.markets || []).forEach((m) => {
-    if (m.side) return;
-    const units = marketUnits(m, accounts);
-    if (!units.length) {
-      if (!pickedTier(plan, m.id, next).explicit) out.push({ id: m.id, name: m.name });
-      return;
-    }
-    units.forEach((a) => {
-      if (!pickedTier(plan, m.id, next, a.id).explicit) out.push({ id: unitKey(m.id, a.id), name: `${m.name} · ${a.name}` });
-    });
-  });
-  return out;
+  return (plan.markets || []).filter((m) => !m.side && !pickedTier(plan, m.id, next).explicit);
 }
 
 export function isWeekend(dateStr) {
@@ -190,8 +174,7 @@ export function marketAccountNames(m, accounts) {
   return out;
 }
 
-// Tài khoản con được chọn mức riêng: chỉ khi mảng chia cho nhiều tài khoản (số tài khoản > 1)
-// và gắn được ít nhất 2 tài khoản lá. Mảng 1 tài khoản mà gắn 2 sàn thì vẫn là chung một vốn.
+// Tài khoản lá của một mảng dữ liệu cũ kiểu "FX × 3 tài khoản" — dùng khi tách mảng đó ra.
 export function marketUnits(m, accounts) {
   if (!m || num(m.accountCount, 1) <= 1) return [];
   const names = marketAccountNames(m, accounts);
@@ -199,7 +182,7 @@ export function marketUnits(m, accounts) {
   return leaves.length >= 2 ? leaves : [];
 }
 
-// Tên tài khoản con trong ngữ cảnh mảng, bỏ phần chung của cả nhóm: "Forex - H3", "Forex - H8",
+// Tên ngắn của tài khoản con, bỏ phần chung của cả nhóm: "Forex - H3", "Forex - H8",
 // "Forex - D" → "H3", "H8", "D". Chỉ cắt tới dấu phân cách (cách, -, _, ·, :, /, |, .) để không
 // cắt đôi một chữ — "H3" với "H8" chung chữ "H" nhưng không được thành "3" với "8".
 export function unitLabel(m, account, siblings) {
@@ -214,6 +197,49 @@ export function unitLabel(m, account, siblings) {
   }
   const prefix = `${(m && m.name) || ""} `.toLowerCase();
   return prefix.trim() && name.toLowerCase().startsWith(prefix) && name.length > prefix.length ? name.slice(prefix.length) : name;
+}
+
+// Dữ liệu cũ: một mảng "FX 37.500 × 3 tài khoản" dùng chung mức và bắt chọn mức theo tài khoản
+// con. Giờ mỗi tài khoản là một mảng riêng biệt, nên tách nó thành 3 mảng 12.500, mỗi mảng gắn
+// đúng một tài khoản. Mức đã chọn riêng cho tài khoản con (khoá "fx/<id>") theo sang mảng mới;
+// tuần nào chỉ có mức chung thì mảng mới nhận mức chung đó. Tiền đã nạp chia đều.
+// Chưa gắn đủ tài khoản con thì vẫn tách theo số tài khoản, đặt tên 1, 2, 3 và để trống tài khoản.
+export function splitMultiAccountMarkets(plan, accounts) {
+  if (!plan || !(plan.markets || []).some((m) => num(m.accountCount, 1) > 1)) return { plan, changed: false };
+  const picks = {};
+  Object.entries(plan.picks || {}).forEach(([k, row]) => { picks[k] = { ...(row || {}) }; });
+  const markets = [];
+  plan.markets.forEach((m) => {
+    const n = Math.max(1, Math.round(num(m.accountCount, 1)));
+    if (n <= 1) { markets.push(m); return; }
+    const units = marketUnits(m, accounts);
+    const parts = units.length
+      ? units.map((a) => ({ acc: a, label: unitLabel(m, a, units) }))
+      : Array.from({ length: n }, (_, i) => ({ acc: null, label: String(i + 1) }));
+    const taken = new Set(plan.markets.map((x) => x.id));
+    parts.forEach(({ acc, label }, i) => {
+      let id = `${m.id}-${acc ? acc.id : i + 1}`;
+      while (taken.has(id)) id += "x";
+      taken.add(id);
+      markets.push({
+        ...m, id, name: `${m.name} ${label}`.trim(), accountCount: 1,
+        allocated: num(m.allocated, 0) / n,
+        deposited: roundMoney(num(m.deposited, 0) / parts.length, m.currency),
+        accountIds: acc ? [acc.id] : [],
+      });
+      Object.values(picks).forEach((row) => {
+        const own = acc ? row[`${m.id}/${acc.id}`] : undefined;
+        const v = has(own) ? own : row[m.id];
+        if (has(v)) row[id] = v;
+      });
+    });
+    Object.values(picks).forEach((row) => {
+      delete row[m.id];
+      Object.keys(row).forEach((k) => { if (k.startsWith(`${m.id}/`)) delete row[k]; });
+    });
+  });
+  Object.keys(picks).forEach((k) => { if (!Object.keys(picks[k]).length) delete picks[k]; });
+  return { plan: { ...plan, markets, picks }, changed: true };
 }
 
 export function marketForAccount(plan, accountName, accounts) {
@@ -237,13 +263,6 @@ function lossStreakOf(closed) {
   return n;
 }
 
-// Sụt vốn của riêng một tài khoản con (nếu mảng tính theo từng tài khoản), không thì của cả mảng.
-export function unitDrawdown(dd, accountName) {
-  if (!dd) return null;
-  const c = accountName ? dd.curves.find((x) => x.name === accountName) : null;
-  return c ? { pct: c.pct, level: c.level, lossStreak: c.lossStreak, current: c.current, name: c.name } : dd;
-}
-
 function curveDrawdown(events, base) {
   let equity = base;
   let peak = base;
@@ -258,8 +277,8 @@ export function drawdownLevel(plan, pct) {
 }
 
 // Sụt vốn từ đỉnh, tính trên VỐN PHÂN CHIA (không phải tiền đã nạp) cộng lãi/lỗ các lệnh đã đóng
-// kể từ ngày bắt đầu. Mảng nhiều tài khoản (FX) thì mỗi tài khoản một đường riêng — tài khoản
-// quỹ có giới hạn sụt riêng — và mảng báo theo tài khoản đang tệ nhất.
+// kể từ ngày bắt đầu. Gắn nhiều tài khoản vào một mảng (VD hai sàn chứng khoán) thì chúng dùng
+// chung vốn nên chung một đường.
 export function marketDrawdown(plan, m, trades, resources) {
   const accounts = (resources && resources.accounts) || [];
   const fxRates = (resources && resources.fxRates) || {};
@@ -274,25 +293,13 @@ export function marketDrawdown(plan, m, trades, resources) {
   const currencyOf = (name) => { const a = accounts.find((x) => x.name === name); return a ? a.currency : "USD"; };
   const pnl = (x) => toMarketCurrency(x.r.profit, currencyOf(x.t.account), m, fxRates);
 
-  let curves;
-  if (num(m.accountCount, 1) > 1) {
-    const leaves = [...names].filter((n) => { const a = accounts.find((x) => x.name === n); return a && !isGroup(accounts, a); });
-    const used = new Set(closed.map((x) => x.t.account));
-    const list = [...new Set([...leaves, ...used])].sort();
-    curves = list.map((name) => {
-      const own = closed.filter((x) => x.t.account === name);
-      const c = curveDrawdown(own.map(pnl), base);
-      return { name, ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(own), tradeCount: own.length };
-    });
-  } else {
-    const c = curveDrawdown(closed.map(pnl), base);
-    curves = [{ name: "", ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(closed) }];
-  }
-  if (!curves.length) curves = [{ name: "", ...curveDrawdown([], base), level: "ok", lossStreak: 0 }];
-  const worst = curves.reduce((w, c) => (c.pct > w.pct ? c : w), curves[0]);
-  // Chuỗi thua đang chạy của cả mảng — lý do thứ hai để về mốc cầm chừng, bên cạnh sụt vốn.
-  const lossStreak = lossStreakOf(closed);
-  return { pct: worst.pct, level: drawdownLevel(plan, worst.pct), worst, curves, tradeCount: closed.length, linked: names.size > 0, lossStreak };
+  const c = curveDrawdown(closed.map(pnl), base);
+  return {
+    pct: c.pct, level: drawdownLevel(plan, c.pct), current: c.current, peak: c.peak,
+    tradeCount: closed.length, linked: names.size > 0,
+    // Chuỗi thua đang chạy — lý do thứ hai để về mốc cầm chừng, bên cạnh sụt vốn.
+    lossStreak: lossStreakOf(closed),
+  };
 }
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
@@ -301,13 +308,9 @@ export function riskTierOptions(plan, accountName, dateStr, accounts) {
   const m = marketForAccount(plan, accountName, accounts);
   if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
-  const units = marketUnits(m, accounts);
-  const unit = units.find((a) => a.name === accountName) || null;
-  const picked = pickedTier(plan, m.id, week, unit ? unit.id : undefined);
+  const picked = pickedTier(plan, m.id, week);
   return {
     market: m,
-    unit,
-    unitName: unit ? unitLabel(m, unit, units) : "",
     week,
     picked,
     currency: m.currency,

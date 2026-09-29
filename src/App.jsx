@@ -19,7 +19,7 @@ import { NotesSection } from "./components/Notes.jsx";
 import { SettingsSection } from "./components/Settings.jsx";
 import { SloganBar, useStickyTab } from "./components/ui.jsx";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
-import { defaultCapitalPlan, normalizeCapitalPlan } from "./lib/capital.js";
+import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
 const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.DimensionPerformance })));
@@ -182,7 +182,12 @@ function AppShell({ onSignOut, userEmail }) {
       setProblemLogs(pl);
       setNewsLogs(nl);
       setTradingPlans(Array.isArray(tp) ? tp : []);
-      setCapitalPlan(normalizeCapitalPlan(cp));
+      // Dữ liệu cũ có mảng "FX × 3 tài khoản": tách thành 3 mảng riêng và ghi lại một lần, để bot
+      // Telegram (đọc thẳng cơ sở dữ liệu) cũng thấy đúng 3 mảng.
+      const cpNorm = normalizeCapitalPlan(cp);
+      const cpSplit = cpNorm ? splitMultiAccountMarkets(cpNorm, normalizeResources(rs).accounts) : { plan: null, changed: false };
+      setCapitalPlan(cpSplit.plan);
+      if (cpSplit.changed) await safeSet("capitalPlan", cpSplit.plan);
       setSkills(sk);
       setFilterPresets(fp);
       setPrinciples({ ...DEFAULT_PRINCIPLES, ...pr });
@@ -527,7 +532,10 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.problemLogs) persistProblemLogs(data.problemLogs);
     if (data.newsLogs) persistNewsLogs(data.newsLogs);
     if (data.tradingPlans) persistTradingPlans(data.tradingPlans);
-    if (data.capitalPlan && normalizeCapitalPlan(data.capitalPlan)) persistCapitalPlan(normalizeCapitalPlan(data.capitalPlan));
+    if (data.capitalPlan && normalizeCapitalPlan(data.capitalPlan)) {
+      const accs = (data.resources ? normalizeResources(data.resources) : resources).accounts;
+      persistCapitalPlan(splitMultiAccountMarkets(normalizeCapitalPlan(data.capitalPlan), accs).plan);
+    }
     if (data.principles) persistPrinciples({ ...DEFAULT_PRINCIPLES, ...data.principles });
     if (data.setupLibrary) persistSetupLibrary(data.setupLibrary);
     if (data.uiSettings) persistUiSettings({ ...DEFAULT_UI_SETTINGS, ...data.uiSettings });
