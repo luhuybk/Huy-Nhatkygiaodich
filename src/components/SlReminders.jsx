@@ -120,7 +120,7 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
       <h3 className="block-title" style={{ marginTop: 0 }}>Nhắc dời SL qua Telegram</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Khi tài khoản đang có lệnh mở, hệ thống sẽ tự bắn tin nhắn Telegram vào đúng khung giờ bạn đặt bên dưới để nhắc kiểm tra dời SL.
-        <b> Mỗi symbol một tin riêng</b>, kèm 2 nút: <b>Đã dời</b> (vẫn nhắc tiếp ở khung giờ sau) và <b>Kết thúc lệnh</b> (ngừng nhắc lệnh đó — dùng khi lệnh đã chạm SL/TP mà bạn chưa kịp ghi nhật ký).
+        <b> Mỗi tài khoản một tin dạng bảng</b>, mỗi lệnh một dòng kèm 2 nút: <b>Đã dời</b> (vẫn nhắc tiếp ở khung giờ sau) và <b>Kết thúc</b> (ngừng nhắc lệnh đó — dùng khi lệnh đã chạm SL/TP mà bạn chưa kịp ghi nhật ký). Bấm dòng nào thì chỉ dòng đó đổi trạng thái.
         Việc gửi tin chạy nền trên server (Supabase Edge Function + Cron) nên hoạt động dù bạn không mở web — cần cài đặt 1 lần, xem hướng dẫn cuối trang.
       </p>
       <div className="account-form">
@@ -569,9 +569,9 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
       <h3 className="block-title" style={{ marginTop: 0 }}>Symbol theo dõi</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Mỗi nhóm là <b>một khung giờ nhắc dùng chung cho nhiều symbol</b> — thường đặt theo timeframe (H4, khung ngày),
-        nhưng dùng cho watchlist hay phiên giao dịch đều được. Đến giờ, mỗi symbol trong nhóm được gửi thành
-        <b> một tin Telegram riêng</b> kèm 2 nút: <b>Tiếp tục theo dõi</b> (nhắc lại ở khung giờ kế tiếp) và
-        <b> Ngừng theo dõi</b> (chỉ tắt riêng symbol đó, các symbol còn lại vẫn nhắc bình thường).
+        nhưng dùng cho watchlist hay phiên giao dịch đều được. Đến giờ, cả nhóm được gửi thành
+        <b> một tin Telegram dạng bảng</b>, mỗi symbol một dòng kèm 2 nút: <b>Theo dõi</b> (nhắc lại ở khung giờ kế tiếp) và
+        <b> Ngừng</b> (chỉ tắt riêng symbol đó, các symbol còn lại vẫn nhắc bình thường).
       </p>
       {!telegramReady ? (
         <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
@@ -616,7 +616,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
               placeholder="9 14 20" />
           </Field>
         </div>
-        <Field label="Các symbol" hint="Gõ tên rồi nhấn phím cách hoặc Enter là xong một symbol — hoặc bấm thẳng vào gợi ý bên dưới. Mỗi symbol là một tin nhắn riêng khi tới giờ.">
+        <Field label="Các symbol" hint="Gõ tên rồi nhấn phím cách hoặc Enter là xong một symbol — hoặc bấm thẳng vào gợi ý bên dưới. Tới giờ, cả nhóm gửi thành một tin, mỗi symbol một dòng.">
           <SymbolBox items={draftItems} suggestions={suggestions}
             onAdd={addDraftSymbols}
             onRemove={(x) => setDraft((p) => ({ ...p, symbols: p.symbols.filter((n) => n !== x.name) }))}

@@ -5,6 +5,10 @@
 //   Kiểm tra setup    sc|<accountId>|<date>|<hour>   ghi nhận đã kiểm tra, dùng để tính % hoàn thành tuần
 //   Dời SL            sl|<tradeId>|moved    đã dời, tiếp tục nhắc ở khung giờ kế tiếp
 //                     sl|<tradeId>|closed   lệnh đã kết thúc thật, ngừng nhắc (không đụng vào bản ghi lệnh)
+//   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
+//
+// Tin dạng bảng (symbol theo dõi, dời SL): mỗi dòng một mã. Bấm nút thì chỉ dòng đó đổi trạng thái,
+// các dòng khác giữ nguyên nút. Tin cũ mỗi mã một tin thì vẫn gỡ nút và ghi thêm dòng kết quả.
 //
 // Deploy: supabase functions deploy telegram-webhook --no-verify-jwt
 //   (bắt buộc có --no-verify-jwt vì Telegram gọi vào đây mà không mang JWT của Supabase)
@@ -35,6 +39,37 @@ async function answerCallback(botToken: string, callbackId: string, text: string
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ callback_query_id: callbackId, text }),
   });
+}
+
+type Button = { text: string; callback_data?: string };
+
+async function editMarkup(botToken: string, chatId: number, messageId: number, keyboard: Button[][]) {
+  await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard } }),
+  });
+}
+
+const doneCell = (text: string) => ({ text, callback_data: "n|" });
+
+// Dòng của tin dạng bảng sau khi bấm: giữ ô tên mã, đổi nút vừa bấm thành trạng thái. "Tiếp tục" /
+// "Đã dời" vẫn để lại nút còn lại (sau đó vẫn có thể ngừng / kết thúc); "Ngừng" / "Kết thúc" thì
+// dòng đó xong hẳn.
+function rowAfter(row: Button[], kind: string, action: string): Button[] {
+  const label = row[0];
+  const find = (suffix: string) => row.find((b) => String(b.callback_data || "").endsWith(suffix));
+  if (kind === "w") {
+    if (action === "stop") return [label, doneCell("🛑 Đã ngừng")];
+    const stop = find("|stop");
+    return stop ? [label, doneCell("👀 Đang theo dõi"), stop] : [label, doneCell("👀 Đang theo dõi")];
+  }
+  if (kind === "sl") {
+    if (action === "closed") return [label, doneCell("🏁 Đã kết thúc")];
+    const closed = find("|closed");
+    return closed ? [label, doneCell("✅ Đã dời"), closed] : [label, doneCell("✅ Đã dời")];
+  }
+  return row;
 }
 
 // Gỡ hàng nút đi sau khi đã xử lý, để không bấm nhầm lần nữa vào tin nhắn cũ.
@@ -105,6 +140,12 @@ Deno.serve(async (req) => {
   const userId = ownerRow.user_id as string;
   const botToken = (ownerRow.value as { telegramBotToken?: string })?.telegramBotToken;
   if (!botToken) return json({ ok: true, skipped: "no bot token" });
+
+  // Ô tên mã / ô trạng thái: không đổi gì, chỉ tắt vòng quay trên nút.
+  if (kind === "n") {
+    await answerCallback(botToken, cb.id, "");
+    return json({ ok: true, skipped: "label" });
+  }
 
   let notice = "";
   let messageSuffix = "";
@@ -209,7 +250,15 @@ Deno.serve(async (req) => {
 
   await answerCallback(botToken, cb.id, notice);
   if (cb.message?.message_id && fromChatId) {
-    await clearButtons(botToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
+    const keyboard = (cb.message.reply_markup?.inline_keyboard || []) as Button[][];
+    const isTable = keyboard.some((row) => row.some((b) => String(b.callback_data || "").startsWith("n|")));
+    if (isTable) {
+      const action = rest[rest.length - 1];
+      const next = keyboard.map((row) => (row.some((b) => b.callback_data === cb.data) ? rowAfter(row, kind, action) : row));
+      await editMarkup(botToken, fromChatId, cb.message.message_id, next);
+    } else {
+      await clearButtons(botToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
+    }
   }
 
   return json({ ok: true, kind, rest });

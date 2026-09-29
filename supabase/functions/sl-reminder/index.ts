@@ -249,6 +249,11 @@ function buildMessage(titleIcon: string, title: string, mark: string, subject: s
   return lines.join("\n");
 }
 
+// Tin gộp dạng bảng: mỗi dòng một mã, ô đầu là tên mã (nút "n|" không làm gì, chỉ để làm nhãn),
+// các ô sau là nút hành động. Webhook nhận ra tin gộp nhờ nút "n|" và chỉ sửa đúng dòng được bấm.
+const MAX_TABLE_ROWS = 25;
+const noopButton = (text: string) => ({ text, callback_data: "n|" });
+
 async function sendTelegram(botToken: string, chatId: string, text: string, threadId?: string, replyMarkup?: unknown) {
   const payload: Record<string, unknown> = { chat_id: chatId, text };
   const thread = threadId ? Number(threadId) : undefined;
@@ -398,27 +403,38 @@ Deno.serve(async () => {
       const matchedHour = hoursDueNow(sched)[0];
       if (isTaskDone(`sl_${sched.accountId}`, matchedHour)) continue;
 
-      // Mỗi lệnh một tin riêng để nút bấm gắn đúng lệnh — gộp chung thì không biết bấm cho symbol nào.
-      for (const t of openTrades) {
-        if (slMessages >= MAX_SL_MESSAGES_PER_RUN) break;
-        // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
-        const logKey = `${sched.accountId}_${today}_${matchedHour}_${t.id}`;
-        if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
+      // Một tin cho cả tài khoản, dạng bảng: mỗi lệnh một dòng [mã] [Đã dời] [Kết thúc]. Nút mang id
+      // lệnh nên vẫn gắn đúng lệnh; bấm dòng nào thì webhook chỉ đổi dòng đó.
+      if (slMessages >= MAX_SL_MESSAGES_PER_RUN) break;
+      // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
+      const logKey = `${sched.accountId}_${today}_${matchedHour}_all`;
+      if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
-        const text = buildMessage("⏰", "DỜI SL", "🔴", t.symbol || "?", accountName);
-        const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
-          inline_keyboard: [[
-            { text: "✅ Đã dời", callback_data: `sl|${t.id}|moved` },
-            { text: "🏁 Kết thúc lệnh", callback_data: `sl|${t.id}|closed` },
-          ]],
-        });
+      const shown = openTrades.slice(0, MAX_TABLE_ROWS);
+      const symCount = new Map<string, number>();
+      shown.forEach((t) => symCount.set(String(t.symbol || "?"), (symCount.get(String(t.symbol || "?")) || 0) + 1));
+      // Hai lệnh cùng mã thì thêm ngày vào để phân biệt.
+      const labelOf = (t: Record<string, unknown>) => {
+        const sym = String(t.symbol || "?");
+        const dir = t.direction === "sell" ? " ↓" : t.direction === "buy" ? " ↑" : "";
+        return `${sym}${dir}${(symCount.get(sym) || 0) > 1 && t.entryDate ? ` ${ddmm(String(t.entryDate))}` : ""}`;
+      };
+      const list = shown.map((t) => labelOf(t)).join(" · ");
+      const more = openTrades.length > shown.length ? `\n…và ${openTrades.length - shown.length} lệnh nữa — xem trên web.` : "";
+      const text = buildMessage("⏰", "DỜI SL", "🔴", `${openTrades.length} lệnh đang mở`, accountName, `${list}${more}`);
+      const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
+        inline_keyboard: shown.map((t) => [
+          noopButton(labelOf(t)),
+          { text: "✅ Đã dời", callback_data: `sl|${t.id}|moved` },
+          { text: "🏁 Kết thúc", callback_data: `sl|${t.id}|closed` },
+        ]),
+      });
 
-        if (ok) {
-          log[logKey] = true;
-          logChanged = true;
-          slMessages++;
-          sent++;
-        }
+      if (ok) {
+        log[logKey] = true;
+        logChanged = true;
+        slMessages++;
+        sent++;
       }
     }
 
@@ -737,8 +753,8 @@ Deno.serve(async () => {
       }
     }
 
-    // Symbol theo dõi — mỗi nhóm là một khung giờ nhắc, mỗi symbol trong nhóm là một tin riêng
-    // để bấm "Tiếp tục / Ngừng theo dõi" cho từng symbol độc lập.
+    // Symbol theo dõi — mỗi nhóm một tin dạng bảng: mỗi symbol một dòng [mã] [Theo dõi] [Ngừng].
+    // Vẫn bấm được cho từng symbol độc lập, mà không thành một chuỗi tin dài mỗi khung giờ.
     if (settings.symbolWatchEnabled && watches.length) {
       let watchMessages = 0;
       for (const w of watches) {
@@ -751,26 +767,29 @@ Deno.serve(async () => {
         if (isTaskDone(`w_${w.id}`, matchedHour)) continue;
 
         const groupName = (w.label || "").trim();
-        for (const sym of watchSymbols(w)) {
-          if (sym.done) continue;
-          if (watchMessages >= MAX_WATCH_MESSAGES_PER_RUN) break;
-          const logKey = `watch_${today}_${w.id}_${matchedHour}_${sym.id}`;
-          if (log[logKey]) continue;
+        const live = watchSymbols(w).filter((x) => !x.done);
+        if (!live.length) continue;
+        if (watchMessages >= MAX_WATCH_MESSAGES_PER_RUN) break;
+        const logKey = `watch_${today}_${w.id}_${matchedHour}_all`;
+        if (log[logKey]) continue;
 
-          const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", sym.name, groupName || undefined, w.note || undefined);
-          const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
-            inline_keyboard: [[
-              { text: "👀 Tiếp tục theo dõi", callback_data: `w|${w.id}|${sym.id}|keep` },
-              { text: "🛑 Ngừng theo dõi", callback_data: `w|${w.id}|${sym.id}|stop` },
-            ]],
-          });
+        const shown = live.slice(0, MAX_TABLE_ROWS);
+        const more = live.length > shown.length ? `\n…và ${live.length - shown.length} mã nữa — xem trên web.` : "";
+        const body = [shown.map((x) => x.name).join(" · ") + more, w.note || ""].filter(Boolean).join("\n");
+        const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", `${live.length} mã`, groupName || undefined, body);
+        const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
+          inline_keyboard: shown.map((sym) => [
+            noopButton(sym.name),
+            { text: "👀 Theo dõi", callback_data: `w|${w.id}|${sym.id}|keep` },
+            { text: "🛑 Ngừng", callback_data: `w|${w.id}|${sym.id}|stop` },
+          ]),
+        });
 
-          if (ok) {
-            log[logKey] = true;
-            logChanged = true;
-            watchMessages++;
-            sent++;
-          }
+        if (ok) {
+          log[logKey] = true;
+          logChanged = true;
+          watchMessages++;
+          sent++;
         }
       }
     }
