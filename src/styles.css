@@ -1442,3 +1442,5 @@
 .cap-pick .lsn-pick-btn { min-width: 0; padding: 5px 2px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: clip;
   display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
 @media (max-width: 400px) { .cap-pick .lsn-pick-btn { font-size: 11px; } }
+.watch-list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.watch-hide-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 12.5px; margin-top: 18px; }

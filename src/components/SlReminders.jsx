@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle, Eye, PlusCircle, X } from "lucide-react";
+import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, X } from "lucide-react";
 import { ConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
   looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
-  parseSymbolList, setupCheckStats, setupCheckStreak,
+  parseSymbolList, readLocalUi, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
 } from "../lib/helpers.js";
 
@@ -425,9 +425,11 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
 // lọc theo chữ đang gõ — symbol quen thì bấm một phát là xong, khỏi gõ.
 const SYMBOL_SUGGEST_SHOWN = 12;
 
-function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus }) {
+function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus, hideDone }) {
   const [text, setText] = useState("");
   const chosen = useMemo(() => new Set((items || []).map((x) => x.name)), [items]);
+  // Ẩn mã đã ngừng chỉ là ẩn khỏi mắt: danh sách thật (để gợi ý, để chống trùng) vẫn đủ.
+  const shown = hideDone ? (items || []).filter((x) => !x.done) : (items || []);
   // Mã đã biết, để khi dịch ngược Telex mà có nhiều cách đọc thì chọn đúng mã có thật.
   const known = useMemo(() => new Set(suggestions || []), [suggestions]);
   const parse = (raw) => parseSymbolList(raw, known);
@@ -459,16 +461,16 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
       if (onSubmitEmpty) onSubmitEmpty();
       return;
     }
-    if (e.key === "Backspace" && !text && (items || []).length) {
+    if (e.key === "Backspace" && !text && shown.length) {
       e.preventDefault();
-      onRemove(items[items.length - 1]);
+      onRemove(shown[shown.length - 1]);
     }
   };
 
   return (
     <div>
       <div className="symbol-box" onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector("input").focus(); }}>
-        {(items || []).map((x) => (
+        {shown.map((x) => (
           <span key={x.id || x.name} className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""}`}>
             {onToggle ? (
               <button type="button" className="chip-main" onClick={() => onToggle(x)}
@@ -480,7 +482,7 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
           </span>
         ))}
         <input className="symbol-box-input" value={text} autoFocus={autoFocus}
-          placeholder={(items || []).length ? "Thêm symbol..." : (placeholder || "XAUUSD EURUSD GBPJPY")}
+          placeholder={shown.length ? "Thêm symbol..." : (placeholder || "XAUUSD EURUSD GBPJPY")}
           onChange={(e) => onType(e.target.value)} onKeyDown={onKeyDown}
           onPaste={(e) => {
             // Ô một dòng tự nuốt ký tự xuống dòng, nên dán một cột từ Excel/TradingView
@@ -516,6 +518,10 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
 
 export function SymbolWatchPanel({ settings, watches, resources, trades, onSettingsChange, onWatchesChange }) {
   const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+  // Ẩn mã đã ngừng (gạch ngang) — nhớ trên máy này, áp cho mọi nhóm.
+  const [hideDone, setHideDone] = useState(() => readLocalUi("watchHideDone", "0") === "1");
+  const toggleHideDone = () => { const next = !hideDone; setHideDone(next); writeLocalUi("watchHideDone", next ? "1" : "0"); };
+  const doneTotal = (watches || []).reduce((n, w) => n + (w.symbols || []).filter((x) => x.done).length, 0);
   const s = settings;
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — cảnh báo symbol theo dõi sẽ gửi vào đây.");
@@ -548,11 +554,16 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
     setDraft((p) => ({ ...p, symbols: sortSymbolNames([...p.symbols, ...names.filter((n) => !p.symbols.includes(n))]) }));
 
   // Thêm vào nhóm đã lưu: giữ nguyên symbol cũ (kèm trạng thái done) và bỏ qua trùng tên.
+  // Gõ lại một mã đã ngừng thì bật theo dõi lại — nhất là khi đang ẩn mã đã ngừng, không thì
+  // gõ xong chẳng thấy gì xảy ra vì mã đó "đã có" rồi.
   const addWatchSymbols = (w, names) => {
     const cur = w.symbols || [];
+    const want = new Set(names);
+    const revived = cur.map((x) => (x.done && want.has(x.name) ? { ...x, done: false } : x));
     const have = new Set(cur.map((x) => x.name));
     const add = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, done: false }));
-    if (add.length) updateWatch(w.id, { symbols: sortWatchSymbols([...cur, ...add]) });
+    const changed = add.length || revived.some((x, i) => x !== cur[i]);
+    if (changed) updateWatch(w.id, { symbols: sortWatchSymbols([...revived, ...add]) });
   };
   const removeWatchSymbol = (w, item) =>
     updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
@@ -632,7 +643,15 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
         </div>
       </div>
 
-      <h3 className="block-title">Các nhóm đang theo dõi</h3>
+      <div className="watch-list-head">
+        <h3 className="block-title">Các nhóm đang theo dõi</h3>
+        {doneTotal ? (
+          <button type="button" className="btn btn-ghost watch-hide-btn" onClick={toggleHideDone}
+            title={hideDone ? "Hiện lại các mã đã ngừng (gạch ngang)" : "Ẩn các mã đã ngừng (gạch ngang) cho gọn"}>
+            {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
+          </button>
+        ) : null}
+      </div>
       {watches.length === 0 ? (
         <p className="empty-note">Chưa có nhóm nào — thêm ở trên để bắt đầu nhận cảnh báo.</p>
       ) : (
@@ -669,7 +688,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
 
                 {/* Thêm bằng cách gõ tên rồi phím cách; bấm tên chip để tạm ngừng, bấm × để xóa hẳn. */}
                 <div style={{ marginTop: 8 }}>
-                  <SymbolBox items={symbols} suggestions={suggestions}
+                  <SymbolBox items={symbols} suggestions={suggestions} hideDone={hideDone}
                     onAdd={(names) => addWatchSymbols(w, names)}
                     onRemove={(x) => removeWatchSymbol(w, x)}
                     onToggle={(x) => toggleSymbol(w, x.id)} />
@@ -681,6 +700,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
                 ) : (
                   <p className="field-hint" style={{ marginTop: 6 }}>
                     {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
+                    {hideDone && symbols.length > remaining ? ` · đang ẩn ${symbols.length - remaining} mã đã ngừng` : ""}
                   </p>
                 )}
 
