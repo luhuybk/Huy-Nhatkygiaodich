@@ -29,18 +29,21 @@ function BlurNumber({ value, onCommit, className = "input mono", step = "any", m
 
 function TierPicker({ market, picked, onPick }) {
   const list = marketTierList(market);
+  // Lưới chia đều một hàng: 5 mức (kể cả cầm chừng) vẫn nằm gọn, không đẩy nút xuống dòng.
   return (
-    <div className="lsn-pick cap-pick">
-      {list.map(({ pct, hold }) => (
-        <button key={pct} type="button" title={hold ? "Mốc cầm chừng" : undefined}
-          className={`lsn-pick-btn ${hold ? "cap-pick-hold" : ""} ${picked === pct ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => onPick(pct)}>
-          {hold ? <Shield size={11} className="cap-pick-hold-icon" /> : null}{fmtPctVN(pct)}
-        </button>
-      ))}
+    <>
+      <div className="cap-pick" style={{ gridTemplateColumns: `repeat(${list.length}, minmax(0, 1fr))` }}>
+        {list.map(({ pct, hold }) => (
+          <button key={pct} type="button" title={hold ? "Mốc cầm chừng" : undefined}
+            className={`lsn-pick-btn ${hold ? "cap-pick-hold" : ""} ${picked === pct ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => onPick(pct)}>
+            {hold ? <Shield size={10} className="cap-pick-hold-icon" /> : null}{fmtPctVN(pct)}
+          </button>
+        ))}
+      </div>
       {picked !== null && !list.some((x) => x.pct === picked) ? (
         <span className="field-hint">Đang chọn {fmtPctVN(picked)} (đã gỡ khỏi danh sách mức)</span>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -156,7 +159,8 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
 }
 
 // Một tài khoản con trong mảng nhiều tài khoản: chọn mức riêng, sụt vốn và chuỗi thua riêng.
-function UnitBlock({ plan, market, account, dd, weeks, onPick }) {
+function UnitBlock({ plan, market, account, units, dd, weeks, onPick }) {
+  const label = unitLabel(market, account, units);
   const now = pickedTier(plan, market.id, weeks.now, account.id);
   const next = pickedTier(plan, market.id, weeks.next, account.id);
   const c = unitDrawdown(dd, account.name);
@@ -165,7 +169,7 @@ function UnitBlock({ plan, market, account, dd, weeks, onPick }) {
   return (
     <div className={`cap-unit cap-unit-${c.level}`}>
       <div className="cap-unit-head">
-        <b>{unitLabel(market, account)}</b>
+        <b>{label}</b>
         <span className="mono cap-unit-now">{fmtPctVN(now.pct)} · {fmtMoney(tierMoney(market, now.pct), market.currency)}</span>
         <span className={`cap-tile-status cap-tile-status-${c.level}`}>{DD_LABEL[c.level]}</span>
       </div>
@@ -185,7 +189,7 @@ function UnitBlock({ plan, market, account, dd, weeks, onPick }) {
       {c.level === "cut" && now.pct !== null && safest !== null && now.pct > safest ? (
         <p className="cap-suggest">
           Sụt quá {fmtPctVN(cut, 0)}.{" "}
-          <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onPick(weeks.now, safest, account.id)}>Hạ {unitLabel(market, account)} về {fmtPctVN(safest)}</button>
+          <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onPick(weeks.now, safest, account.id)}>Hạ {label} về {fmtPctVN(safest)}</button>
         </p>
       ) : null}
     </div>
@@ -202,7 +206,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
   const linked = accounts.filter((a) => market.accountIds.includes(a.id));
   // Tách theo tài khoản con: mũi tên trong bảng ghi tên những tài khoản đang đi ở mức đó.
   const unitNow = units.map((a) => ({ a, pct: pickedTier(plan, market.id, weeks.now, a.id).pct }));
-  const onTier = (pct) => (units.length ? unitNow.filter((u) => u.pct === pct).map((u) => unitLabel(market, u.a)) : pct === now.pct ? [""] : []);
+  const onTier = (pct) => (units.length ? unitNow.filter((u) => u.pct === pct).map((u) => unitLabel(market, u.a, units)) : pct === now.pct ? [""] : []);
   if (editing) {
     return (
       <div className="cap-card">
@@ -245,7 +249,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
 
       {units.length ? (
         <div className="cap-units">
-          {units.map((a) => <UnitBlock key={a.id} plan={plan} market={market} account={a} dd={dd} weeks={weeks} onPick={onPick} />)}
+          {units.map((a) => <UnitBlock key={a.id} plan={plan} market={market} account={a} units={units} dd={dd} weeks={weeks} onPick={onPick} />)}
         </div>
       ) : (
         <>
@@ -402,7 +406,7 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
     const units = marketUnits(m, resources.accounts);
     const row = (account) => {
       const p = pickedTier(plan, m.id, week, account ? account.id : undefined);
-      return { key: unitKey(m.id, account && account.id), m, account, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd: account ? unitDrawdown(dd, account.name) : dd };
+      return { key: unitKey(m.id, account && account.id), m, account, label: account ? unitLabel(m, account, units) : m.name, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd: account ? unitDrawdown(dd, account.name) : dd };
     };
     return units.length ? units.map(row) : [row(null)];
   }) : []), [plan, trades, resources, week]);
@@ -420,14 +424,14 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
         <button type="button" className="cap-summary-open" onClick={onOpen}>Mở bảng phân bổ <ChevronRight size={13} /></button>
       </div>
       <div className="cap-tiles">
-        {ordered.map(({ key, m, account, pct, money, dd }) => {
+        {ordered.map(({ key, m, account, label, pct, money, dd }) => {
           const isHold = pct !== null && pct === m.holdTier;
           const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
           return (
             <button type="button" key={key} onClick={onOpen}
               className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""}`}>
               <span className="cap-tile-head">
-                <span className="cap-tile-name">{account ? <><small className="cap-tile-parent">{m.name} ·</small> {unitLabel(m, account)}</> : m.name}</span>
+                <span className="cap-tile-name">{account ? <><small className="cap-tile-parent">{m.name} ·</small> {label}</> : m.name}</span>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className={`cap-tile-status cap-tile-status-${dd.level}`}>{DD_LABEL[dd.level]}</span>
               </span>
@@ -452,7 +456,7 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
 // Hàng chip ở mục 2 form nhập lệnh.
 export function RiskTierChips({ options, dd, plan, riskAmount, onPick }) {
   if (!options) return null;
-  const { market, unit, picked, currency, tiers } = options;
+  const { market, unit, unitName, picked, currency, tiers } = options;
   dd = unit ? unitDrawdown(dd, unit.name) : dd;
   const allowed = picked.pct === null ? null : tierMoney(market, picked.pct);
   const amt = Number(riskAmount);
@@ -464,7 +468,7 @@ export function RiskTierChips({ options, dd, plan, riskAmount, onPick }) {
   return (
     <div className="cap-chips">
       <div className="cap-chips-head">
-        <span><b>{market.name}{unit ? ` · ${unitLabel(market, unit)}` : ""}</b> · tuần này {fmtPctVN(picked.pct)}</span>
+        <span><b>{market.name}{unit ? ` · ${unitName}` : ""}</b> · tuần này {fmtPctVN(picked.pct)}</span>
         {dd ? (
           <span className={`cap-chips-dd cap-chips-dd-${dd.level === "ok" && dd.lossStreak >= 2 ? "warn" : dd.level}`}>
             Sụt {fmtPctVN(dd.pct, 1)}{dd.level === "cut" ? " — nên giảm risk" : dd.level === "warn" ? " — cảnh báo" : dd.lossStreak >= 2 ? "" : " ✓"}

@@ -199,9 +199,19 @@ export function marketUnits(m, accounts) {
   return leaves.length >= 2 ? leaves : [];
 }
 
-// Tên tài khoản con trong ngữ cảnh mảng: "FX H3" nằm trong mảng FX thì gọi gọn là "H3".
-export function unitLabel(m, account) {
+// Tên tài khoản con trong ngữ cảnh mảng, bỏ phần chung của cả nhóm: "Forex - H3", "Forex - H8",
+// "Forex - D" → "H3", "H8", "D". Chỉ cắt tới dấu phân cách (cách, -, _, ·, :, /, |, .) để không
+// cắt đôi một chữ — "H3" với "H8" chung chữ "H" nhưng không được thành "3" với "8".
+export function unitLabel(m, account, siblings) {
   const name = (account && account.name) || "";
+  const names = (siblings || []).map((a) => (a && a.name) || "").filter(Boolean);
+  if (names.length >= 2 && names.includes(name)) {
+    let common = names[0];
+    names.forEach((n) => { while (common && !n.startsWith(common)) common = common.slice(0, -1); });
+    const hit = /^(.*[\s\-_·:/|.])/.exec(common);
+    const cut = hit ? hit[1].length : 0;
+    if (cut && names.every((n) => n.slice(cut).trim())) return name.slice(cut).trim();
+  }
   const prefix = `${(m && m.name) || ""} `.toLowerCase();
   return prefix.trim() && name.toLowerCase().startsWith(prefix) && name.length > prefix.length ? name.slice(prefix.length) : name;
 }
@@ -291,11 +301,13 @@ export function riskTierOptions(plan, accountName, dateStr, accounts) {
   const m = marketForAccount(plan, accountName, accounts);
   if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
-  const unit = marketUnits(m, accounts).find((a) => a.name === accountName) || null;
+  const units = marketUnits(m, accounts);
+  const unit = units.find((a) => a.name === accountName) || null;
   const picked = pickedTier(plan, m.id, week, unit ? unit.id : undefined);
   return {
     market: m,
     unit,
+    unitName: unit ? unitLabel(m, unit, units) : "",
     week,
     picked,
     currency: m.currency,
