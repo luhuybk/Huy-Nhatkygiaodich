@@ -282,7 +282,7 @@ export function marketDrawdown(plan, m, trades, resources) {
     curves = list.map((name) => {
       const own = closed.filter((x) => x.t.account === name);
       const c = curveDrawdown(own.map(pnl), base);
-      return { name, ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(own) };
+      return { name, ...c, level: drawdownLevel(plan, c.pct), lossStreak: lossStreakOf(own), tradeCount: own.length };
     });
   } else {
     const c = curveDrawdown(closed.map(pnl), base);
