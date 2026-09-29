@@ -3,6 +3,7 @@ import { LayoutDashboard, ChevronLeft, ChevronDown, ChevronRight, GraduationCap,
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
+import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
 import { accountFamily, accountOptions, corePlanItems, lessonLevel, lessonTitle, planItemLine, readLocalUi, writeLocalUi, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
@@ -133,7 +134,7 @@ function CorePlan({ plans, onGoToPlans }) {
   );
 }
 
-export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans }) {
+export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans, capitalPlan, onGoToCapital }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
@@ -149,6 +150,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
     return (
       <div>
         <RiskAlertBanner alerts={riskAlerts} />
+        <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
         <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
         <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
         {scopeBar}
@@ -212,6 +214,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   return (
     <div>
       <RiskAlertBanner alerts={riskAlerts} />
+      <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
       <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
       <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
       {scopeBar}

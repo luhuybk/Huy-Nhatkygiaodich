@@ -153,6 +153,97 @@ function toUSD(amount: number, currency: string | undefined, fxRates: Record<str
   return amount / rate;
 }
 
+// ——— Bảng phân bổ vốn (khoá capitalPlan) ———
+// Bản chép của src/lib/capital.js — sửa cách tính bên đó thì sửa luôn ở đây, không thì tin nhắn
+// và app nói hai con số sụt vốn khác nhau.
+type CapMarket = {
+  id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
+  tiers?: number[]; defaultTier?: number; accountIds?: string[];
+};
+type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
+type CapAccount = { id: string; name: string; currency?: string; parentId?: string };
+
+function capPicked(plan: CapPlan, m: CapMarket, week: string) {
+  const picks = plan.picks || {};
+  const keys = Object.keys(picks).filter((k) => k <= week).sort();
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const v = picks[keys[i]]?.[m.id];
+    if (v !== undefined && v !== null && (v as unknown) !== "") return { pct: Number(v), explicit: keys[i] === week };
+  }
+  const tiers = (m.tiers || []).map(Number).filter((x) => x > 0).sort((a, b) => a - b);
+  const def = Number(m.defaultTier);
+  return { pct: tiers.includes(def) ? def : (tiers[Math.floor((tiers.length - 1) / 2)] ?? null), explicit: false };
+}
+
+function capUnitBase(m: CapMarket) {
+  const rate = m.currency && m.currency !== "USD" ? Number(m.rate) || 1 : 1;
+  return ((Number(m.allocated) || 0) * rate) / Math.max(1, Math.round(Number(m.accountCount) || 1));
+}
+
+function capFamily(accounts: CapAccount[], m: CapMarket) {
+  const names = new Set<string>();
+  for (const id of m.accountIds || []) {
+    const root = accounts.find((a) => a.id === id);
+    if (!root) continue;
+    names.add(root.name);
+    const ids = new Set([root.id]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const a of accounts) {
+        if (a.parentId && ids.has(a.parentId) && !ids.has(a.id)) { ids.add(a.id); names.add(a.name); added = true; }
+      }
+    }
+  }
+  return names;
+}
+
+function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>) {
+  const names = capFamily(accounts, m);
+  const from = plan.startDate || "";
+  const base = capUnitBase(m);
+  const mCur = m.currency || "USD";
+  const closed = trades
+    .filter((t) => names.has(t.account as string) && (!from || String(t.exitDate || t.entryDate || "") >= from))
+    .filter((t) => t.profit !== "" && t.profit !== null && t.profit !== undefined && !Number.isNaN(Number(t.profit)))
+    .sort((a, b) => String(a.exitDate || a.entryDate || "").localeCompare(String(b.exitDate || b.entryDate || "")) || (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+  const pnl = (t: Record<string, unknown>) => {
+    const profit = Number(t.profit) + partialProfitOf(t) + feesOf(t);
+    const cur = accounts.find((a) => a.name === t.account)?.currency || "USD";
+    if (cur === mCur) return profit;
+    const r = cur === "USD" ? 1 : Number(fxRates[cur]) || 0;
+    const usd = r > 0 ? profit / r : profit;
+    return usd * (mCur === "USD" ? 1 : Number(m.rate) || 1);
+  };
+  const curve = (list: Record<string, unknown>[]) => {
+    let eq = base, peak = base;
+    for (const t of list) { eq += pnl(t); if (eq > peak) peak = eq; }
+    return peak > 0 ? Math.max(0, ((peak - eq) / peak) * 100) : 0;
+  };
+  let worst = { name: "", pct: 0 };
+  if ((Number(m.accountCount) || 1) > 1) {
+    const isGroup = (a: CapAccount) => accounts.some((x) => x.parentId === a.id);
+    const list = new Set([...names].filter((n) => { const a = accounts.find((x) => x.name === n); return a && !isGroup(a); }));
+    closed.forEach((t) => list.add(t.account as string));
+    [...list].sort().forEach((name, i) => {
+      const pct = curve(closed.filter((t) => t.account === name));
+      if (i === 0 || pct > worst.pct) worst = { name, pct };
+    });
+  } else {
+    worst = { name: "", pct: curve(closed) };
+  }
+  const cut = Number(plan.ddCutPct) || 12, warn = Number(plan.ddWarnPct) || 8;
+  return { ...worst, level: worst.pct >= cut ? "cut" : worst.pct >= warn ? "warn" : "ok", linked: names.size > 0 };
+}
+
+const pctVN = (v: number | null, digits = 2) => (v === null || !Number.isFinite(v) ? "—" : `${Number(v.toFixed(digits))}%`.replace(".", ","));
+function capMoney(v: number, currency?: string) {
+  const s = Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (!currency || currency === "USD") return `$${s}`;
+  if (currency === "VND") return `${s}₫`;
+  return `${s} ${currency}`;
+}
+
 // Khuôn tin nhắn chung: dòng trống → tiêu đề (kèm bối cảnh) → chủ thể được làm nổi bật.
 function buildMessage(titleIcon: string, title: string, mark: string, subject: string, titleSuffix?: string, extra?: string) {
   const head = titleSuffix ? `${titleIcon} ${title} | ${titleSuffix}` : `${titleIcon} ${title}`;
@@ -229,6 +320,7 @@ Deno.serve(async () => {
       weeklySummary?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       mutedFillReminder?: { enabled?: boolean; days?: number | string; time?: string; threadId?: string };
       reconcileReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
+      capitalPickReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
     };
@@ -471,6 +563,53 @@ Deno.serve(async () => {
           log[logKey] = true;
           logChanged = true;
           sent++;
+        }
+      }
+    }
+
+    // Cuối tuần chọn mức đi vốn cho tuần sau (tab Phân bổ vốn). Chỉ gửi khi còn mảng chưa chọn —
+    // chọn đủ rồi thì im, không thì thành tin nhắn rác mỗi tuần.
+    const cap = settings.capitalPickReminder;
+    if (cap?.enabled && (cap.weekday || "CN") === todayWeekdayCode
+        && minutesDiff(cap.time || "20:00", currentHHMM) <= MATCH_TOLERANCE_MIN
+        && !isTaskDone("capitalPick", cap.time || "20:00")) {
+      const logKey = `capitalpick_${today}`;
+      if (!log[logKey]) {
+        const { data: planRow } = await supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "capitalPlan").maybeSingle();
+        const plan = (planRow?.value || null) as CapPlan | null;
+        const markets = plan && Array.isArray(plan.markets) ? plan.markets.filter((m) => m && m.id) : [];
+        if (plan && markets.length) {
+          const weekNow = shiftDateStr(today, -((todayWeekdayNum + 6) % 7));
+          const weekNext = shiftDateStr(weekNow, 7);
+          const fxRates = (resourcesRow?.value?.fxRates || {}) as Record<string, number>;
+          const rows = markets.map((m) => {
+            const now = capPicked(plan, m, weekNow);
+            const next = capPicked(plan, m, weekNext);
+            const dd = capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates);
+            return { m, now, next, dd };
+          });
+          const missing = rows.filter((r) => !r.next.explicit);
+          if (missing.length) {
+            const lines = rows.map(({ m, now, next, dd }) => {
+              const money = now.pct === null ? "" : ` (${capMoney((capUnitBase(m) * now.pct) / 100, m.currency)})`;
+              const ddText = !dd.linked ? "chưa gắn tài khoản"
+                : `sụt ${pctVN(dd.pct, 1)}${dd.name ? ` ở ${dd.name}` : ""}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}`;
+              const nextText = next.explicit ? `✔ tuần sau ${pctVN(next.pct)}` : "⏳ chưa chọn";
+              return `• ${m.name || "?"}: tuần này ${pctVN(now.pct)}${money} · ${ddText} · ${nextText}`;
+            });
+            const text = buildMessage(
+              "💰", "CHỌN MỨC ĐI VỐN", "⭐", `Tuần ${ddmm(weekNext)} – ${ddmm(shiftDateStr(weekNext, 6))}`, undefined,
+              `${lines.join("\n")}\nMở tab Phân bổ vốn để chọn — chưa chọn thì tuần sau giữ nguyên mức tuần này.`,
+            );
+            if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, cap.threadId)) {
+              log[logKey] = true;
+              logChanged = true;
+              sent++;
+            }
+          } else {
+            log[logKey] = true;
+            logChanged = true;
+          }
         }
       }
     }

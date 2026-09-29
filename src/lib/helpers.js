@@ -556,6 +556,7 @@ export function emptySlReminderSettings() {
     weeklySummary: emptyWeeklySummary(),
     mutedFillReminder: emptyMutedFillReminder(),
     reconcileReminder: emptyReconcileReminder(),
+    capitalPickReminder: emptyCapitalPickReminder(),
     taskDurations: emptyTaskDurations(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
   };
@@ -581,6 +582,11 @@ export function emptyMutedFillReminder() {
 // đóng cửa, nhắc xuất CSV rồi quét ở tab Nhật ký → Đối chiếu sàn.
 export function emptyReconcileReminder() {
   return { enabled: false, weekday: "CN", time: "10:00", threadId: "" };
+}
+
+// Cuối tuần chọn mức đi vốn cho tuần sau (tab Phân bổ vốn). Bot chỉ gửi khi còn mảng chưa chọn.
+export function emptyCapitalPickReminder() {
+  return { enabled: false, weekday: "CN", time: "20:00", threadId: "" };
 }
 
 export const MUTED_FILL_DEFAULT_DAYS = 3;
@@ -1162,6 +1168,7 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
     { cfg: st.incompleteReminder, title: "Nhắc điền nốt lệnh", id: "incomplete" },
     { cfg: st.weeklySummary, title: "Tổng kết tuần", id: "weekly" },
     { cfg: st.reconcileReminder, title: "Đối chiếu file sàn", id: "reconcile" },
+    { cfg: st.capitalPickReminder, title: "Chọn mức đi vốn tuần sau", id: "capitalPick" },
   ];
   weeklyJobs.forEach(({ cfg, title, id }) => {
     if (!cfg) return;
@@ -1333,6 +1340,7 @@ export function timelineSources({ settings, watches, reminders, durations, openT
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
   if (st.weeklySummary) add("report", "weekly", "weekly", "Tổng kết tuần", [st.weeklySummary.time], [st.weeklySummary.weekday], !!st.weeklySummary.enabled, st.weeklySummary.minutes);
   if (st.reconcileReminder) add("report", "reconcile", "reconcile", "Đối chiếu file sàn", [st.reconcileReminder.time], [st.reconcileReminder.weekday], !!st.reconcileReminder.enabled, st.reconcileReminder.minutes);
+  if (st.capitalPickReminder) add("report", "capitalPick", "capitalPick", "Chọn mức đi vốn tuần sau", [st.capitalPickReminder.time], [st.capitalPickReminder.weekday], !!st.capitalPickReminder.enabled, st.capitalPickReminder.minutes);
   (reminders || []).forEach((r) => {
     if (r.frequency !== "weekly" || !r.notifyTelegram) return;
     add("reminder", r.id, `r_${r.id}`, r.title || "Nhắc nhở", [r.notifyTime || "08:00"], [weekdayCodeFromNumber(r.weekday)], r.active !== false, r.minutes);
@@ -1363,7 +1371,7 @@ function patchItem(item, source, patch) {
 }
 
 // Mỗi báo cáo tuần nằm ở một khoá riêng trong cài đặt — bảng này để timeline biết sửa vào đâu.
-const REPORT_KEYS = { weekly: "weeklySummary", incomplete: "incompleteReminder", reconcile: "reconcileReminder" };
+const REPORT_KEYS = { weekly: "weeklySummary", incomplete: "incompleteReminder", reconcile: "reconcileReminder", capitalPick: "capitalPickReminder" };
 
 // Ghi một thay đổi (dời giờ hoặc đổi thời gian dự kiến) ngược về đúng bản ghi gốc.
 // `changed` cho biết phải lưu khoá nào, để không ghi đè những khoá không liên quan.

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
+import { RiskTierChips } from "./CapitalPlan.jsx";
+import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
 import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
@@ -283,7 +285,7 @@ function SetupErrorPicker({ trade, catalog, onChange }) {
   );
 }
 
-export function TradeForm({ initial, resources, setupErrors, skills, trades, ledger, onSave, onCancel }) {
+export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills, trades, ledger, onSave, onCancel }) {
   const [t, setT] = useState(initial || emptyTrade());
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
@@ -344,6 +346,16 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
+  const tierOptions = useMemo(
+    () => (capitalPlan ? riskTierOptions(capitalPlan, t.account, t.entryDate || todayStr(), resources.accounts) : null),
+    [capitalPlan, t.account, t.entryDate, resources.accounts]
+  );
+  // Sụt vốn không tính lệnh đang sửa: sửa lại một lệnh thua cũ thì con số không nên tự đổi
+  // theo từng phím gõ ở ô lãi/lỗ.
+  const tierDrawdown = useMemo(
+    () => (tierOptions ? marketDrawdown(capitalPlan, tierOptions.market, (trades || []).filter((x) => x.id !== t.id), resources) : null),
+    [tierOptions, capitalPlan, trades, t.id, resources]
+  );
   const existingOpenRisk = selectedAccount
     ? accountOpenRisk(selectedAccount, ledger || [], (trades || []).filter((x) => x.id !== t.id))
     : { pct: 0, count: 0 };
@@ -450,6 +462,8 @@ export function TradeForm({ initial, resources, setupErrors, skills, trades, led
               : `Tài khoản "${selectedAccount.name}" đang mở ${existingOpenRisk.pct.toFixed(2)}% risk từ ${existingOpenRisk.count} lệnh khác. Cộng thêm rủi ro lệnh này để cân nhắc tổng risk.`}
           </div>
         ) : null}
+        <RiskTierChips options={tierOptions} dd={tierDrawdown} plan={capitalPlan} riskAmount={t.riskAmount}
+          onPick={(x) => setT((prev) => ({ ...prev, riskPercent: String(x.pct), riskAmount: String(x.money) }))} />
         <div className="grid-3">
           <Field label="Rủi ro (%)" incomplete={missing("riskPercent")}>
             <input type="number" step="0.01" className="input mono" value={t.riskPercent} onChange={(e) => set("riskPercent")(e.target.value)} placeholder="1.0" />
