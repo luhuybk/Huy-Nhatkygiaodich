@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { LayoutDashboard, ChevronLeft, ChevronDown, ChevronRight, GraduationCap, Map as MapIcon } from "lucide-react";
+import { LayoutDashboard, ChevronLeft, ChevronRight, GraduationCap, Map as MapIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { accountFamily, accountOptions, corePlanItems, lessonLevel, lessonTitle, planItemLine, readLocalUi, writeLocalUi, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { accountFamily, accountOptions, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -61,74 +61,30 @@ export function DashboardFilters({ resources, account, onAccount, range, onRange
   );
 }
 
-// Bài học cấp 1 là thứ bạn tự đánh dấu "phải thuộc nằm lòng, sai là trả giá đắt" — mà lại
-// nằm sâu trong trang Hành trình, mở ra đọc thì đã vào lệnh xong rồi. Đặt ngay đầu Tổng quan,
-// là trang mở đầu tiên mỗi ngày. Chỉ cấp 1, không lấn sang cấp 2-3: nhồi hết thì thành nền,
-// và nền thì không ai đọc.
-const CORE_SHOWN = 4;
-
-function CoreLessons({ lessons, onGoToLessons }) {
-  const [open, setOpen] = useState(() => readLocalUi("dashCoreOpen", "1") !== "0");
-  const core = useMemo(() => (lessons || []).filter((n) => lessonLevel(n) === 1), [lessons]);
-  if (!core.length) return null;
-  const toggle = () => { const next = !open; setOpen(next); writeLocalUi("dashCoreOpen", next ? "1" : "0"); };
+// Kế hoạch cấp 1 và Bài học cốt lõi: trước đây thả nguyên danh sách ra đầu Tổng quan, chiếm
+// chỗ mà đọc lướt thì cũng thành nền. Giờ chỉ là hai nút — con số nhắc là có, bấm là vào đúng
+// trang để đọc cho tử tế. Chỉ đếm kế hoạch đang bật và bài học cấp 1.
+function CoreShortcuts({ plans, lessons, onGoToPlans, onGoToLessons }) {
+  const planCount = useMemo(() => corePlanItems(plans).length, [plans]);
+  const lessonCount = useMemo(() => (lessons || []).filter((n) => lessonLevel(n) === 1).length, [lessons]);
+  if (!planCount && !lessonCount) return null;
   return (
-    <div className="core-lessons">
-      <button type="button" className="core-lessons-head" onClick={toggle}>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <GraduationCap size={14} />
-        <b>Bài học cốt lõi</b>
-        <span className="var-group-count">{core.length}</span>
-      </button>
-      {open ? (
-        <>
-          <ul className="core-lessons-list">
-            {core.slice(0, CORE_SHOWN).map((n) => (
-              <li key={n.id}>{lessonTitle(n) || "(chưa có nội dung)"}</li>
-            ))}
-          </ul>
-          <button type="button" className="core-lessons-more" onClick={onGoToLessons}>
-            {core.length > CORE_SHOWN ? `Xem tất cả ${core.length} bài cốt lõi` : "Mở trang bài học"}
-          </button>
-        </>
+    <div className="core-shortcuts">
+      {planCount ? (
+        <button type="button" className="core-shortcut" onClick={onGoToPlans}>
+          <MapIcon size={16} />
+          <span className="core-shortcut-text"><b>Kế hoạch cấp 1</b><small>Đọc trước khi vào lệnh</small></span>
+          <span className="core-shortcut-count">{planCount}</span>
+          <ChevronRight size={15} />
+        </button>
       ) : null}
-    </div>
-  );
-}
-
-// Cùng lý do với Bài học cốt lõi, và đúng hơn nữa: kế hoạch là thứ phải đọc TRƯỚC khi bấm
-// lệnh. Chỉ lấy cấp 1 của những kế hoạch đang bật — kế hoạch đã tắt vẫn giữ nội dung để đọc
-// lại, nhưng không được chen lên đây.
-const PLAN_SHOWN = 4;
-
-function CorePlan({ plans, onGoToPlans }) {
-  const [open, setOpen] = useState(() => readLocalUi("dashCorePlanOpen", "1") !== "0");
-  const core = useMemo(() => corePlanItems(plans), [plans]);
-  const manyPlans = useMemo(() => new Set(core.map((it) => it.planId)).size > 1, [core]);
-  if (!core.length) return null;
-  const toggle = () => { const next = !open; setOpen(next); writeLocalUi("dashCorePlanOpen", next ? "1" : "0"); };
-  return (
-    <div className="core-lessons core-plan">
-      <button type="button" className="core-lessons-head" onClick={toggle}>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <MapIcon size={14} />
-        <b>Kế hoạch cấp 1</b>
-        <span className="var-group-count">{core.length}</span>
-      </button>
-      {open ? (
-        <>
-          <ul className="core-lessons-list">
-            {core.slice(0, PLAN_SHOWN).map((it) => (
-              <li key={it.id}>
-                {manyPlans && it.planName ? <span className="core-plan-tag">{it.planName}</span> : null}
-                {planItemLine(it)}
-              </li>
-            ))}
-          </ul>
-          <button type="button" className="core-lessons-more" onClick={onGoToPlans}>
-            {core.length > PLAN_SHOWN ? `Xem tất cả ${core.length} mục cấp 1` : "Mở trang kế hoạch"}
-          </button>
-        </>
+      {lessonCount ? (
+        <button type="button" className="core-shortcut" onClick={onGoToLessons}>
+          <GraduationCap size={16} />
+          <span className="core-shortcut-text"><b>Bài học cốt lõi</b><small>Sai là trả giá đắt</small></span>
+          <span className="core-shortcut-count">{lessonCount}</span>
+          <ChevronRight size={15} />
+        </button>
       ) : null}
     </div>
   );
@@ -151,8 +107,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
       <div>
         <RiskAlertBanner alerts={riskAlerts} />
         <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
-        <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
-        <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
+        <CoreShortcuts plans={tradingPlans} lessons={lessons} onGoToPlans={onGoToPlans} onGoToLessons={onGoToLessons} />
         {scopeBar}
         <div className="empty-state">
           <LayoutDashboard size={28} color="var(--text-dim)" />
@@ -215,8 +170,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
     <div>
       <RiskAlertBanner alerts={riskAlerts} />
       <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
-      <CorePlan plans={tradingPlans} onGoToPlans={onGoToPlans} />
-      <CoreLessons lessons={lessons} onGoToLessons={onGoToLessons} />
+      <CoreShortcuts plans={tradingPlans} lessons={lessons} onGoToPlans={onGoToPlans} onGoToLessons={onGoToLessons} />
       {scopeBar}
       <h3 className="block-title" style={{ marginTop: 0 }}>Chỉ số quan trọng</h3>
       <p className="field-hint" style={{ marginBottom: 10, marginTop: 4 }}>

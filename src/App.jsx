@@ -739,7 +739,7 @@ function AppShell({ onSignOut, userEmail }) {
           <div className="body">
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
-              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => goTo("lessons")}
+              {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => { writeLocalUi("journeyTab", "lessons"); goTo("lessons"); }}
                 tradingPlans={tradingPlans} onGoToPlans={() => { writeLocalUi("journeyTab", "plan"); goTo("lessons"); }}
                 capitalPlan={capitalPlanSaved} onGoToCapital={() => goTo("capitalplan")} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} onAddTrades={handleAddTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :

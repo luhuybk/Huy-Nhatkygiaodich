@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bell, CalendarClock, Check, Pencil, Plus, Scale, Send, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronRight, Pencil, Plus, Scale, Send, Shield, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
@@ -33,7 +33,7 @@ function TierPicker({ market, picked, onPick }) {
       {list.map(({ pct, hold }) => (
         <button key={pct} type="button" title={hold ? "Mốc cầm chừng" : undefined}
           className={`lsn-pick-btn ${hold ? "cap-pick-hold" : ""} ${picked === pct ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => onPick(pct)}>
-          {hold ? "Cầm chừng " : ""}{fmtPctVN(pct)}
+          {hold ? <Shield size={11} className="cap-pick-hold-icon" /> : null}{fmtPctVN(pct)}
         </button>
       ))}
       {picked !== null && !list.some((x) => x.pct === picked) ? (
@@ -188,7 +188,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
             <tr key={pct} className={`${hold ? "cap-tier-hold" : ""} ${pct === now.pct ? "cap-tier-on" : ""}`}>
               <td className="mono">{fmtPctVN(pct)}{hold ? <span className="cap-hold-tag">cầm chừng</span> : null}</td>
               <td className="mono">{fmtMoney(tierMoney(market, pct), market.currency)}</td>
-              <td className="mono">{fmtPctVN(tierShareOfTotal(plan, market, pct))}{pct === now.pct ? <span className="cap-arrow"> ← tuần này</span> : null}</td>
+              <td className="mono">{fmtPctVN(tierShareOfTotal(plan, market, pct))}{pct === now.pct ? <span className="cap-arrow" title="Mức tuần này"> ←</span> : null}</td>
             </tr>
           ))}
         </tbody>
@@ -333,7 +333,9 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
   );
 }
 
-// Thẻ nhỏ trên Tổng quan: mỗi mảng đang đi mức nào, 1R bao nhiêu tiền, sụt vốn ra sao.
+// Thẻ trên Tổng quan: mỗi mảng một ô riêng — mức đang đi to rõ, 1R bao nhiêu tiền, sụt vốn ra sao.
+const DD_LABEL = { ok: "Ổn", warn: "Cảnh báo", cut: "Giảm risk" };
+
 export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
   const today = todayStr();
   const week = thisWeekKey(today);
@@ -343,21 +345,42 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
   }) : []), [plan, trades, resources, week]);
   if (!plan || !rows.length) return null;
   const missing = isWeekend(today) ? marketsMissingNextPick(plan, today) : [];
+  // Mảng chính trước, tài khoản phụ sau — nhìn là biết đâu là tiền thật, đâu là chơi nhẹ.
+  const ordered = [...rows.filter((r) => !r.m.side), ...rows.filter((r) => r.m.side)];
   return (
     <div className="cap-summary">
-      <button type="button" className="cap-summary-head" onClick={onOpen}>
-        <Scale size={14} /> <b>Phân bổ vốn tuần này</b>
-        {missing.length ? <span className="cap-summary-due">Chưa chọn mức tuần sau: {missing.map((m) => m.name).join(", ")}</span> : null}
-      </button>
-      <div className="cap-summary-rows">
-        {rows.map(({ m, pct, money, dd }) => (
-          <div key={m.id} className={`cap-summary-row cap-summary-${dd.level}`}>
-            <span className="cap-summary-name">{m.name}{m.side ? <small className="cap-side-tag">phụ</small> : null}</span>
-            <b className="mono">{fmtPctVN(pct)}</b>
-            <span className="mono">1R = {money === null ? "—" : fmtMoney(money, m.currency)}</span>
-            <span className="mono cap-summary-dd" title="Sụt từ đỉnh">↓ {fmtPctVN(dd.pct, 1)}</span>
-          </div>
-        ))}
+      <div className="cap-summary-top">
+        <Scale size={16} />
+        <b>Phân bổ vốn tuần này</b>
+        <span className="cap-summary-week">{weekLabel(week)}</span>
+        {missing.length ? <span className="cap-summary-due"><CalendarClock size={12} /> Chưa chọn mức tuần sau: {missing.map((m) => m.name).join(", ")}</span> : null}
+        <button type="button" className="cap-summary-open" onClick={onOpen}>Mở bảng phân bổ <ChevronRight size={13} /></button>
+      </div>
+      <div className="cap-tiles">
+        {ordered.map(({ m, pct, money, dd }) => {
+          const isHold = pct !== null && pct === m.holdTier;
+          const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
+          return (
+            <button type="button" key={m.id} onClick={onOpen}
+              className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""}`}>
+              <span className="cap-tile-head">
+                <span className="cap-tile-name">{m.name}</span>
+                {m.side ? <small className="cap-side-tag">phụ</small> : null}
+                <span className={`cap-tile-status cap-tile-status-${dd.level}`}>{DD_LABEL[dd.level]}</span>
+              </span>
+              <span className="cap-tile-pct mono">
+                {fmtPctVN(pct)}
+                {isHold ? <small className="cap-tile-holdtag"><Shield size={11} /> cầm chừng</small> : null}
+              </span>
+              <span className="cap-tile-r mono">1R = {money === null ? "—" : fmtMoney(money, m.currency)}</span>
+              <span className="cap-tile-dd">
+                <span className="cap-tile-track"><span className="cap-tile-fill" style={{ width: `${barW}%` }} /></span>
+                <span className="mono">↓ {fmtPctVN(dd.pct, 1)}</span>
+              </span>
+              {dd.lossStreak >= 2 ? <span className="cap-tile-streak">Thua {dd.lossStreak} lệnh liên tiếp</span> : null}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
