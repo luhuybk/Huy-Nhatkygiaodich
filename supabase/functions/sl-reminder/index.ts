@@ -378,7 +378,7 @@ Deno.serve(async () => {
       enabled?: boolean;
       telegramBotToken?: string;
       telegramChatId?: string;
-      schedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
+      schedules?: { accountId: string; accountName?: string; timeframe?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       setupCheckEnabled?: boolean;
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
@@ -392,7 +392,21 @@ Deno.serve(async () => {
     // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
 
-    const schedules = settings.enabled ? (settings.schedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
+    // Lịch theo khung (có `timeframe`) mượn thứ trong tuần và topic của lịch chung tài khoản —
+    // bản chép slEffectiveSchedules / tradeInSchedule trong src/lib/helpers.js.
+    const allSchedules = settings.schedules || [];
+    const effective = allSchedules.map((s) => {
+      if (!s || !s.timeframe) return s;
+      const base = allSchedules.find((b) => b && !b.timeframe && b.accountId === s.accountId);
+      return { ...s, activeDays: base?.activeDays || s.activeDays, threadId: s.threadId || base?.threadId || "" };
+    });
+    const schedKey = (s: { accountId: string; timeframe?: string }) => (s.timeframe ? `${s.accountId}~${s.timeframe}` : s.accountId);
+    const inSchedule = (t: Record<string, unknown>, s: { accountId: string; timeframe?: string }) => {
+      const tf = String(t.timeframe || "");
+      if (s.timeframe) return tf === s.timeframe;
+      return !allSchedules.some((x) => x && x.timeframe && x.accountId === s.accountId && x.timeframe === tf);
+    };
+    const schedules = settings.enabled ? effective.filter((s) => s && s.enabled && (s.hours || []).length) : [];
     const setupCheckSchedules = settings.setupCheckEnabled ? (settings.setupCheckSchedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
 
     // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
@@ -460,31 +474,33 @@ Deno.serve(async () => {
       const accountName = account ? account.name : sched.accountName;
       if (!accountName) continue;
 
-      const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id));
+      const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id) && inSchedule(t, sched));
       if (!openTrades.length) continue;
 
       const matchedHour = hoursDueNow(sched)[0];
-      if (isTaskDone(`sl_${sched.accountId}`, matchedHour)) continue;
+      if (isTaskDone(`sl_${schedKey(sched)}`, matchedHour)) continue;
 
       // Một tin cho cả tài khoản, dạng bảng: mỗi lệnh một dòng [mã] [Đã dời] [Kết thúc]. Nút mang id
       // lệnh nên vẫn gắn đúng lệnh; bấm dòng nào thì webhook chỉ đổi dòng đó.
       if (slMessages >= MAX_SL_MESSAGES_PER_RUN) break;
       // Giữ vị trí "ngày" ở phần tử thứ 2 của key để logic dọn log cũ bên dưới hoạt động đúng.
-      const logKey = `${sched.accountId}_${today}_${matchedHour}_all`;
+      const logKey = `${schedKey(sched)}_${today}_${matchedHour}_all`;
       if (log[logKey]) continue; // đã gửi khung giờ này rồi, tránh gửi trùng
 
       const shown = openTrades.slice(0, MAX_TABLE_ROWS);
+      // Lịch chung của tài khoản có thể gồm nhiều khung — ghi khung để biết lệnh nào dời theo nến nào.
+      const tfOf = (t: Record<string, unknown>) => (!sched.timeframe && t.timeframe ? ` ${t.timeframe}` : "");
       const symCount = new Map<string, number>();
-      shown.forEach((t) => symCount.set(String(t.symbol || "?"), (symCount.get(String(t.symbol || "?")) || 0) + 1));
-      // Hai lệnh cùng mã thì thêm ngày vào để phân biệt.
+      shown.forEach((t) => { const k = String(t.symbol || "?") + tfOf(t); symCount.set(k, (symCount.get(k) || 0) + 1); });
+      // Hai lệnh cùng mã (cùng khung) thì thêm ngày vào để phân biệt.
       const labelOf = (t: Record<string, unknown>) => {
         const sym = String(t.symbol || "?");
         const dir = t.direction === "sell" ? " ↓" : t.direction === "buy" ? " ↑" : "";
-        return `${sym}${dir}${(symCount.get(sym) || 0) > 1 && t.entryDate ? ` ${ddmm(String(t.entryDate))}` : ""}`;
+        return `${sym}${dir}${tfOf(t)}${(symCount.get(sym + tfOf(t)) || 0) > 1 && t.entryDate ? ` ${ddmm(String(t.entryDate))}` : ""}`;
       };
       const list = shown.map((t) => labelOf(t)).join(" · ");
       const more = openTrades.length > shown.length ? `\n…và ${openTrades.length - shown.length} lệnh nữa — xem trên web.` : "";
-      const text = buildMessage("⏰", "DỜI SL", "🔴", `${openTrades.length} lệnh đang mở`, accountName, `${list}${more}`);
+      const text = buildMessage("⏰", "DỜI SL", "🔴", `${openTrades.length} lệnh đang mở`, sched.timeframe ? `${accountName} · khung ${sched.timeframe}` : accountName, `${list}${more}`);
       const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
         inline_keyboard: shown.map((t) => [
           noopButton(labelOf(t)),

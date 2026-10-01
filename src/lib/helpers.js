@@ -801,6 +801,38 @@ export function emptyReminderSchedule(accountId, accountName) {
   return { accountId, accountName, enabled: false, hours: [...SL_REMINDER_DEFAULT_HOURS], threadId: "", activeDays: [...WEEKDAY_CODES] };
 }
 
+// Lịch dời SL theo khung: một tài khoản trade nhiều khung (hàng hóa đánh cả D, H8, H3) thì mỗi
+// khung dời SL vào một lúc khác — nến D đóng một lần, H3 đóng tám lần mỗi ngày. Lịch theo khung
+// nằm chung danh sách `schedules`, có thêm `timeframe`. Lệnh khung đó CHỈ nhắc theo giờ riêng;
+// lệnh khác (kể cả lệnh chưa ghi khung) vẫn theo giờ chung của tài khoản.
+// Bot (sl-reminder) chép y logic này — sửa ở đây thì sửa luôn bên đó.
+export function slSchedKey(s) {
+  return s && s.timeframe ? `${s.accountId}~${s.timeframe}` : (s && s.accountId) || "";
+}
+
+export function emptyTimeframeSchedule(base, timeframe) {
+  return {
+    accountId: base.accountId, accountName: base.accountName, timeframe, enabled: true,
+    hours: [...(base.hours && base.hours.length ? base.hours : SL_REMINDER_DEFAULT_HOURS)], skip: [],
+  };
+}
+
+// Lịch theo khung không có thứ trong tuần và topic riêng — mượn của lịch chung tài khoản.
+export function slEffectiveSchedules(list) {
+  const all = Array.isArray(list) ? list : [];
+  return all.map((s) => {
+    if (!s || !s.timeframe) return s;
+    const base = all.find((b) => b && !b.timeframe && b.accountId === s.accountId) || {};
+    return { ...s, activeDays: base.activeDays || s.activeDays, threadId: s.threadId || base.threadId || "" };
+  });
+}
+
+export function tradeInSchedule(t, sched, list) {
+  const tf = (t && t.timeframe) || "";
+  if (sched.timeframe) return tf === sched.timeframe;
+  return !(list || []).some((x) => x && x.timeframe && x.accountId === sched.accountId && x.timeframe === tf);
+}
+
 // Cùng lý do với parseSymbolList: nhận mọi kiểu ngăn cách, và viết tắt được giờ —
 // "9" → 09:00, "930" → 09:30, "1430" → 14:30. Gõ "9 14 20" là xong ba khung giờ.
 function normalizeHour(raw) {
@@ -1058,14 +1090,17 @@ export function openTradeCounter({ accounts, trades, mutedTrades } = {}) {
   (trades || []).forEach((t) => {
     if (!t || !t.id || !t.entryDate || t.exitDate || mutedIds.has(t.id)) return;
     const name = t.account || "";
-    if (name) byName[name] = (byName[name] || 0) + 1;
+    if (name) (byName[name] = byName[name] || []).push(t);
   });
   const nameById = {};
   (accounts || []).forEach((a) => { if (a && a.id) nameById[a.id] = a.name; });
   // Lịch trỏ tới tài khoản đã xoá thì lấy tên đã lưu trong lịch, giống hàm gửi tin.
-  return (accountId, fallbackName) => {
+  // Truyền thêm lịch (và cả danh sách lịch) thì chỉ đếm lệnh thuộc đúng lịch đó — lịch theo khung
+  // chỉ đếm lệnh khung đó, lịch chung thì trừ các khung đã có lịch riêng.
+  return (accountId, fallbackName, sched, list) => {
     const name = nameById[accountId] || fallbackName || "";
-    return name ? byName[name] || 0 : 0;
+    const open = name ? byName[name] || [] : [];
+    return sched ? open.filter((t) => tradeInSchedule(t, sched, list)).length : open.length;
   };
 }
 
@@ -1131,15 +1166,15 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
   // thà không làm mờ còn hơn làm mờ nhầm vì thiếu dữ liệu.
   const countOpen = typeof openTrades === "function" ? openTrades : null;
 
-  (st.schedules || []).forEach((s) => {
-    const open = countOpen ? countOpen(s.accountId, s.accountName) : null;
-    const name = s.accountName || "";
+  slEffectiveSchedules(st.schedules).forEach((s) => {
+    const open = countOpen ? countOpen(s.accountId, s.accountName, s, st.schedules) : null;
+    const name = `${s.accountName || ""}${s.timeframe ? ` · khung ${s.timeframe}` : ""}`;
     pushHours(out, {
       hours: s.hours, activeDays: s.activeDays, day, kind: "sl",
       title: "Dời SL",
       sub: open === null ? name : `${name}${name ? " · " : ""}${open ? `${open} lệnh mở` : "không có lệnh mở"}`,
       minutes: mins("sl", s.minutes),
-      enabled: !!st.enabled && !!s.enabled && open !== 0, sourceId: `sl_${s.accountId}`, id: s.accountId,
+      enabled: !!st.enabled && !!s.enabled && open !== 0, sourceId: `sl_${slSchedKey(s)}`, id: slSchedKey(s),
       skip: s.skip,
     });
   });
@@ -1334,7 +1369,7 @@ export function timelineSources({ settings, watches, reminders, durations, openT
   };
 
   const countOpen = typeof openTrades === "function" ? openTrades : null;
-  (st.schedules || []).forEach((x) => add("sl", x.accountId, `sl_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName) > 0), x.minutes, x.skip));
+  slEffectiveSchedules(st.schedules).forEach((x) => add("sl", slSchedKey(x), `sl_${slSchedKey(x)}`, `${x.accountName || "—"}${x.timeframe ? ` · khung ${x.timeframe}` : ""}`, x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName, x, st.schedules) > 0), x.minutes, x.skip));
   (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes, x.skip));
   (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
@@ -1380,7 +1415,7 @@ export function applyTaskPatch({ settings, watches, reminders }, source, patch) 
   const mapList = (list, match) => (list || []).map((x) => (match(x) ? patchItem(x, source, patch) : x));
 
   if (source.kind === "sl") {
-    return { settings: { ...st, schedules: mapList(st.schedules, (x) => x.accountId === source.id) }, changed: "settings" };
+    return { settings: { ...st, schedules: mapList(st.schedules, (x) => slSchedKey(x) === source.id) }, changed: "settings" };
   }
   if (source.kind === "setupCheck") {
     return { settings: { ...st, setupCheckSchedules: mapList(st.setupCheckSchedules, (x) => x.accountId === source.id) }, changed: "settings" };

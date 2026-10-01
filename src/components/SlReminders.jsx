@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard } from "./ui.jsx";
 import {
-  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch, emptyWeeklySummary,
+  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
+  emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
   looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
@@ -10,8 +11,56 @@ import {
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
-function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest }) {
-  const scheduleFor = (accountId) => schedules.find((sc) => sc.accountId === accountId);
+// Giờ riêng theo khung (chỉ lịch dời SL dùng). Chỉ gợi ý những khung tài khoản này đã từng
+// trade, theo thứ tự khung ở tab Tài nguyên — tài khoản chỉ đánh một khung thì khỏi bận tâm.
+function TimeframeSchedules({ account, base, schedules, resources, trades, onTf }) {
+  const own = schedules.filter((sc) => sc.timeframe && sc.accountId === account.id);
+  const order = resources.timeframes || [];
+  const used = [...new Set((trades || []).filter((t) => t && t.account === account.name && t.timeframe).map((t) => t.timeframe))]
+    .sort((a, b) => ((order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999)) || a.localeCompare(b));
+  const addable = used.filter((tf) => !own.some((x) => x.timeframe === tf));
+  if (!own.length && used.length < 2) return null;
+  const openOf = (sched) => (trades || []).filter((t) => t && t.account === account.name && t.entryDate && !t.exitDate && tradeInSchedule(t, sched, schedules)).length;
+  return (
+    <div className="sl-tf">
+      {own.map((ts) => {
+        const n = openOf(ts);
+        return (
+          <div key={ts.timeframe} className="sl-tf-row">
+            <label className={`checklist-item ${ts.enabled ? "checklist-checked" : ""}`}>
+              <input type="checkbox" checked={!!ts.enabled} onChange={(e) => onTf.update(account, ts.timeframe, { enabled: e.target.checked })} />
+              <span>Khung <b>{ts.timeframe}</b></span>
+              <small className="sl-tf-open">{n ? `${n} lệnh mở` : "không có lệnh mở"}</small>
+            </label>
+            <input className="input input-inline" style={{ flex: 1 }} key={(ts.hours || []).join(",")}
+              defaultValue={(ts.hours || []).join(", ")} placeholder="Giờ dời SL cho khung này, VD 7, 15, 23"
+              onBlur={(e) => onTf.update(account, ts.timeframe, { hours: parseHoursInput(e.target.value) })} />
+            <ConfirmButton onConfirm={() => onTf.remove(account, ts.timeframe)} />
+          </div>
+        );
+      })}
+      {addable.length ? (
+        <div className="sl-tf-add">
+          <span>Giờ riêng theo khung:</span>
+          {addable.map((tf) => (
+            <button key={tf} type="button" className="sl-tf-add-btn" onClick={() => onTf.add(account, base, tf)}>
+              <PlusCircle size={12} /> {tf}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {own.length ? (
+        <p className="field-hint sl-tf-hint">
+          Lệnh khung {own.map((x) => x.timeframe).join(", ")} chỉ nhắc theo giờ riêng ở trên; lệnh khung khác (hoặc chưa ghi khung) vẫn theo giờ chung của tài khoản.
+          Thứ trong tuần và Topic dùng chung với tài khoản.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trades, onTf }) {
+  const scheduleFor = (accountId) => schedules.find((sc) => sc.accountId === accountId && !sc.timeframe);
   const toggleDay = (account, sched, day) => {
     const days = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
     const next = days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
@@ -60,6 +109,7 @@ function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest }) {
                 </label>
               ))}
             </div>
+            {onTf ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} /> : null}
           </div>
         );
       })}
@@ -97,12 +147,19 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
   const set = (k) => (v) => onChange({ ...s, [k]: v });
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây.");
 
+  const isBase = (sc, account) => sc.accountId === account.id && !sc.timeframe;
   const updateSchedule = (account, patch) => {
-    const exists = s.schedules.find((sc) => sc.accountId === account.id);
+    const exists = s.schedules.find((sc) => isBase(sc, account));
     const next = exists
-      ? s.schedules.map((sc) => (sc.accountId === account.id ? { ...sc, ...patch } : sc))
+      ? s.schedules.map((sc) => (isBase(sc, account) ? { ...sc, ...patch } : sc))
       : [...s.schedules, { ...emptyReminderSchedule(account.id, account.name), ...patch }];
     onChange({ ...s, schedules: next });
+  };
+  const isTf = (sc, account, tf) => sc.accountId === account.id && sc.timeframe === tf;
+  const onTf = {
+    add: (account, base, tf) => onChange({ ...s, schedules: [...s.schedules, emptyTimeframeSchedule({ ...base, accountId: account.id, accountName: account.name }, tf)] }),
+    update: (account, tf, patch) => onChange({ ...s, schedules: s.schedules.map((sc) => (isTf(sc, account, tf) ? { ...sc, ...patch } : sc)) }),
+    remove: (account, tf) => onChange({ ...s, schedules: s.schedules.filter((sc) => !isTf(sc, account, tf)) }),
   };
 
   const muted = mutedTrades || [];
@@ -153,7 +210,11 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Chọn tài khoản cần nhắc, các khung giờ trong ngày (định dạng HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu nhóm Telegram có chia Topics riêng, và các ngày trong tuần được phép nhắc (VD bỏ T7/CN cho tài khoản Forex nghỉ cuối tuần). Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
       </p>
-      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} />
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Tài khoản trade nhiều khung (VD hàng hóa đánh cả D, H8, H3) thì bấm <b>+ khung</b> trong thẻ tài khoản để đặt giờ dời SL riêng cho khung đó —
+        mỗi giờ nhắc chỉ hiện đúng các lệnh tới lúc cần dời.
+      </p>
+      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} trades={trades} onTf={onTf} />
 
       <h3 className="block-title">Lệnh đang tắt nhắc</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
