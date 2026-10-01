@@ -285,7 +285,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
       </div>
       <p className="field-hint cap-rp-hint">
         R cộng dồn theo ngày đóng lệnh: 1 tuần {ddmm(ranges[0].from)}–{ddmm(ranges[0].to)} · 2 tuần từ {ddmm(ranges[1].from)} · 4 tuần từ {ddmm(ranges[2].from)}
-        {weeks.nudge ? "." : " — tuần này chưa xong nên gợi ý còn đổi."} Ô sáng viền là khung đã chạm ngưỡng.
+        {weeks.nudge ? "." : " — tuần này chưa xong nên gợi ý còn đổi."} Dưới mỗi ô: ▼ ngưỡng hạ, ▲ ngưỡng tăng, <Shield size={10} style={{ verticalAlign: -1 }} /> ngưỡng về cầm chừng — ô có viền màu là khung đã chạm ngưỡng.
       </p>
 
       <div className="cap-rp-grid">
@@ -295,10 +295,16 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
           const rule = s ? s.rule : normalizeRRule(m.rRule);
           const verdict = !s ? "Chưa có mức" : action === "none" ? "Chưa gắn tài khoản"
             : action === "up" ? "Tăng 1 bậc" : action === "down" ? (s.hold ? "Về cầm chừng" : `Hạ ${s.steps || 1} bậc`) : "Giữ mức";
+          // Ngưỡng viết tắt cho gọn thẻ; rê chuột vào ô có đủ chữ.
           const thresholds = {
-            w1: `hạ ≤ ${fmtRVN(rule.downW1)} · tăng ≥ ${fmtRVN(rule.upW1)}`,
-            w2: `hạ ≤ ${fmtRVN(rule.downW2)}`,
-            w4: `cầm chừng ≤ ${fmtRVN(rule.holdM)}`,
+            w1: <>▼{fmtRVN(rule.downW1)} ▲{fmtRVN(rule.upW1)}</>,
+            w2: <>▼{fmtRVN(rule.downW2)}</>,
+            w4: <><Shield size={9} style={{ verticalAlign: -1 }} />{fmtRVN(rule.holdM)}</>,
+          };
+          const thresholdTip = {
+            w1: `Hạ 1 bậc khi ≤ ${fmtRVN(rule.downW1)}; tăng 1 bậc khi ≥ ${fmtRVN(rule.upW1)} (kèm 4 tuần ≥ ${fmtRVN(rule.upM)}, tối thiểu ${rule.minUp} lệnh)`,
+            w2: `Hạ 1 bậc khi ≤ ${fmtRVN(rule.downW2)}`,
+            w4: `Về cầm chừng khi ≤ ${fmtRVN(rule.holdM)}`,
           };
           return (
             <div key={m.id} className={`cap-rp-card cap-rp-act-${action}`}>
@@ -307,7 +313,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className="cap-rp-verdict">{verdict}</span>
                 <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
-                  onClick={() => setOpenRule(openRule === m.id ? null : m.id)}><Settings2 size={14} /></button>
+                  onClick={() => setOpenRule(openRule === m.id ? null : m.id)}><Settings2 size={13} /></button>
               </div>
 
               <div className="cap-rp-wins">
@@ -315,7 +321,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
                   const x = stats.windows[w.key];
                   const hit = s && s.hits ? s.hits[w.key] : null;
                   const tip = `${ddmm(x.from)}–${ddmm(x.to)}: ${x.n} lệnh có R` + (x.n ? ` · thắng ${Math.round((x.wins / x.n) * 100)}% · TB ${fmtRVN(x.avg)}/lệnh` : "")
-                    + (x.missing ? ` · ${x.missing} lệnh đã đóng thiếu tiền rủi ro nên không tính` : "");
+                    + (x.missing ? ` · ${x.missing} lệnh đã đóng thiếu tiền rủi ro nên không tính` : "") + `\n${thresholdTip[w.key]}`;
                   return (
                     <div key={w.key} className={`cap-rp-box ${x.n ? (x.r > 0 ? "cap-rp-box-pos" : x.r < 0 ? "cap-rp-box-neg" : "") : "cap-rp-box-empty"} ${hit ? `cap-rp-box-hit cap-rp-box-hit-${hit}` : ""}`} title={tip}>
                       <span className="cap-rp-box-label">{w.label}</span>
@@ -336,7 +342,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
                     <b className="mono">{fmtPctVN(s.pct)}{s.hold ? <small className="cap-hold-tag"><Shield size={10} /> cầm chừng</small> : null}</b>
                   </span>
                   {applied ? (
-                    <span className="cap-rp-applied"><Check size={13} /> Đã chọn</span>
+                    <span className="cap-rp-applied"><Check size={12} /> Đã chọn</span>
                   ) : (
                     <button type="button" className={`btn ${action === "same" ? "btn-ghost" : "btn-primary"} cap-rp-apply`}
                       onClick={() => onChange(setPick(plan, weeks.next, m.id, s.pct))}>
