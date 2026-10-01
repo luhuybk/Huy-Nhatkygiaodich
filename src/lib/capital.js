@@ -10,6 +10,14 @@ import { accountFamily, computeResult, dateKey, shiftDate, todayStr, uid, weekSt
 export const DD_WARN_DEFAULT = 8;
 export const DD_CUT_DEFAULT = 12;
 
+// Luật gợi ý theo R (cộng dồn, tính theo ngày đóng lệnh):
+//   downW1 / downW2: 1 tuần / 2 tuần ≤ ngưỡng → hạ 1 bậc mỗi điều kiện chạm.
+//   holdM: 4 tuần ≤ ngưỡng → về mốc cầm chừng.
+//   upW1 + upM: 1 tuần ≥ upW1 VÀ 4 tuần ≥ upM → tăng 1 bậc (mỗi tuần tối đa 1 bậc).
+//   minUp: 1 tuần phải có ít nhất chừng này lệnh mới được tăng — 1 lệnh ăn 3R chưa nói lên gì.
+export const R_RULE_DEFAULT = { downW1: -2, downW2: -3, holdM: -5, upW1: 2, upM: 0, minUp: 2 };
+export const R_RULE_FIELDS = ["downW1", "downW2", "holdM", "upW1", "upM", "minUp"];
+
 const num = (v, fallback) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -25,6 +33,8 @@ export function emptyCapitalMarket() {
     // Tài khoản phụ (crypto, hàng hóa...): vốn ước lượng, trade nhẹ — không tính vào hệ số
     // cấp của quỹ chính và không bị nhắc chọn mức mỗi tuần.
     side: false,
+    // Luật gợi ý mức tuần sau theo phong độ R — mỗi mảng một bộ riêng.
+    rRule: { ...R_RULE_DEFAULT },
   };
 }
 
@@ -45,6 +55,14 @@ export function defaultCapitalPlan() {
     ],
     picks: {},
   };
+}
+
+export function normalizeRRule(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  R_RULE_FIELDS.forEach((k) => { out[k] = num(r[k], R_RULE_DEFAULT[k]); });
+  out.minUp = Math.max(0, Math.round(out.minUp));
+  return out;
 }
 
 export function sortTiers(list) {
@@ -70,6 +88,7 @@ export function normalizeCapitalPlan(raw) {
       accountIds: Array.isArray(m.accountIds) ? m.accountIds : [],
       holdTier: num(m.holdTier, 0) > 0 ? num(m.holdTier, 0) : null,
       side: !!m.side,
+      rRule: normalizeRRule(m.rRule),
     })),
     picks: raw.picks && typeof raw.picks === "object" && !Array.isArray(raw.picks) ? raw.picks : {},
   };
@@ -324,3 +343,84 @@ export function fmtPctVN(v, digits = 2) {
   const s = Number(v.toFixed(digits)).toString().replace(".", ",");
   return `${s}%`;
 }
+
+// ——— Phong độ R → gợi ý mức tuần sau ———
+// Ba khung cộng dồn, cùng kết thúc ở cuối tuần này (tuần đang chạy là tuần sát tuần sau nhất):
+// 1 tuần = tuần này, 2 tuần = tuần này + tuần trước, 4 tuần ≈ 1 tháng. Giữa tuần thì tuần này
+// chưa xong — gợi ý vẫn tính được nhưng chỉ chốt lúc cuối tuần.
+// Lệnh tính theo NGÀY ĐÓNG: R thật sự xảy ra lúc đóng, không phải lúc vào.
+export const R_WINDOWS = [
+  { key: "w1", weeks: 1, label: "1 tuần" },
+  { key: "w2", weeks: 2, label: "2 tuần" },
+  { key: "w4", weeks: 4, label: "4 tuần" },
+];
+
+export function rWindowRanges(dateStr) {
+  const now = thisWeekKey(dateStr);
+  const to = shiftDate(now, 6);
+  return R_WINDOWS.map((w) => ({ ...w, from: shiftDate(now, -7 * (w.weeks - 1)), to }));
+}
+
+export function marketRStats(m, trades, accounts, dateStr) {
+  const names = marketAccountNames(m, accounts);
+  const ranges = rWindowRanges(dateStr);
+  const oldest = ranges[ranges.length - 1].from;
+  const to = ranges[0].to;
+  const closed = (trades || [])
+    .filter((t) => t && names.has(t.account) && t.exitDate && t.exitDate >= oldest && t.exitDate <= to)
+    .map((t) => ({ d: t.exitDate, r: computeResult(t) }))
+    .filter((x) => x.r.status === "closed");
+  const windows = {};
+  ranges.forEach((w) => {
+    const list = closed.filter((x) => x.d >= w.from);
+    const withR = list.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
+    const r = withR.reduce((s, x) => s + x.r.rr, 0);
+    windows[w.key] = {
+      ...w, r, n: withR.length, wins: withR.filter((x) => x.r.rr > 0).length,
+      avg: withR.length ? r / withR.length : null,
+      // Lệnh đã đóng mà thiếu tiền rủi ro thì không ra R — báo ra để biết số R đang thiếu lệnh nào.
+      missing: list.length - withR.length,
+    };
+  });
+  return { linked: names.size > 0, windows };
+}
+
+const fmtRShort = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Number(Math.abs(v).toFixed(1)).toString().replace(".", ",")}R`;
+export { fmtRShort as fmtRVN };
+
+// Gợi ý mức cho tuần sau, tính từ mức tuần này. Xấu thì được hạ nhiều bậc một lúc, tốt thì chỉ
+// tăng 1 bậc. Sụt vốn chạm ngưỡng "giảm risk hẳn" cũng kéo về cầm chừng như luật 4 tuần; đang ở
+// ngưỡng cảnh báo thì không tăng.
+export function suggestNextTier(plan, m, stats, dd, dateStr) {
+  const rule = normalizeRRule(m.rRule);
+  const list = marketTierList(m).map((x) => x.pct);
+  const base = pickedTier(plan, m.id, thisWeekKey(dateStr)).pct;
+  if (!list.length || base === null) return null;
+  let idx = -1;
+  list.forEach((p, i) => { if (p <= base) idx = i; });
+  if (idx < 0) idx = 0;
+  const reasons = [];
+  if (!stats.linked) return { base, pct: base, action: "none", reasons: ["Chưa gắn tài khoản"], rule };
+  const { w1, w2, w4 } = stats.windows;
+  let target = idx;
+  let fired = false;
+  let toHold = false;
+  if (w4.r <= rule.holdM && w4.n) { toHold = true; reasons.push(`4 tuần ${fmtRShort(w4.r)} ≤ ${fmtRShort(rule.holdM)}`); }
+  if (dd && dd.level === "cut") { toHold = true; reasons.push(`sụt vốn ${fmtPctVN(dd.pct, 1)}`); }
+  let down = 0;
+  if (w1.r <= rule.downW1 && w1.n) { down++; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≤ ${fmtRShort(rule.downW1)}`); }
+  if (w2.r <= rule.downW2 && w2.n) { down++; reasons.push(`2 tuần ${fmtRShort(w2.r)} ≤ ${fmtRShort(rule.downW2)}`); }
+  if (toHold) { target = 0; fired = true; } else if (down) { target = Math.max(0, (list[idx] === base ? idx : idx + 1) - down); fired = true; }
+  else if (w1.r >= rule.upW1 && w4.r >= rule.upM) {
+    if (w1.n < rule.minUp) reasons.push(`1 tuần mới ${w1.n} lệnh — cần ${rule.minUp} lệnh mới tăng`);
+    else if (dd && dd.level === "warn") reasons.push(`đang cảnh báo sụt vốn ${fmtPctVN(dd.pct, 1)} — chưa tăng`);
+    else { target = Math.min(list.length - 1, idx + 1); fired = true; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≥ ${fmtRShort(rule.upW1)}, 4 tuần ${fmtRShort(w4.r)}`); }
+  }
+  // Không luật nào chạm thì giữ đúng mức đang đi, kể cả khi mức đó đã bị gỡ khỏi danh sách.
+  const pct = fired ? list[target] : base;
+  const action = pct > base ? "up" : pct < base ? "down" : "same";
+  if (action === "same" && !reasons.length) reasons.push(w1.n || w4.n ? "Chưa chạm ngưỡng nào" : "Chưa có lệnh đóng trong 4 tuần");
+  if (action === "same" && (toHold || down)) reasons.push("đã ở mức thấp nhất");
+  return { base, pct, action, reasons, rule, hold: pct === m.holdTier };
+}
+

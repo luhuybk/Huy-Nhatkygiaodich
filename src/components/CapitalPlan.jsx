@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronRight, Pencil, Plus, Scale, Send, Shield, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import {
-  capitalScale, emptyCapitalMarket, fmtPctVN, isWeekend, marketDrawdown, marketsMissingNextPick, marketTierList,
-  nextWeekKey, pickedTier, safestTier, setPick, sortTiers, thisWeekKey, tierMoney, tierShareOfTotal,
+  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, marketDrawdown, marketRStats, marketsMissingNextPick,
+  marketTierList, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
+  sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
 
 const DD_LABEL = { ok: "Ổn", warn: "Cảnh báo", cut: "Giảm risk" };
@@ -218,6 +219,131 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
   );
 }
 
+// ——— Phong độ R → gợi ý mức tuần sau ———
+const RULE_LABELS = [
+  ["downW1", "Hạ 1 bậc khi 1 tuần ≤", "R"],
+  ["downW2", "Hạ 1 bậc khi 2 tuần ≤", "R"],
+  ["holdM", "Về cầm chừng khi 4 tuần ≤", "R"],
+  ["upW1", "Tăng 1 bậc khi 1 tuần ≥", "R"],
+  ["upM", "… và 4 tuần ≥", "R"],
+  ["minUp", "… và 1 tuần có ít nhất", "lệnh"],
+];
+const ACTION_ICON = { up: "▲", down: "▼", same: "=", none: "·" };
+const rTone = (v, n) => (!n ? "cap-rp-r-empty" : v > 0 ? "cap-rp-r-pos" : v < 0 ? "cap-rp-r-neg" : "");
+
+function RuleEditor({ market, onSave, onCopyAll }) {
+  const rule = normalizeRRule(market.rRule);
+  const set = (k, v) => onSave({ ...market, rRule: normalizeRRule({ ...rule, [k]: v }) });
+  const isDefault = Object.keys(R_RULE_DEFAULT).every((k) => rule[k] === R_RULE_DEFAULT[k]);
+  return (
+    <div className="cap-rp-rule">
+      <div className="cap-rp-rule-grid">
+        {RULE_LABELS.map(([k, label, unit]) => (
+          <label key={k} className="cap-rp-rule-field">
+            <span>{label}</span>
+            <span className="cap-rp-rule-input">
+              <BlurNumber value={rule[k]} step={k === "minUp" ? "1" : "0.5"} min={k === "minUp" ? "0" : undefined} onCommit={(n) => set(k, n)} />
+              <small>{unit}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="cap-rp-rule-actions">
+        {!isDefault ? <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onSave({ ...market, rRule: { ...R_RULE_DEFAULT } })}>Về mặc định</button> : null}
+        <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onCopyAll(rule)}>Áp bộ luật này cho mọi mảng</button>
+      </div>
+    </div>
+  );
+}
+
+function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChange }) {
+  const [openRule, setOpenRule] = useState(null);
+  const accounts = resources.accounts || [];
+  const ranges = rWindowRanges(today);
+  const rows = useMemo(() => [...plan.markets.filter((m) => !m.side), ...plan.markets.filter((m) => m.side)].map((m) => {
+    const stats = marketRStats(m, trades, accounts, today);
+    return { m, stats, s: suggestNextTier(plan, m, stats, dds[m.id], today), next: pickedTier(plan, m.id, weeks.next) };
+  }), [plan, trades, accounts, dds, today, weeks.next]);
+  const pending = rows.filter((r) => r.s && r.s.action !== "none" && !(r.next.explicit && r.next.pct === r.s.pct));
+  const saveMarket = (m) => onChange({ ...plan, markets: plan.markets.map((x) => (x.id === m.id ? m : x)) });
+  const copyAll = (rule) => onChange({ ...plan, markets: plan.markets.map((x) => ({ ...x, rRule: { ...rule } })) });
+  const applyAll = () => onChange(pending.reduce((p, r) => setPick(p, weeks.next, r.m.id, r.s.pct), plan));
+  const rangeText = (w) => `${ddmm(w.from)} – ${ddmm(w.to)}`;
+
+  return (
+    <div className="cap-rp">
+      <div className="cap-rp-head">
+        <h3 className="block-title" style={{ margin: 0 }}><Gauge size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Phong độ R → gợi ý mức tuần sau</h3>
+        {pending.length ? (
+          <button type="button" className="btn btn-ghost cap-suggest-btn cap-rp-applyall" onClick={applyAll}>
+            <Check size={13} /> Áp dụng {pending.length} gợi ý cho tuần {weekLabel(weeks.next)}
+          </button>
+        ) : null}
+      </div>
+      <p className="field-hint cap-rp-hint">
+        R cộng dồn theo ngày đóng lệnh, tính tới hết tuần này
+        {weeks.nudge ? "" : " (tuần này chưa xong nên gợi ý còn đổi)"}. Xấu thì hạ được nhiều bậc một lúc, tốt thì mỗi tuần chỉ tăng 1 bậc.
+        Bấm <Settings2 size={11} style={{ verticalAlign: -1 }} /> để chỉnh luật riêng của từng mảng.
+      </p>
+
+      <div className="cap-rp-row cap-rp-cols">
+        <span>Mảng</span>
+        {ranges.map((w) => <span key={w.key} className="cap-rp-num" title={rangeText(w)}>{w.label}<small>{rangeText(w)}</small></span>)}
+        <span className="cap-rp-num">Tuần này</span>
+        <span>Gợi ý tuần sau</span>
+      </div>
+      {rows.map(({ m, stats, s, next }) => {
+        const applied = s && next.explicit && next.pct === s.pct;
+        return (
+          <div key={m.id} className="cap-rp-item">
+            <div className={`cap-rp-row cap-rp-act-${s ? s.action : "none"}`}>
+              <span className="cap-rp-name">
+                <b>{m.name}</b>{m.side ? <small className="cap-side-tag">phụ</small> : null}
+                <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
+                  onClick={() => setOpenRule(openRule === m.id ? null : m.id)}><Settings2 size={13} /></button>
+              </span>
+              {R_WINDOWS.map((w) => {
+                const x = stats.windows[w.key];
+                const tip = `${rangeText(x)}: ${x.n} lệnh có R` + (x.n ? ` · thắng ${Math.round((x.wins / x.n) * 100)}% · TB ${fmtRVN(x.avg)}/lệnh` : "")
+                  + (x.missing ? ` · ${x.missing} lệnh đã đóng thiếu tiền rủi ro nên không tính` : "");
+                return (
+                  <span key={w.key} className="cap-rp-num cap-rp-win" title={tip}>
+                    <small className="cap-rp-mlabel">{w.label}</small>
+                    <b className={`mono ${rTone(x.r, x.n)}`}>{x.n ? fmtRVN(x.r) : "—"}</b>
+                    <small>{x.n ? `${x.wins}/${x.n} thắng` : "0 lệnh"}{x.missing ? ` · ${x.missing} thiếu R` : ""}</small>
+                  </span>
+                );
+              })}
+              <span className="cap-rp-num cap-rp-now mono"><small className="cap-rp-mlabel">Tuần này</small>{s ? fmtPctVN(s.base) : "—"}</span>
+              <span className="cap-rp-sug">
+                {s ? (
+                  <>
+                    <span className="cap-rp-sug-top">
+                      <b className="cap-rp-badge mono">{ACTION_ICON[s.action]} {s.action === "none" ? "—" : fmtPctVN(s.pct)}</b>
+                      {s.hold ? <small className="cap-hold-tag"><Shield size={10} /> cầm chừng</small> : null}
+                      {s.action === "none" ? null : applied ? (
+                        <span className="cap-rp-applied"><Check size={12} /> đã chọn</span>
+                      ) : (
+                        <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onChange(setPick(plan, weeks.next, m.id, s.pct))}
+                          title={next.explicit ? `Tuần sau đang chọn ${fmtPctVN(next.pct)}` : undefined}>Áp dụng</button>
+                      )}
+                    </span>
+                    <small className="cap-rp-why">
+                      {s.reasons.join(" · ")}
+                      {next.explicit && !applied ? ` · tuần sau bạn đang chọn ${fmtPctVN(next.pct)}` : ""}
+                    </small>
+                  </>
+                ) : <small className="cap-rp-why">Chưa có mức rủi ro</small>}
+              </span>
+            </div>
+            {openRule === m.id ? <RuleEditor market={m} onSave={saveMarket} onCopyAll={copyAll} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PickReminderCard({ settings, onChange }) {
   const cfg = { ...emptyCapitalPickReminder(), ...(settings.capitalPickReminder || {}) };
   const setCfg = (patch) => onChange({ ...settings, capitalPickReminder: { ...cfg, ...patch } });
@@ -226,8 +352,8 @@ function PickReminderCard({ settings, onChange }) {
     <div className="account-form cap-remind">
       <h3 className="block-title" style={{ marginTop: 0 }}><Bell size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Nhắc chọn mức tuần sau qua Telegram</h3>
       <p className="field-hint" style={{ marginBottom: 10 }}>
-        Đúng giờ đã đặt, nếu còn mảng chưa chọn mức cho tuần sau thì bot gửi một tin kèm mức đang dùng và
-        mức sụt vốn của từng mảng. Chọn đủ rồi thì không gửi.
+        Đúng giờ đã đặt, nếu còn mảng chưa chọn mức cho tuần sau thì bot gửi một tin kèm mức đang dùng,
+        mức sụt vốn, R 1 / 2 / 4 tuần và mức gợi ý của từng mảng. Chọn đủ rồi thì không gửi.
       </p>
       {!ready ? <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 10 }}>Chưa có Bot Token / Chat ID — điền ở Thông báo → Nhắc dời SL trước.</p> : null}
       <button type="button" className={`lesson-toggle-btn ${cfg.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`} onClick={() => setCfg({ enabled: !cfg.enabled })}>
@@ -318,6 +444,8 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
         <button type="button" className="cap-add cap-add-side" onClick={() => addMarket(true)}><Plus size={16} /> Thêm tài khoản phụ</button>
       </div>
 
+      <RPerformancePanel plan={plan} trades={trades} resources={resources} dds={dds} today={today} weeks={weeks} onChange={onChange} />
+
       <p className="field-hint" style={{ marginTop: 12 }}>
         <Scale size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
         Sụt vốn tính trên vốn phân chia cộng lãi/lỗ các lệnh đã đóng từ ngày bắt đầu, không phải tiền đã nạp.
@@ -336,8 +464,10 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
   const week = thisWeekKey(today);
   const rows = useMemo(() => (plan ? plan.markets.map((m) => {
     const p = pickedTier(plan, m.id, week);
-    return { m, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd: marketDrawdown(plan, m, trades, resources) };
-  }) : []), [plan, trades, resources, week]);
+    const dd = marketDrawdown(plan, m, trades, resources);
+    const stats = marketRStats(m, trades, resources.accounts || [], today);
+    return { m, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd, stats, sug: suggestNextTier(plan, m, stats, dd, today) };
+  }) : []), [plan, trades, resources, week, today]);
   if (!plan || !rows.length) return null;
   const missing = isWeekend(today) ? marketsMissingNextPick(plan, today) : [];
   // Mảng chính trước, tài khoản phụ sau — nhìn là biết đâu là tiền thật, đâu là chơi nhẹ.
@@ -352,7 +482,7 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
         <button type="button" className="cap-summary-open" onClick={onOpen}>Mở bảng phân bổ <ChevronRight size={13} /></button>
       </div>
       <div className="cap-tiles">
-        {ordered.map(({ m, pct, money, dd }) => {
+        {ordered.map(({ m, pct, money, dd, stats, sug }) => {
           const isHold = pct !== null && pct === m.holdTier;
           const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
           return (
@@ -373,6 +503,17 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
                 <span className="mono">↓ {fmtPctVN(dd.pct, 1)}</span>
               </span>
               {dd.lossStreak >= 2 ? <span className="cap-tile-streak">Thua {dd.lossStreak} lệnh liên tiếp</span> : null}
+              {stats.linked ? (
+                <span className="cap-tile-rline mono">
+                  {R_WINDOWS.map((w) => {
+                    const x = stats.windows[w.key];
+                    return <span key={w.key} className={x.n ? (x.r > 0 ? "cap-rp-r-pos" : x.r < 0 ? "cap-rp-r-neg" : "") : "cap-rp-r-empty"}>{w.weeks}T {x.n ? fmtRVN(x.r) : "—"}</span>;
+                  })}
+                </span>
+              ) : null}
+              {sug && (sug.action === "up" || sug.action === "down") ? (
+                <span className={`cap-tile-sug cap-tile-sug-${sug.action}`}>Gợi ý tuần sau {sug.action === "up" ? "▲" : "▼"} {fmtPctVN(sug.pct)}</span>
+              ) : null}
             </button>
           );
         })}

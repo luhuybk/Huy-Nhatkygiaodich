@@ -159,7 +159,9 @@ function toUSD(amount: number, currency: string | undefined, fxRates: Record<str
 type CapMarket = {
   id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
   tiers?: number[]; defaultTier?: number; accountIds?: string[]; holdTier?: number | null; side?: boolean;
+  rRule?: Partial<Record<CapRuleKey, number>>;
 };
+type CapRuleKey = "downW1" | "downW2" | "holdM" | "upW1" | "upM" | "minUp";
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
 type CapAccount = { id: string; name: string; currency?: string; parentId?: string };
 
@@ -232,6 +234,67 @@ function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown
   const pct = curve(closed);
   return { pct, level: levelOf(pct), linked: names.size > 0, lossStreak: streakOf(closed) };
 }
+
+// Phong độ R → gợi ý mức tuần sau. Bản chép của marketRStats / suggestNextTier trong
+// src/lib/capital.js: R cộng dồn 1 / 2 / 4 tuần theo ngày đóng lệnh, tính tới hết tuần này.
+const CAP_R_RULE: Record<CapRuleKey, number> = { downW1: -2, downW2: -3, holdM: -5, upW1: 2, upM: 0, minUp: 2 };
+const capNum = (v: unknown, d: number) => {
+  if (v === "" || v === null || v === undefined) return d;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+function capRule(m: CapMarket) {
+  const r = (m.rRule && typeof m.rRule === "object" ? m.rRule : {}) as Record<string, unknown>;
+  const out = { ...CAP_R_RULE };
+  (Object.keys(CAP_R_RULE) as CapRuleKey[]).forEach((k) => { out[k] = capNum(r[k], CAP_R_RULE[k]); });
+  out.minUp = Math.max(0, Math.round(out.minUp));
+  return out;
+}
+function capTierList(m: CapMarket) {
+  const hold = capNum(m.holdTier, 0) > 0 ? capNum(m.holdTier, 0) : null;
+  const tiers = [...new Set((m.tiers || []).map((x) => capNum(x, NaN)).filter((x) => Number.isFinite(x) && x > 0))];
+  if (hold !== null && !tiers.includes(hold)) tiers.push(hold);
+  return tiers.sort((a, b) => a - b);
+}
+function capRStats(m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], weekNow: string) {
+  const names = capFamily(accounts, m);
+  const to = shiftDateStr(weekNow, 6);
+  const sum = (weeks: number) => {
+    const from = shiftDateStr(weekNow, -7 * (weeks - 1));
+    let r = 0, n = 0;
+    for (const t of trades) {
+      const d = String(t.exitDate || "");
+      if (!names.has(t.account as string) || !d || d < from || d > to) continue;
+      if (t.profit === "" || t.profit === null || t.profit === undefined || !Number.isFinite(Number(t.profit))) continue;
+      const risk = capNum(t.riskAmount, 0);
+      if (!risk) continue;
+      r += (Number(t.profit) + partialProfitOf(t) + feesOf(t)) / risk;
+      n++;
+    }
+    return { r, n };
+  };
+  return { linked: names.size > 0, w1: sum(1), w2: sum(2), w4: sum(4) };
+}
+function capSuggest(plan: CapPlan, m: CapMarket, st: ReturnType<typeof capRStats>, dd: { level: string }, weekNow: string) {
+  const rule = capRule(m);
+  const list = capTierList(m);
+  const base = capPicked(plan, m, weekNow).pct;
+  if (!list.length || base === null || !st.linked) return null;
+  let idx = -1;
+  list.forEach((p, i) => { if (p <= base) idx = i; });
+  if (idx < 0) idx = 0;
+  let target = idx, fired = false, toHold = false, down = 0;
+  if (st.w4.r <= rule.holdM && st.w4.n) toHold = true;
+  if (dd.level === "cut") toHold = true;
+  if (st.w1.r <= rule.downW1 && st.w1.n) down++;
+  if (st.w2.r <= rule.downW2 && st.w2.n) down++;
+  if (toHold) { target = 0; fired = true; } else if (down) { target = Math.max(0, (list[idx] === base ? idx : idx + 1) - down); fired = true; } else if (st.w1.r >= rule.upW1 && st.w4.r >= rule.upM && st.w1.n >= rule.minUp && dd.level === "ok") {
+    target = Math.min(list.length - 1, idx + 1); fired = true;
+  }
+  const pct = fired ? list[target] : base;
+  return { base, pct, action: pct > base ? "up" : pct < base ? "down" : "same" };
+}
+const rVN = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${String(Number(Math.abs(v).toFixed(1))).replace(".", ",")}R`;
 
 const pctVN = (v: number | null, digits = 2) => (v === null || !Number.isFinite(v) ? "—" : `${Number(v.toFixed(digits))}%`.replace(".", ","));
 function capMoney(v: number, currency?: string) {
@@ -600,16 +663,20 @@ Deno.serve(async () => {
             m, label: m.name || "?",
             now: capPicked(plan, m, weekNow), next: capPicked(plan, m, weekNext),
             dd: capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates),
+            st: capRStats(m, trades, accounts as CapAccount[], weekNow),
           }));
           const missing = rows.filter((r) => !r.next.explicit);
           if (missing.length) {
-            const lines = rows.map(({ m, label, now, next, dd }) => {
+            const lines = rows.map(({ m, label, now, next, dd, st }) => {
               const money = now.pct === null ? "" : ` (${capMoney((capUnitBase(m) * now.pct) / 100, m.currency)})`;
               const ddText = !dd.linked ? "chưa gắn tài khoản"
                 : `sụt ${pctVN(dd.pct, 1)}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}${dd.lossStreak >= 2 ? ` · thua ${dd.lossStreak} liên tiếp` : ""}`;
               const nextText = next.explicit ? `✔ tuần sau ${pctVN(next.pct)}` : "⏳ chưa chọn";
               const holdText = now.pct !== null && Number(m.holdTier) === now.pct ? " cầm chừng" : "";
-              return `• ${label}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}`;
+              const sug = capSuggest(plan, m, st, dd, weekNow);
+              const rText = st.linked ? `\n   R: 1T ${st.w1.n ? rVN(st.w1.r) : "—"} · 2T ${st.w2.n ? rVN(st.w2.r) : "—"} · 4T ${st.w4.n ? rVN(st.w4.r) : "—"}` : "";
+              const sugText = !sug ? "" : ` → gợi ý ${sug.action === "up" ? "▲" : sug.action === "down" ? "▼" : "="} ${pctVN(sug.pct)}${Number(m.holdTier) === sug.pct ? " cầm chừng" : ""}`;
+              return `• ${label}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}${rText}${sugText}`;
             });
             const text = buildMessage(
               "💰", "CHỌN MỨC ĐI VỐN", "⭐", `Tuần ${ddmm(weekNext)} – ${ddmm(shiftDateStr(weekNext, 6))}`, undefined,
