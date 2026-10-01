@@ -400,27 +400,30 @@ export function suggestNextTier(plan, m, stats, dd, dateStr) {
   list.forEach((p, i) => { if (p <= base) idx = i; });
   if (idx < 0) idx = 0;
   const reasons = [];
-  if (!stats.linked) return { base, pct: base, action: "none", reasons: ["Chưa gắn tài khoản"], rule };
+  if (!stats.linked) return { base, pct: base, action: "none", reasons: ["Chưa gắn tài khoản"], rule, hits: {}, steps: 0 };
+  // Khung nào chạm ngưỡng — để giao diện tô đúng ô đó.
+  const hits = {};
   const { w1, w2, w4 } = stats.windows;
   let target = idx;
   let fired = false;
   let toHold = false;
-  if (w4.r <= rule.holdM && w4.n) { toHold = true; reasons.push(`4 tuần ${fmtRShort(w4.r)} ≤ ${fmtRShort(rule.holdM)}`); }
-  if (dd && dd.level === "cut") { toHold = true; reasons.push(`sụt vốn ${fmtPctVN(dd.pct, 1)}`); }
+  if (w4.r <= rule.holdM && w4.n) { toHold = true; hits.w4 = "hold"; reasons.push(`4 tuần ${fmtRShort(w4.r)} ≤ ${fmtRShort(rule.holdM)}`); }
+  if (dd && dd.level === "cut") { toHold = true; hits.dd = "hold"; reasons.push(`sụt vốn ${fmtPctVN(dd.pct, 1)}`); }
   let down = 0;
-  if (w1.r <= rule.downW1 && w1.n) { down++; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≤ ${fmtRShort(rule.downW1)}`); }
-  if (w2.r <= rule.downW2 && w2.n) { down++; reasons.push(`2 tuần ${fmtRShort(w2.r)} ≤ ${fmtRShort(rule.downW2)}`); }
+  if (w1.r <= rule.downW1 && w1.n) { down++; hits.w1 = "down"; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≤ ${fmtRShort(rule.downW1)}`); }
+  if (w2.r <= rule.downW2 && w2.n) { down++; hits.w2 = "down"; reasons.push(`2 tuần ${fmtRShort(w2.r)} ≤ ${fmtRShort(rule.downW2)}`); }
   if (toHold) { target = 0; fired = true; } else if (down) { target = Math.max(0, (list[idx] === base ? idx : idx + 1) - down); fired = true; }
   else if (w1.r >= rule.upW1 && w4.r >= rule.upM) {
     if (w1.n < rule.minUp) reasons.push(`1 tuần mới ${w1.n} lệnh — cần ${rule.minUp} lệnh mới tăng`);
     else if (dd && dd.level === "warn") reasons.push(`đang cảnh báo sụt vốn ${fmtPctVN(dd.pct, 1)} — chưa tăng`);
-    else { target = Math.min(list.length - 1, idx + 1); fired = true; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≥ ${fmtRShort(rule.upW1)}, 4 tuần ${fmtRShort(w4.r)}`); }
+    else { target = Math.min(list.length - 1, idx + 1); fired = true; hits.w1 = "up"; hits.w4 = "up"; reasons.push(`1 tuần ${fmtRShort(w1.r)} ≥ ${fmtRShort(rule.upW1)}, 4 tuần ${fmtRShort(w4.r)}`); }
   }
   // Không luật nào chạm thì giữ đúng mức đang đi, kể cả khi mức đó đã bị gỡ khỏi danh sách.
   const pct = fired ? list[target] : base;
   const action = pct > base ? "up" : pct < base ? "down" : "same";
   if (action === "same" && !reasons.length) reasons.push(w1.n || w4.n ? "Chưa chạm ngưỡng nào" : "Chưa có lệnh đóng trong 4 tuần");
   if (action === "same" && (toHold || down)) reasons.push("đã ở mức thấp nhất");
-  return { base, pct, action, reasons, rule, hold: pct === m.holdTier };
+  const steps = Math.abs(list.indexOf(pct) - (list.includes(base) ? list.indexOf(base) : idx + (action === "down" ? 1 : 0)));
+  return { base, pct, action, reasons, rule, hold: pct === m.holdTier, hits, steps };
 }
 

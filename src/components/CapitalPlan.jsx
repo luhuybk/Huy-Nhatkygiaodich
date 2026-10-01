@@ -228,8 +228,6 @@ const RULE_LABELS = [
   ["upM", "… và 4 tuần ≥", "R"],
   ["minUp", "… và 1 tuần có ít nhất", "lệnh"],
 ];
-const ACTION_ICON = { up: "▲", down: "▼", same: "=", none: "·" };
-const rTone = (v, n) => (!n ? "cap-rp-r-empty" : v > 0 ? "cap-rp-r-pos" : v < 0 ? "cap-rp-r-neg" : "");
 
 function RuleEditor({ market, onSave, onCopyAll }) {
   const rule = normalizeRRule(market.rRule);
@@ -265,15 +263,20 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
     return { m, stats, s: suggestNextTier(plan, m, stats, dds[m.id], today), next: pickedTier(plan, m.id, weeks.next) };
   }), [plan, trades, accounts, dds, today, weeks.next]);
   const pending = rows.filter((r) => r.s && r.s.action !== "none" && !(r.next.explicit && r.next.pct === r.s.pct));
+  const count = (a) => rows.filter((r) => r.s && r.s.action === a).length;
   const saveMarket = (m) => onChange({ ...plan, markets: plan.markets.map((x) => (x.id === m.id ? m : x)) });
   const copyAll = (rule) => onChange({ ...plan, markets: plan.markets.map((x) => ({ ...x, rRule: { ...rule } })) });
   const applyAll = () => onChange(pending.reduce((p, r) => setPick(p, weeks.next, r.m.id, r.s.pct), plan));
-  const rangeText = (w) => `${ddmm(w.from)} – ${ddmm(w.to)}`;
 
   return (
     <div className="cap-rp">
       <div className="cap-rp-head">
         <h3 className="block-title" style={{ margin: 0 }}><Gauge size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Phong độ R → gợi ý mức tuần sau</h3>
+        <span className="cap-rp-counts">
+          {count("down") ? <span className="cap-rp-count cap-rp-count-down">▼ {count("down")} nên hạ</span> : null}
+          {count("up") ? <span className="cap-rp-count cap-rp-count-up">▲ {count("up")} nên tăng</span> : null}
+          {count("same") ? <span className="cap-rp-count">= {count("same")} giữ</span> : null}
+        </span>
         {pending.length ? (
           <button type="button" className="btn btn-ghost cap-suggest-btn cap-rp-applyall" onClick={applyAll}>
             <Check size={13} /> Áp dụng {pending.length} gợi ý cho tuần {weekLabel(weeks.next)}
@@ -281,65 +284,76 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
         ) : null}
       </div>
       <p className="field-hint cap-rp-hint">
-        R cộng dồn theo ngày đóng lệnh, tính tới hết tuần này
-        {weeks.nudge ? "" : " (tuần này chưa xong nên gợi ý còn đổi)"}. Xấu thì hạ được nhiều bậc một lúc, tốt thì mỗi tuần chỉ tăng 1 bậc.
-        Bấm <Settings2 size={11} style={{ verticalAlign: -1 }} /> để chỉnh luật riêng của từng mảng.
+        R cộng dồn theo ngày đóng lệnh: 1 tuần {ddmm(ranges[0].from)}–{ddmm(ranges[0].to)} · 2 tuần từ {ddmm(ranges[1].from)} · 4 tuần từ {ddmm(ranges[2].from)}
+        {weeks.nudge ? "." : " — tuần này chưa xong nên gợi ý còn đổi."} Ô sáng viền là khung đã chạm ngưỡng.
       </p>
 
-      <div className="cap-rp-row cap-rp-cols">
-        <span>Mảng</span>
-        {ranges.map((w) => <span key={w.key} className="cap-rp-num" title={rangeText(w)}>{w.label}<small>{rangeText(w)}</small></span>)}
-        <span className="cap-rp-num">Tuần này</span>
-        <span>Gợi ý tuần sau</span>
-      </div>
-      {rows.map(({ m, stats, s, next }) => {
-        const applied = s && next.explicit && next.pct === s.pct;
-        return (
-          <div key={m.id} className="cap-rp-item">
-            <div className={`cap-rp-row cap-rp-act-${s ? s.action : "none"}`}>
-              <span className="cap-rp-name">
-                <b>{m.name}</b>{m.side ? <small className="cap-side-tag">phụ</small> : null}
+      <div className="cap-rp-grid">
+        {rows.map(({ m, stats, s, next }) => {
+          const applied = s && next.explicit && next.pct === s.pct;
+          const action = s ? s.action : "none";
+          const rule = s ? s.rule : normalizeRRule(m.rRule);
+          const verdict = !s ? "Chưa có mức" : action === "none" ? "Chưa gắn tài khoản"
+            : action === "up" ? "Tăng 1 bậc" : action === "down" ? (s.hold ? "Về cầm chừng" : `Hạ ${s.steps || 1} bậc`) : "Giữ mức";
+          const thresholds = {
+            w1: `hạ ≤ ${fmtRVN(rule.downW1)} · tăng ≥ ${fmtRVN(rule.upW1)}`,
+            w2: `hạ ≤ ${fmtRVN(rule.downW2)}`,
+            w4: `cầm chừng ≤ ${fmtRVN(rule.holdM)}`,
+          };
+          return (
+            <div key={m.id} className={`cap-rp-card cap-rp-act-${action}`}>
+              <div className="cap-rp-card-head">
+                <b className="cap-rp-card-name">{m.name}</b>
+                {m.side ? <small className="cap-side-tag">phụ</small> : null}
+                <span className="cap-rp-verdict">{verdict}</span>
                 <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
-                  onClick={() => setOpenRule(openRule === m.id ? null : m.id)}><Settings2 size={13} /></button>
-              </span>
-              {R_WINDOWS.map((w) => {
-                const x = stats.windows[w.key];
-                const tip = `${rangeText(x)}: ${x.n} lệnh có R` + (x.n ? ` · thắng ${Math.round((x.wins / x.n) * 100)}% · TB ${fmtRVN(x.avg)}/lệnh` : "")
-                  + (x.missing ? ` · ${x.missing} lệnh đã đóng thiếu tiền rủi ro nên không tính` : "");
-                return (
-                  <span key={w.key} className="cap-rp-num cap-rp-win" title={tip}>
-                    <small className="cap-rp-mlabel">{w.label}</small>
-                    <b className={`mono ${rTone(x.r, x.n)}`}>{x.n ? fmtRVN(x.r) : "—"}</b>
-                    <small>{x.n ? `${x.wins}/${x.n} thắng` : "0 lệnh"}{x.missing ? ` · ${x.missing} thiếu R` : ""}</small>
+                  onClick={() => setOpenRule(openRule === m.id ? null : m.id)}><Settings2 size={14} /></button>
+              </div>
+
+              <div className="cap-rp-wins">
+                {R_WINDOWS.map((w) => {
+                  const x = stats.windows[w.key];
+                  const hit = s && s.hits ? s.hits[w.key] : null;
+                  const tip = `${ddmm(x.from)}–${ddmm(x.to)}: ${x.n} lệnh có R` + (x.n ? ` · thắng ${Math.round((x.wins / x.n) * 100)}% · TB ${fmtRVN(x.avg)}/lệnh` : "")
+                    + (x.missing ? ` · ${x.missing} lệnh đã đóng thiếu tiền rủi ro nên không tính` : "");
+                  return (
+                    <div key={w.key} className={`cap-rp-box ${x.n ? (x.r > 0 ? "cap-rp-box-pos" : x.r < 0 ? "cap-rp-box-neg" : "") : "cap-rp-box-empty"} ${hit ? `cap-rp-box-hit cap-rp-box-hit-${hit}` : ""}`} title={tip}>
+                      <span className="cap-rp-box-label">{w.label}</span>
+                      <b className="mono">{x.n ? fmtRVN(x.r) : "—"}</b>
+                      <small>{x.n ? `${x.wins}/${x.n} thắng` : "chưa có lệnh"}{x.missing ? ` · ${x.missing} thiếu R` : ""}</small>
+                      <small className="cap-rp-box-thr">{thresholds[w.key]}</small>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {s && action !== "none" ? (
+                <div className="cap-rp-move">
+                  <span className="cap-rp-move-cell"><small>Tuần này</small><b className="mono">{fmtPctVN(s.base)}</b></span>
+                  <span className="cap-rp-move-arrow">→</span>
+                  <span className="cap-rp-move-cell cap-rp-move-to">
+                    <small>Gợi ý tuần sau</small>
+                    <b className="mono">{fmtPctVN(s.pct)}{s.hold ? <small className="cap-hold-tag"><Shield size={10} /> cầm chừng</small> : null}</b>
                   </span>
-                );
-              })}
-              <span className="cap-rp-num cap-rp-now mono"><small className="cap-rp-mlabel">Tuần này</small>{s ? fmtPctVN(s.base) : "—"}</span>
-              <span className="cap-rp-sug">
-                {s ? (
-                  <>
-                    <span className="cap-rp-sug-top">
-                      <b className="cap-rp-badge mono">{ACTION_ICON[s.action]} {s.action === "none" ? "—" : fmtPctVN(s.pct)}</b>
-                      {s.hold ? <small className="cap-hold-tag"><Shield size={10} /> cầm chừng</small> : null}
-                      {s.action === "none" ? null : applied ? (
-                        <span className="cap-rp-applied"><Check size={12} /> đã chọn</span>
-                      ) : (
-                        <button type="button" className="btn btn-ghost cap-suggest-btn" onClick={() => onChange(setPick(plan, weeks.next, m.id, s.pct))}
-                          title={next.explicit ? `Tuần sau đang chọn ${fmtPctVN(next.pct)}` : undefined}>Áp dụng</button>
-                      )}
-                    </span>
-                    <small className="cap-rp-why">
-                      {s.reasons.join(" · ")}
-                      {next.explicit && !applied ? ` · tuần sau bạn đang chọn ${fmtPctVN(next.pct)}` : ""}
-                    </small>
-                  </>
-                ) : <small className="cap-rp-why">Chưa có mức rủi ro</small>}
-              </span>
+                  {applied ? (
+                    <span className="cap-rp-applied"><Check size={13} /> Đã chọn</span>
+                  ) : (
+                    <button type="button" className={`btn ${action === "same" ? "btn-ghost" : "btn-primary"} cap-rp-apply`}
+                      onClick={() => onChange(setPick(plan, weeks.next, m.id, s.pct))}>
+                      {action === "same" ? `Giữ ${fmtPctVN(s.pct)}` : "Áp dụng"}
+                    </button>
+                  )}
+                </div>
+              ) : null}
+              <small className="cap-rp-why">
+                {s ? s.reasons.join(" · ") : "Chưa có mức rủi ro"}
+                {s && next.explicit && !applied ? <span className="cap-rp-why-note"> · tuần sau đang chọn {fmtPctVN(next.pct)}</span> : null}
+              </small>
+              {openRule === m.id ? <RuleEditor market={m} onSave={saveMarket} onCopyAll={copyAll} /> : null}
             </div>
-            {openRule === m.id ? <RuleEditor market={m} onSave={saveMarket} onCopyAll={copyAll} /> : null}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
