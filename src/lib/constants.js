@@ -123,7 +123,7 @@ export const DEFAULT_RESOURCES = {
   sessions: ["Á (Tokyo)", "Âu (London)", "Mỹ (New York)", "Âu-Mỹ chồng lấn"],
   // Rỗng: cả ba mục cũ đều đã có chỗ khác lo. "Có Screenshot" trùng với hai ô ảnh vào/ra lệnh
   // vốn đã tính vào % hoàn thành; "Có Ghi lại nhật ký" thì mở form ra là đang ghi rồi; "Có
-  // Review" thành mục 8 "Nhìn lại sau" — tự đánh dấu, có hạn ngày, viết được nội dung.
+  // Review" thành mục 8 "Nhìn lại" — tự đánh dấu, ghi được nhiều lần nhìn lại.
   // Vẫn thêm mục mới ở Tài nguyên → Checklist được: có mục nào thì mục 9 hiện lại.
   checklistItems: [],
   missReasons: ["Bất khả kháng", "Lỗi cá nhân", "Không nhận ra setup"],

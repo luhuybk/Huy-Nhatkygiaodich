@@ -42,8 +42,7 @@ export function emptyTrade() {
     psychology: "", ratingPsychology: 0, psychologyNote: "",
     setupErrors: [], setupClean: false,
     skills: [],
-    tradeGrade: "", reviewNote: "", needsReview: false, lateReviewDone: false, lateReviewNote: "", lateReviewDate: "",
-    lateReviewImages: [{ link: "", image: "" }],
+    tradeGrade: "", reviewNote: "", needsReview: false, reviewReason: "", reviewLog: [],
     hasMistake: false, mistakeNote: "", mistakeImages: [{ link: "", image: "" }],
     checklist: {},
     hasLesson: false, lessonNote: "",
@@ -2329,16 +2328,16 @@ export function checklistProgress(t, resources) {
   return { checked, total: items.length };
 }
 
-// ---- Nhìn lại sau ------------------------------------------------------------
-// Review viết ngay lúc vừa đóng lệnh vẫn còn dính cảm xúc của chính lệnh đó: vừa thắng thì
-// cái gì cũng đúng, vừa thua thì cái gì cũng sai. Đọc lại sau hai tuần — giá đã đi tiếp,
-// mình đã nguội — mới thấy được góc nhìn lúc ấy sai ở đâu.
+// ---- Nhìn lại ---------------------------------------------------------------
+// Đánh dấu những lệnh đặc biệt cần mở ra xem lại về sau — không phải bài học, không phải lỗi,
+// chỉ đơn giản là "lệnh này đáng xem lại". Thường chỉ khoảng 15% số lệnh: đánh dấu ít thì
+// mỗi lệnh trong danh sách mới đáng mở.
 //
-// Là thứ TỰ ĐÁNH DẤU chứ không bật cho mọi lệnh: phần lớn lệnh đúng quy trình thì hai tuần
-// sau đọc lại cũng chẳng thêm được gì, bắt nhìn lại tất thì cái danh sách đến hạn dài ra
-// tới mức không ai mở nữa. Đánh dấu ít thì mỗi lệnh trong đó mới đáng mở.
-export const LATE_REVIEW_DAYS = 14;
-export const LATE_REVIEW_MAX_IMAGES = 4;
+// Trước đây là "Nhìn lại sau 14 ngày" — có hạn ngày, một ô viết, tick "đã review xong". Giờ
+// không còn hạn và không còn "xong": một lệnh hay có thể mở ra xem nhiều lần, mỗi lần một
+// dòng nhật ký riêng (ngày + nhận xét + ảnh) thay vì viết chồng lên một ô duy nhất.
+export const REVIEW_MAX_IMAGES = 4;
+export const REVIEW_TARGET_SHARE = 15;
 export const MISTAKE_MAX_IMAGES = 4;
 
 // "Lỗi của setup" ở mục 3 chỉ tick được khi setup đó đã khai sẵn bộ lỗi, và chỉ nói được
@@ -2352,66 +2351,61 @@ export function mistakeImages(t) {
   return ((t && t.mistakeImages) || []).filter((x) => x && (x.link || x.image));
 }
 
-export function lateReviewImages(t) {
-  return ((t && t.lateReviewImages) || []).filter((x) => x && (x.link || x.image));
+const realImages = (list) => (Array.isArray(list) ? list : []).filter((x) => x && (x.link || x.image));
+
+export function emptyReviewEntry(date) {
+  return { id: uid(), date: date || todayStr(), note: "", images: [{ link: "", image: "" }] };
 }
 
-// null = lệnh này không đánh dấu cần nhìn lại. pendingExit = đã đánh dấu nhưng chưa đóng lệnh
-// nên chưa có mốc để đếm ngày.
-// Cố tình KHÔNG nằm trong tradeCompletionFields: mục này hai tuần nữa mới làm được, tính vào
-// tiến độ thì mọi lệnh mới đóng đều mắc kẹt dưới 100% vì một việc chưa tới lượt làm.
-export function lateReviewState(t, today) {
-  if (!t) return null;
-  const hasNote = !!String(t.lateReviewNote || "").trim();
-  // "Xong" là ô tick, KHÔNG phải "đã gõ chữ vào". Có lệnh đọc lại xong thấy chẳng có gì để
-  // nói thêm — vẫn là đã review. Có lệnh viết dở nửa chừng — vẫn là chưa xong.
-  const done = !!t.lateReviewDone;
-  // Đã viết hoặc đã đánh dấu xong thì gỡ dấu "cần review" cũng không giấu đi: gỡ dấu là đổi ý
-  // về việc CÓ CẦN đọc lại, không phải lệnh xoá. Giấu đi thì đoạn đã viết nằm trong dữ liệu
-  // mà không sửa được ở đâu nữa.
-  if (!t.needsReview && !hasNote && !done) return null;
-  const doneDate = t.lateReviewDate || "";
-  const base = t.exitDate || "";
-  if (!base || computeResult(t).status !== "closed") {
-    return { due: "", daysLeft: null, ready: false, done, hasNote, doneDate, pendingExit: true };
+// Các lần nhìn lại của một lệnh, cũ trước mới sau. Lệnh ghi theo kiểu cũ (một ô "Nhìn lại
+// sau" + ảnh + ngày) được đọc thành đúng một lần nhìn lại — mở form lưu lại là thành dữ liệu mới.
+export function reviewEntries(t) {
+  if (!t) return [];
+  if (Array.isArray(t.reviewLog)) {
+    return t.reviewLog
+      .filter((e) => e && (String(e.note || "").trim() || realImages(e.images).length))
+      .slice()
+      .sort((x, y) => String(x.date || "").localeCompare(String(y.date || "")));
   }
-  const due = shiftDate(base, LATE_REVIEW_DAYS);
-  const now = today || todayStr();
-  const daysLeft = Math.round((Date.parse(`${due}T00:00:00`) - Date.parse(`${now}T00:00:00`)) / 86400000);
-  return {
-    due,
-    daysLeft: Number.isFinite(daysLeft) ? daysLeft : null,
-    ready: Number.isFinite(daysLeft) ? daysLeft <= 0 : false,
-    done,
-    hasNote,
-    doneDate,
-    pendingExit: false,
-  };
+  const note = String(t.lateReviewNote || "");
+  const images = realImages(t.lateReviewImages);
+  if (!note.trim() && !images.length) return [];
+  return [{ id: "legacy", date: t.lateReviewDate || "", note, images }];
 }
 
-// Thứ tự cho cột "Cần review": quá hạn lâu nhất lên đầu, rồi tới hạn gần, rồi lệnh chưa đóng,
-// rồi đã xong. Không đánh dấu trả null để luôn nằm cuối bảng.
-export function lateReviewRank(t, today) {
-  const s = lateReviewState(t, today);
+// Chuyển lệnh kiểu cũ sang kiểu mới — gọi khi mở form, để lưu lại là sạch trường cũ.
+export function migrateReviewFields(t) {
+  if (!t) return t;
+  // Lần nhìn lại bấm thêm mà bỏ trống thì mở form lần sau dọn đi.
+  if (Array.isArray(t.reviewLog)) return { ...t, reviewLog: t.reviewLog.filter((e) => e && (String(e.note || "").trim() || realImages(e.images).length || e.date === todayStr())) };
+  const { lateReviewNote, lateReviewImages, lateReviewDate, lateReviewDone, ...rest } = t; // eslint-disable-line no-unused-vars
+  return { ...rest, reviewReason: t.reviewReason || "", reviewLog: reviewEntries(t).map((e) => ({ ...e, id: e.id === "legacy" ? uid() : e.id })) };
+}
+
+// null = lệnh không đánh dấu và chưa từng nhìn lại.
+export function reviewState(t) {
+  if (!t) return null;
+  const entries = reviewEntries(t);
+  const reason = String(t.reviewReason || "").trim();
+  if (!t.needsReview && !entries.length) return null;
+  const last = entries.length ? entries[entries.length - 1] : null;
+  return { marked: !!t.needsReview, count: entries.length, lastDate: last ? last.date : "", reason, entries };
+}
+
+// Thứ tự cho cột "Nhìn lại": đánh dấu mà chưa xem lần nào lên đầu, rồi lệnh đánh dấu lâu nhất
+// chưa xem lại, rồi lệnh đã gỡ dấu nhưng còn ghi chép. Không liên quan thì null — nằm cuối bảng.
+export function reviewRank(t) {
+  const s = reviewState(t);
   if (!s) return null;
-  if (s.done) return 900;
-  if (s.pendingExit) return 500;
-  if (s.ready) return -1000 + Math.max(-999, s.daysLeft);
-  return Math.max(0, s.daysLeft);
+  if (s.marked && !s.count) return -1e9;
+  const d = Date.parse(`${s.lastDate || "1970-01-01"}T00:00:00`) / 86400000;
+  return (s.marked ? 0 : 1e6) + (Number.isFinite(d) ? d : 0);
 }
 
-// Đến hạn mà chưa tick xong. Dùng cho Sức khỏe nhật ký.
-// Phải còn đánh dấu `needsReview` mới nhắc: gỡ dấu là đã nói "lệnh này thôi không cần nữa",
-// nhắc tiếp chỉ vì trong đó còn một đoạn viết dở là cãi lại chính lựa chọn đó.
-export function isLateReviewDue(t, today) {
-  if (!t || !t.needsReview) return false;
-  const s = lateReviewState(t, today);
-  return !!s && !s.pendingExit && s.ready && !s.done;
-}
-
-export function lateReviewDue(trades, today) {
-  const now = today || todayStr();
-  return (trades || []).filter((t) => isLateReviewDue(t, now));
+export function reviewShare(trades) {
+  const list = (trades || []).filter((t) => t && t.entryDate);
+  const marked = list.filter((t) => t.needsReview).length;
+  return { marked, total: list.length, pct: list.length ? (marked / list.length) * 100 : 0 };
 }
 
 // Không tính vào % hoàn thành: Phiên, Bonus, Điểm cấu trúc (tùy chọn theo cặp/loại lệnh),
@@ -2864,14 +2858,6 @@ export function journalHealth(trades, resources, setupErrors, presets, skills) {
     filter: { completion: "under100" },
   });
 
-  const dueReview = lateReviewDue(closed);
-  add({
-    id: "lateReview", tone: "warn",
-    label: `Đã đến hạn nhìn lại (sau ${LATE_REVIEW_DAYS} ngày)`,
-    hint: `Bạn đã tự đánh dấu những lệnh này là cần nhìn lại, và chúng đóng đã hơn ${LATE_REVIEW_DAYS} ngày. Mở ra đọc lại nhận xét mình viết lúc đó rồi ghi vào mục "Nhìn lại sau" — giờ đã nguội, đã biết giá đi tiếp thế nào, mới thấy được lúc ấy mình nhìn đúng hay chỉ là đang thắng.`,
-    ids: dueReview.map((t) => t.id),
-  });
-
   add({
     id: "unreviewedErrors", tone: "warn",
     label: "Lệnh đã đóng nhưng chưa soi lỗi setup",
@@ -3095,7 +3081,7 @@ export function tradeSortValue(t, key, resources) {
       const cp = checklistProgress(t, resources);
       return cp ? cp.checked / cp.total : null;
     }
-    case "review": return lateReviewRank(t);
+    case "review": return reviewRank(t);
     case "grade": {
       const g = GRADE_OPTIONS.find((x) => x.id === t.tradeGrade);
       return g ? (g.tone === "win" ? 0 : 1) : null;
@@ -3175,11 +3161,11 @@ const CSV_COLUMNS = [
   ["Cảm nghĩ tâm lý", (t) => t.psychologyNote],
   ["Nhận xét/Review", (t) => t.reviewNote],
   ["Cần nhìn lại", (t) => (t.needsReview ? "Có" : "")],
-  ["Đã review xong", (t) => (t.lateReviewDone ? "Có" : "")],
-  ["Nhìn lại sau", (t) => t.lateReviewNote || ""],
+  ["Ghi chú nhìn lại", (t) => t.reviewReason || ""],
+  ["Số lần nhìn lại", (t) => reviewEntries(t).length || ""],
+  ["Các lần nhìn lại", (t) => reviewEntries(t).map((e) => `[${e.date || "?"}] ${String(e.note || "").trim()}`).join("\n")],
   ["Có lỗi", (t) => (t.hasMistake ? "Có" : "")],
   ["Lỗi đã ghi", (t) => t.mistakeNote || ""],
-  ["Ngày nhìn lại", (t) => t.lateReviewDate || ""],
 ];
 
 export function tradesToCsv(trades) {
@@ -3387,12 +3373,13 @@ export function applyFilters(trades, filters, resources) {
       else if (filters.score === "high" && s < 4) return false;
     }
     if (filters.review) {
-      const lr = lateReviewState(t);
-      if (filters.review === "marked" && !lr) return false;
-      if (filters.review === "due" && !isLateReviewDue(t)) return false;
-      if (filters.review === "waiting" && !(lr && t.needsReview && !lr.done && (lr.pendingExit || !lr.ready))) return false;
-      if (filters.review === "done" && !(lr && lr.done)) return false;
-      if (filters.review === "none" && lr) return false;
+      const rs = reviewState(t);
+      // Bộ lọc đã lưu từ thời "nhìn lại sau 14 ngày": due/waiting ≈ chưa nhìn, done ≈ đã nhìn.
+      const f = { due: "never", waiting: "never", done: "reviewed" }[filters.review] || filters.review;
+      if (f === "marked" && !(rs && rs.marked)) return false;
+      if (f === "never" && !(rs && rs.marked && !rs.count)) return false;
+      if (f === "reviewed" && !(rs && rs.count)) return false;
+      if (f === "none" && rs && rs.marked) return false;
     }
     if (filters.checklist) {
       const cp = checklistProgress(t, resources);

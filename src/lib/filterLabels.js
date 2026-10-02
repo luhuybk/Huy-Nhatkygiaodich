@@ -40,11 +40,14 @@ export const CHECKLIST_FILTERS = [
   { id: "none", label: "Chưa làm gì" },
 ];
 export const REVIEW_FILTERS = [
-  { id: "due", label: "Đã đến hạn nhìn lại" },
-  { id: "waiting", label: "Đã đánh dấu, chưa tới hạn" },
-  { id: "done", label: "Đã review xong" },
-  { id: "marked", label: "Mọi lệnh có đánh dấu" },
+  { id: "marked", label: "Đang đánh dấu nhìn lại" },
+  { id: "never", label: "Đánh dấu, chưa nhìn lần nào" },
+  { id: "reviewed", label: "Đã nhìn lại ít nhất 1 lần" },
   { id: "none", label: "Không đánh dấu" },
+  // Id cũ — chỉ để bộ lọc đã lưu vẫn hiện được nhãn.
+  { id: "due", label: "Đánh dấu, chưa nhìn lần nào", hidden: true },
+  { id: "waiting", label: "Đánh dấu, chưa nhìn lần nào", hidden: true },
+  { id: "done", label: "Đã nhìn lại ít nhất 1 lần", hidden: true },
 ];
 export const LESSON_FILTERS = [
   { id: "yes", label: "Có bài học" },
@@ -85,7 +88,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   }
   if (f.rrFrom || f.rrTo) parts.push(`RR ${f.rrFrom || "…"} → ${f.rrTo || "…"}`);
   if (f.score) parts.push(`Điểm ${pick(SCORE_FILTERS, f.score)}`);
-  if (f.review) parts.push(`Cần review: ${pick(REVIEW_FILTERS, f.review)}`);
+  if (f.review) parts.push(`Nhìn lại: ${pick(REVIEW_FILTERS, f.review)}`);
   if (f.mistake) parts.push(`Lỗi: ${pick(MISTAKE_FILTERS, f.mistake)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));

@@ -6,7 +6,7 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, lateReviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewEntries, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -168,8 +168,8 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
           {SCORE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         <select className="input" value={filters.review || ""} onChange={(e) => set("review")(e.target.value)}>
-          <option value="">Cần review</option>
-          {REVIEW_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          <option value="">Nhìn lại</option>
+          {REVIEW_FILTERS.filter((o) => !o.hidden || o.id === filters.review).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         {hasChecklist ? (
           <select className="input" value={filters.checklist || ""} onChange={(e) => set("checklist")(e.target.value)}>
@@ -256,8 +256,10 @@ function tradeImageShots(t) {
   (t.mistakeImages || []).forEach((img, i) => {
     if (img && (img.image || img.link)) shots.push({ key: `mis-${i}`, label: `Lỗi ${i + 1}`, image: img.image, link: img.link });
   });
-  (t.lateReviewImages || []).forEach((img, i) => {
-    if (img && (img.image || img.link)) shots.push({ key: `lr-${i}`, label: `Nhìn lại ${i + 1}`, image: img.image, link: img.link });
+  reviewEntries(t).forEach((e, n) => {
+    (e.images || []).forEach((img, i) => {
+      if (img && (img.image || img.link)) shots.push({ key: `lr-${e.id}-${i}`, label: `Nhìn lại lần ${n + 1}${e.date ? ` · ${e.date}` : ""}`, image: img.image, link: img.link });
+    });
   });
   return shots;
 }
@@ -270,7 +272,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
   const partialRows = partialExitsOf(t);
   const score = avgPillarScore(t);
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
-  const lr = lateReviewState(t);
+  const rv = reviewState(t);
   // Chỉ hiện mục ĐÃ tick. Mục checklist bị gỡ khỏi Tài nguyên vẫn nằm lại trong lệnh cũ, và
   // hiện dấu ✗ đỏ cho một mục không còn tồn tại thì đọc thành "lệnh này làm thiếu" — trong khi
   // sự thật chỉ là mục đó đã bỏ. Cái đã tick thì giữ, vì đó là chuyện đã xảy ra thật.
@@ -350,14 +352,15 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
               <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
-              {lr ? (
+              {rv ? (
                 <>
-                  <DetailRow label="Cần review"
-                    value={lr.done ? `✓ Đã review xong${lr.doneDate ? ` ${lr.doneDate}` : ""}`
-                      : lr.pendingExit ? "📌 Đã đánh dấu — hạn tính từ ngày thoát lệnh"
-                      : lr.ready ? `📌 Đã đến hạn từ ${lr.due}` : `📌 Tới hạn ${lr.due} · còn ${lr.daysLeft} ngày`}
-                    tone={lr.done ? "text-win" : lr.ready && !lr.pendingExit ? "text-pending" : ""} />
-                  <DetailRow prose label="Nhìn lại sau" value={t.lateReviewNote} />
+                  <DetailRow label="Nhìn lại"
+                    value={`${rv.marked ? "📌 Đang đánh dấu" : "Đã gỡ dấu"} · ${rv.count ? `${rv.count} lần, gần nhất ${rv.lastDate || "—"}` : "chưa nhìn lại lần nào"}`}
+                    tone={rv.marked ? "text-pending" : ""} />
+                  {rv.reason ? <DetailRow prose label="Ghi chú nhìn lại" value={rv.reason} /> : null}
+                  {rv.entries.map((e, i) => (
+                    <DetailRow key={e.id} prose label={`Lần ${i + 1}${e.date ? ` · ${e.date}` : ""}`} value={e.note || "(chỉ có ảnh)"} />
+                  ))}
                 </>
               ) : null}
               {t.hasMistake || String(t.mistakeNote || "").trim() ? (
@@ -460,7 +463,7 @@ const JOURNAL_COLUMNS = [
   { id: "rr", key: "rr", label: "RR", num: true, strong: true },
   { id: "status", key: "status", label: "Kết quả" },
   { id: "score", key: "score", label: "Chấm điểm", num: true, soft: true },
-  { id: "review", key: "review", label: "Cần review", soft: true },
+  { id: "review", key: "review", label: "Nhìn lại", soft: true },
   { id: "grade", key: "grade", label: "Đánh giá" },
   { id: "completion", key: "completion", label: "Tiến độ", num: true, soft: true },
   { id: "hasLesson", key: "hasLesson", label: "Bài học", soft: true },
@@ -645,7 +648,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
             // để mờ đi vì nó chưa phải kết quả cuối của lệnh.
             const settled = cellProfit !== null;
             const banked = settled ? cellProfit : (partialFilled ? partialProfit : null);
-            const lr = lateReviewState(t);
+            const rv = reviewState(t);
             const completion = tradeCompletion(t);
             const shots = tradeImageShots(t);
             const score = avgPillarScore(t);
@@ -688,16 +691,10 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
               )),
               score: td(C.score, score === null ? EMPTY : `${score.toFixed(1)}★`,
                 { className: `mono ${score === null ? "" : score >= 4 ? "text-win" : score <= 2 ? "text-loss" : ""}` }),
-              review: td(C.review, !lr ? EMPTY : (
-                <span className={`review-tag ${lr.done ? "review-tag-done" : lr.pendingExit ? "review-tag-wait"
-                  : lr.ready ? "review-tag-due" : "review-tag-wait"}`}
-                  title={lr.done ? `Đã review xong${lr.doneDate ? ` ${lr.doneDate}` : ""}`
-                    : lr.pendingExit ? "Đã đánh dấu — hạn tính từ ngày thoát lệnh"
-                    : lr.ready ? `Đến hạn từ ${lr.due}` : `Tới hạn ${lr.due}`}>
-                  {lr.done ? <><Check size={11} /> Xong</>
-                    : lr.pendingExit ? "📌 chờ đóng"
-                    : lr.ready ? "Đến hạn"
-                    : `còn ${lr.daysLeft}n`}
+              review: td(C.review, !rv ? EMPTY : (
+                <span className={`review-tag ${rv.marked ? (rv.count ? "review-tag-marked" : "review-tag-due") : ""}`}
+                  title={`${rv.marked ? "Đang đánh dấu cần nhìn lại" : "Đã gỡ dấu"}${rv.count ? ` · ${rv.count} lần, gần nhất ${rv.lastDate || "—"}` : " · chưa nhìn lần nào"}${rv.reason ? `\n${rv.reason}` : ""}`}>
+                  {rv.marked ? "📌 " : ""}{rv.count ? `${rv.count} lần` : "chưa xem"}
                 </span>
               )),
               grade: td(C.grade, t.tradeGrade

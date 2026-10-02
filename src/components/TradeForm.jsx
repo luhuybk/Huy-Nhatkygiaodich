@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, LATE_REVIEW_DAYS, LATE_REVIEW_MAX_IMAGES, lateReviewState, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -285,8 +285,66 @@ function SetupErrorPicker({ trade, catalog, onChange }) {
   );
 }
 
+// Mỗi lần mở lệnh ra xem lại là một dòng riêng: ngày + nhận xét + ảnh chart lúc đó. Chỉ lần
+// mới nhất mở sẵn để viết; các lần trước gấp lại còn một dòng tóm tắt, bấm vào mới mở — nhìn
+// lại nhiều lần mà form vẫn gọn, và không lần nào viết đè lên lần trước.
+function ReviewLog({ entries, onChange, onRemove, onAdd }) {
+  const latestId = entries.length ? entries[entries.length - 1].id : null;
+  const [openIds, setOpenIds] = useState(() => new Set(latestId ? [latestId] : []));
+  const lastLen = useRef(entries.length);
+  useEffect(() => {
+    // Vừa bấm "Nhìn lại lần mới" thì mở đúng lần đó ra để viết.
+    if (entries.length > lastLen.current && latestId) setOpenIds((prev) => new Set([...prev, latestId]));
+    lastLen.current = entries.length;
+  }, [entries.length, latestId]);
+  const toggle = (id) => setOpenIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const ordered = [...entries].map((e, i) => ({ e, n: i + 1 })).reverse();
+  return (
+    <div className="review-log">
+      <div className="review-log-head">
+        <span>Các lần nhìn lại</span>
+        <button type="button" className="btn btn-ghost review-log-add" onClick={onAdd}><Plus size={13} /> Nhìn lại lần mới</button>
+      </div>
+      {!entries.length ? <p className="field-hint" style={{ margin: 0 }}>Chưa có lần nào. Mỗi lần mở lệnh ra xem lại, bấm "Nhìn lại lần mới" để ghi nhận xét và ảnh của lần đó.</p> : null}
+      {ordered.map(({ e, n }) => {
+        const open = openIds.has(e.id);
+        const shots = (e.images || []).filter((x) => x && (x.link || x.image)).length;
+        const firstLine = String(e.note || "").split("\n").map((x) => x.trim()).find(Boolean) || "";
+        return (
+          <div key={e.id} className={`review-entry ${open ? "review-entry-open" : ""}`}>
+            <div className="review-entry-head">
+              <button type="button" className="review-entry-toggle" onClick={() => toggle(e.id)}>
+                <ChevronDown size={13} className="review-entry-chev" />
+                <b>Lần {n}</b>
+                <span className="mono review-entry-date">{e.date || "—"}</span>
+                {!open ? <span className="review-entry-peek">{firstLine || (shots ? "" : "trống")}</span> : null}
+                {!open && shots ? <span className="review-entry-shots">{shots} ảnh</span> : null}
+              </button>
+              <ConfirmButton onConfirm={() => onRemove(e.id)} />
+            </div>
+            {open ? (
+              <div className="review-entry-body">
+                <div className="review-entry-row">
+                  <Field label="Ngày nhìn lại">
+                    <input type="date" className="input" value={e.date || ""} onChange={(ev) => onChange(e.id, { date: ev.target.value })} />
+                  </Field>
+                </div>
+                <textarea className="input textarea" value={e.note || ""} onChange={(ev) => onChange(e.id, { note: ev.target.value })}
+                  placeholder="Giờ nhìn lại thấy gì? Giá đã đi tiếp thế nào, lúc đó mình nhìn đúng hay chỉ là may..." />
+                <Field label="Ảnh chart lần này" hint={`Chụp chart lúc nhìn lại để so với lúc vào lệnh — tối đa ${REVIEW_MAX_IMAGES} ảnh/link`}>
+                  <MultiImageOrLink items={e.images} onChange={(v) => onChange(e.id, { images: v })} label={`review-${e.id}`} max={REVIEW_MAX_IMAGES} />
+                </Field>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills, trades, ledger, onSave, onCancel }) {
-  const [t, setT] = useState(initial || emptyTrade());
+  const [t, setT] = useState(() => migrateReviewFields(initial || emptyTrade()));
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
   const missing = (key) => isFieldMissing(t, key);
@@ -314,26 +372,16 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     return { options, label: nums.length ? `${Math.min(...nums)} đến ${Math.max(...nums)}` : "chưa có mức nào" };
   }, [resources && resources.structureScores]); // eslint-disable-line react-hooks/exhaustive-deps
   const sections = useMemo(() => visibleFormSections(resources), [checklistCount]); // eslint-disable-line react-hooks/exhaustive-deps
-  const lateReview = lateReviewState(t);
-  // Gỡ dấu thì thôi nhắc, nhưng giữ nguyên đoạn đã viết — xem lateReviewState().
+  // Gỡ dấu thì thôi nằm trong danh sách cần nhìn lại, nhưng các lần đã ghi vẫn giữ nguyên.
   const setNeedsReview = (on) => setT((prev) => ({ ...prev, needsReview: !!on }));
   const setHasMistake = (on) => setT((prev) => ({ ...prev, hasMistake: !!on }));
   const mistakeText = !!String(t.mistakeNote || "").trim();
   const mistakeShots = mistakeImages(t).length > 0;
-  // Đóng dấu ngày ngay lúc động vào — viết chữ hay tick "đã review xong", cái nào trước cũng
-  // được. Không có ngày thì sau này đọc lại không biết mình nhìn lại lúc nào, mà "lúc nào"
-  // chính là thứ khiến mục này có giá trị. Xoá sạch cả hai thì ngày cũng đi theo.
-  const stampDate = (prev, active) => (active ? prev.lateReviewDate || todayStr() : "");
-  const setLateReview = (v) => setT((prev) => ({
-    ...prev,
-    lateReviewNote: v,
-    lateReviewDate: stampDate(prev, !!String(v || "").trim() || !!prev.lateReviewDone),
-  }));
-  const setLateReviewDone = (on) => setT((prev) => ({
-    ...prev,
-    lateReviewDone: !!on,
-    lateReviewDate: stampDate(prev, !!on || !!String(prev.lateReviewNote || "").trim()),
-  }));
+  const reviewLog = Array.isArray(t.reviewLog) ? t.reviewLog : [];
+  const setReviewEntry = (id, patch) => setT((prev) => ({ ...prev, reviewLog: (prev.reviewLog || []).map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
+  const removeReviewEntry = (id) => setT((prev) => ({ ...prev, reviewLog: (prev.reviewLog || []).filter((e) => e.id !== id) }));
+  // Tỉ lệ lệnh đang đánh dấu, tính luôn lệnh đang mở trong form (kể cả khi chưa lưu).
+  const share = useMemo(() => reviewShare([...(trades || []).filter((x) => x.id !== t.id), t]), [trades, t]);
   const { rr, outcome } = computeResult(t);
   const completion = tradeCompletion(t);
   const partial = partialExitStats(t);
@@ -666,63 +714,36 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
         ) : null}
       </Section>
 
-      <Section id="sec-8" num="8" title="Nhìn lại sau / Lỗi" subtitle={`Đọc lại sau ${LATE_REVIEW_DAYS} ngày, và ghi lại lỗi đã mắc trong lệnh này`}>
+      <Section id="sec-8" num="8" title="Nhìn lại / Lỗi" subtitle="Đánh dấu lệnh đáng mở ra xem lại, và ghi lại lỗi đã mắc trong lệnh này">
         <button
           type="button"
           className={`lesson-toggle-btn ${t.needsReview ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
           onClick={() => setNeedsReview(!t.needsReview)}
         >
-          <History size={15} /> {t.needsReview ? `📌 Cần nhìn lại sau ${LATE_REVIEW_DAYS} ngày` : "Đánh dấu là cần nhìn lại sau"}
+          <History size={15} /> {t.needsReview ? "📌 Lệnh cần nhìn lại" : "Đánh dấu là cần nhìn lại"}
         </button>
         <span className="field-hint" style={{ display: "block", marginTop: 7 }}>
           {t.needsReview
-            ? "Đến hạn, lệnh này sẽ hiện ở Sức khỏe nhật ký để bạn mở ra đọc lại."
-            : "Tùy chọn — không phải lệnh nào cũng cần. Đánh dấu những lệnh mà bây giờ bạn chưa chắc mình đúng hay chỉ là may."}
+            ? "Lọc \"Nhìn lại\" ở Nhật ký để mở lại cả nhóm lệnh này. Mỗi lần xem lại thì thêm một lần nhìn lại bên dưới."
+            : "Tùy chọn — chỉ dành cho những lệnh đặc biệt, không phải bài học cũng không phải lỗi, chỉ là đáng mở ra xem lại về sau."}
+          {" "}Đang đánh dấu <b>{share.marked}/{share.total}</b> lệnh ({Math.round(share.pct)}%) — thường khoảng {REVIEW_TARGET_SHARE}%.
         </span>
-        {lateReview ? (
-          <div className={`late-review ${lateReview.done ? "late-review-done" : lateReview.pendingExit ? "late-review-wait" : lateReview.ready ? "late-review-due" : "late-review-wait"}`}>
+        {t.needsReview || reviewLog.length || String(t.reviewReason || "").trim() ? (
+          <div className={`late-review ${t.needsReview ? "late-review-due" : "late-review-wait"}`}>
             <div className="late-review-head">
               <History size={14} />
-              <strong>Nhìn lại sau {LATE_REVIEW_DAYS} ngày</strong>
+              <strong>Nhìn lại</strong>
               <span className="late-review-when">
-                {lateReview.done
-                  ? `đã review xong${lateReview.doneDate ? ` ${lateReview.doneDate}` : ""}`
-                  : lateReview.pendingExit
-                    ? "chưa đóng lệnh — chưa tính được hạn"
-                    : lateReview.ready
-                      ? `đến hạn từ ${lateReview.due}`
-                      : `tới hạn ${lateReview.due} · còn ${lateReview.daysLeft} ngày`}
+                {reviewLog.length ? `${reviewLog.length} lần · gần nhất ${[...reviewLog].map((e) => e.date).filter(Boolean).sort().pop() || "—"}` : "chưa nhìn lại lần nào"}
+                {!t.needsReview ? " · đã gỡ dấu" : ""}
               </span>
             </div>
-            <span className="field-hint">
-              {lateReview.pendingExit
-                ? `Hạn đếm từ ngày thoát lệnh, nên điền Ngày exit ở mục 1C xong mới có hạn. Đánh dấu trước từ bây giờ cũng được — lúc còn đang trong lệnh mới nhớ rõ vì sao mình muốn đọc lại.`
-                : lateReview.ready || lateReview.done
-                  ? "Đọc lại phần Nhận xét / Review ở mục 7 trước khi viết. Giờ đã biết giá đi tiếp thế nào — lúc đó bạn nhìn đúng, hay chỉ đang thắng nên thấy gì cũng đúng?"
-                  : "Chưa tới lúc. Để nguội cho hết cảm xúc của chính lệnh này rồi hãy đọc lại — viết sớm thì vẫn là góc nhìn cũ. Muốn viết trước vẫn được."}
-            </span>
-            <textarea
-              className="input textarea"
-              value={t.lateReviewNote || ""}
-              onChange={(e) => setLateReview(e.target.value)}
-              placeholder="Đọc lại nhận xét cũ, giờ bạn thấy gì khác? Điều gì lúc đó tưởng là kỹ năng mà hoá ra là may..."
-            />
-            {/* Sau 14 ngày giá đã đi tiếp một đoạn dài — chính cái ảnh chart "về sau" mới là
-                thứ nói được lúc đó mình nhìn đúng hay sai, chữ không tả lại được. */}
-            <Field label="Ảnh chart lúc nhìn lại" hint={`Chụp lại chart sau ${LATE_REVIEW_DAYS} ngày để so với lúc vào lệnh — tối đa ${LATE_REVIEW_MAX_IMAGES} ảnh/link`}>
-              <MultiImageOrLink items={t.lateReviewImages} onChange={set("lateReviewImages")} label="late-review" max={LATE_REVIEW_MAX_IMAGES} />
+            <Field label="Ghi chú — vì sao lệnh này cần nhìn lại">
+              <textarea className="input textarea review-reason" value={t.reviewReason || ""} onChange={(e) => set("reviewReason")(e.target.value)}
+                placeholder="VD: thắng nhưng không chắc vì đúng hay vì may; setup lạ, muốn xem về sau giá đi thế nào..." />
             </Field>
-            <label className={`checklist-item late-review-done-box ${t.lateReviewDone ? "checklist-checked" : ""}`}>
-              <input type="checkbox" checked={!!t.lateReviewDone} onChange={(e) => setLateReviewDone(e.target.checked)} />
-              <span>Đã review xong{t.lateReviewDone && t.lateReviewDate ? ` · ${t.lateReviewDate}` : ""}</span>
-            </label>
-            <span className="field-hint">
-              {t.lateReviewDone
-                ? "Lệnh này hết nằm trong danh sách đến hạn."
-                : lateReview.hasNote
-                  ? "Đã viết nhưng chưa đánh dấu xong — vẫn còn trong danh sách đến hạn, phòng khi bạn viết dở."
-                  : "Tick vào đây là xong, kể cả khi không viết gì thêm — đọc lại thấy chẳng có gì để nói cũng là một kết luận."}
-            </span>
+            <ReviewLog entries={reviewLog} onChange={setReviewEntry} onRemove={removeReviewEntry}
+              onAdd={() => setT((prev) => ({ ...prev, reviewLog: [...(prev.reviewLog || []), emptyReviewEntry()] }))} />
           </div>
         ) : null}
 
