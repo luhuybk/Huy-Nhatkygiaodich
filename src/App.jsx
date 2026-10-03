@@ -19,6 +19,7 @@ import { NotesSection } from "./components/Notes.jsx";
 import { SettingsSection } from "./components/Settings.jsx";
 import { SloganBar, useStickyTab } from "./components/ui.jsx";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
+import { normalizeJourneyLog } from "./lib/journeyLog.js";
 import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
@@ -102,6 +103,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [processImprovements, setProcessImprovements] = useState([]);
   const [problemLogs, setProblemLogs] = useState([]);
   const [newsLogs, setNewsLogs] = useState([]);
+  const [journeyLog, setJourneyLog] = useState(() => normalizeJourneyLog(null));
   const [tradingPlans, setTradingPlans] = useState([]);
   // null = chưa từng lưu: trang hiện bảng mẫu nhưng chưa ghi gì, sửa lần đầu mới lưu.
   const [capitalPlanSaved, setCapitalPlan] = useState(null);
@@ -142,7 +144,7 @@ function AppShell({ onSignOut, userEmail }) {
 
   useEffect(() => {
     (async () => {
-      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk, fp, tp, cp] = await Promise.all([
+      const [ts, rs, lg, nt, ls, pi, pl, nl, pr, sl, us, ms, ss, sv, rm, ca, ce, cf, sr, sw, bk, scl, smt, tdn, se, sk, fp, tp, cp, jl] = await Promise.all([
         safeGet("trades", []),
         safeGet("resources", DEFAULT_RESOURCES),
         safeGet("ledger", []),
@@ -172,6 +174,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("journalFilterPresets", []),
         safeGet("tradingPlans", []),
         safeGet("capitalPlan", null),
+        safeGet("journeyLog", null),
       ]);
       setTrades(ts);
       setResources(normalizeResources(rs));
@@ -181,6 +184,7 @@ function AppShell({ onSignOut, userEmail }) {
       setProcessImprovements(pi);
       setProblemLogs(pl);
       setNewsLogs(nl);
+      setJourneyLog(normalizeJourneyLog(jl));
       setTradingPlans(Array.isArray(tp) ? tp : []);
       // Dữ liệu cũ có mảng "FX × 3 tài khoản": tách thành 3 mảng riêng và ghi lại một lần, để bot
       // Telegram (đọc thẳng cơ sở dữ liệu) cũng thấy đúng 3 mảng.
@@ -241,7 +245,7 @@ function AppShell({ onSignOut, userEmail }) {
         const snap = makeSnapshot({
           trades: ts, resources: rs, ledger: lg, notes: nt, lessons: ls,
           processImprovements: pi, problemLogs: pl, newsLogs: nl, principles: pr, skills: sk, journalFilterPresets: fp,
-          tradingPlans: tp, capitalPlan: cp,
+          tradingPlans: tp, capitalPlan: cp, journeyLog: jl,
           setupLibrary: sl, missedSetups: ms, skippedSetups: ss, setupVariants: sv, reminders: rm,
           capitalAccounts: ca, capitalEntries: ce, capitalFlows: cf,
           slReminderSettings: sr, symbolWatches: sw, setupCheckLog: scl,
@@ -303,6 +307,7 @@ function AppShell({ onSignOut, userEmail }) {
   const persistProcessImprovements = useCallback(async (next) => { setProcessImprovements(next); noteSave("processImprovements", next, await safeSet("processImprovements", next)); }, []);
   const persistProblemLogs = useCallback(async (next) => { setProblemLogs(next); noteSave("problemLogs", next, await safeSet("problemLogs", next)); }, []);
   const persistNewsLogs = useCallback(async (next) => { setNewsLogs(next); noteSave("newsLogs", next, await safeSet("newsLogs", next)); }, []);
+  const persistJourneyLog = useCallback(async (next) => { setJourneyLog(next); noteSave("journeyLog", next, await safeSet("journeyLog", next)); }, []);
   const persistTradingPlans = useCallback(async (next) => { setTradingPlans(next); noteSave("tradingPlans", next, await safeSet("tradingPlans", next)); }, []);
   const persistCapitalPlan = useCallback(async (next) => { setCapitalPlan(next); noteSave("capitalPlan", next, await safeSet("capitalPlan", next)); }, []);
   const persistSkills = useCallback(async (next) => { setSkills(next); noteSave("skills", next, await safeSet("skills", next)); }, []);
@@ -531,6 +536,7 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.processImprovements) persistProcessImprovements(data.processImprovements);
     if (data.problemLogs) persistProblemLogs(data.problemLogs);
     if (data.newsLogs) persistNewsLogs(data.newsLogs);
+    if (data.journeyLog) persistJourneyLog(normalizeJourneyLog(data.journeyLog));
     if (data.tradingPlans) persistTradingPlans(data.tradingPlans);
     if (data.capitalPlan && normalizeCapitalPlan(data.capitalPlan)) {
       const accs = (data.resources ? normalizeResources(data.resources) : resources).accounts;
@@ -601,7 +607,7 @@ function AppShell({ onSignOut, userEmail }) {
   const handleBackupNow = async () => {
     const snap = makeSnapshot({
       trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
-      journalFilterPresets: filterPresets, tradingPlans, capitalPlan: capitalPlanSaved,
+      journalFilterPresets: filterPresets, tradingPlans, capitalPlan: capitalPlanSaved, journeyLog,
       principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders,
       capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog,
     }, Date.now());
@@ -622,6 +628,7 @@ function AppShell({ onSignOut, userEmail }) {
     persistProcessImprovements([]);
     persistProblemLogs([]);
     persistNewsLogs([]);
+    persistJourneyLog(normalizeJourneyLog(null));
     persistTradingPlans([]);
     // Ghi {} chứ không ghi bảng mẫu: normalizeCapitalPlan coi là "chưa từng lưu".
     setCapitalPlan(null);
@@ -654,7 +661,7 @@ function AppShell({ onSignOut, userEmail }) {
   // Mọi kho dữ liệu có thể chứa đường dẫn ảnh. Quét ảnh mồ côi đi sâu toàn bộ object này, nên
   // thiếu MỘT kho ở đây là ảnh đang dùng bị coi là mồ côi — thêm state mới thì thêm cả vào đây.
   const allData = {
-    trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, skills,
+    trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, skills,
     principles, setupLibrary, missedSetups, skippedSetups, setupVariants, setupErrors, reminders,
     capitalAccounts, capitalEntries, capitalFlows, uiSettings, slReminderSettings, symbolWatches,
     setupCheckLog, slMutedTrades, taskDone, filterPresets,
@@ -789,7 +796,7 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
               view === "lessons" ? (
-                <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
+                <JourneySection journeyLog={journeyLog} onChangeJourneyLog={persistJourneyLog} lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
@@ -806,7 +813,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "resources" ? (
                 <ResourceManager resources={resources} onChange={handleResourcesChange} />
               ) :
-              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} tradingPlans={tradingPlans} capitalPlan={capitalPlanSaved} skills={skills} journalFilterPresets={filterPresets} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
+              <SettingsSection trades={trades} resources={resources} ledger={ledger} notes={notes} lessons={lessons} processImprovements={processImprovements} problemLogs={problemLogs} newsLogs={newsLogs} journeyLog={journeyLog} tradingPlans={tradingPlans} capitalPlan={capitalPlanSaved} skills={skills} journalFilterPresets={filterPresets} principles={principles} setupLibrary={setupLibrary} setupErrors={setupErrors} missedSetups={missedSetups}
                 skippedSetups={skippedSetups} setupVariants={setupVariants} reminders={reminders}
                 capitalAccounts={capitalAccounts} capitalEntries={capitalEntries} capitalFlows={capitalFlows}
                 uiSettings={uiSettings} onUiSettingsChange={persistUiSettings}
