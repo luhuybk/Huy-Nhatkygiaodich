@@ -4,6 +4,7 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
   Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown, Scale,
+  NotebookPen,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -42,6 +43,7 @@ const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").th
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
 const SetupErrorsPage = lazy(() => import("./components/SetupErrors.jsx").then((m) => ({ default: m.SetupErrorsPage })));
 const CapitalPlanPage = lazy(() => import("./components/CapitalPlan.jsx").then((m) => ({ default: m.CapitalPlanPage })));
+const JourneyLogSection = lazy(() => import("./components/JourneyLog.jsx").then((m) => ({ default: m.JourneyLogSection })));
 const HealthCheckPage = lazy(() => import("./components/HealthCheck.jsx").then((m) => ({ default: m.HealthCheckPage })));
 
 const NAV_GROUPS = [
@@ -49,6 +51,7 @@ const NAV_GROUPS = [
     label: "Theo dõi", items: [
       { key: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
       { key: "journal", label: "Nhật ký", icon: BookOpen },
+      { key: "journeylog", label: "Log hành trình", icon: NotebookPen },
       { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
       { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
       { key: "setuphub", label: "Setup tổng hợp", icon: Shapes },
@@ -794,9 +797,13 @@ function AppShell({ onSignOut, userEmail }) {
               view === "setuperrors" ? (
                 <SetupErrorsPage errors={setupErrors} trades={trades} resources={resources} onChange={persistSetupErrors} onTradesChange={persistTrades} />
               ) :
+              view === "journeylog" ? (
+                <JourneyLogSection data={journeyLog} onChange={persistJourneyLog} trades={trades} onOpenTrade={setViewingTrade}
+                  lessons={lessons} onChangeLessons={persistLessons} />
+              ) :
               view === "notes" ? <NotesSection notes={notes} onChange={persistNotes} /> :
               view === "lessons" ? (
-                <JourneySection journeyLog={journeyLog} onChangeJourneyLog={persistJourneyLog} lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
+                <JourneySection lessons={lessons} resources={resources} trades={trades} onChangeLessons={persistLessons}
                   processImprovements={processImprovements} onChangeProcessImprovements={persistProcessImprovements}
                   problemLogs={problemLogs} onChangeProblemLogs={persistProblemLogs}
                   newsLogs={newsLogs} onChangeNewsLogs={persistNewsLogs}
@@ -850,6 +857,8 @@ function AppShell({ onSignOut, userEmail }) {
         <Suspense fallback={null}>
           <TradeDetailModal
             trade={viewingTrade}
+            journeyLog={journeyLog}
+            onOpenLog={() => { setViewingTrade(null); goTo("journeylog"); }}
             setupErrors={setupErrors}
             skills={skills}
             onClose={() => setViewingTrade(null)}

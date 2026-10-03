@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
-import { emptyLesson, todayStr, uid, weekStart } from "../lib/helpers.js";
+import { dateKey, emptyLesson, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
   logRange, logRangeLabel, logStats, monthRange, moodMeta, tradesInRange,
@@ -44,9 +44,48 @@ function TradeResult({ trades, from, to, onOpenTrade }) {
   );
 }
 
-function Composer({ draft, setDraft, tags, editing, onSave, onCancel, boxRef }) {
+const tradeLabel = (t) => `${t.symbol || "?"} ${t.direction === "sell" ? "↓" : "↑"}`;
+const tradeDay = (t) => { const d = dateKey(t); return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : ""; };
+
+// Gắn log vào lệnh cụ thể (không bắt buộc). Gợi ý sẵn các lệnh trong đúng ngày/tuần của log;
+// lệnh khác thì gõ mã để tìm.
+function TradePicker({ trades, draft, onToggle }) {
+  const [q, setQ] = useState("");
+  const ids = draft.tradeIds || [];
+  const { from, to } = logRange({ ...draft, date: draft.scope === "week" ? weekStart(draft.date) : draft.date });
+  const near = useMemo(() => (trades || []).filter((t) => { const d = dateKey(t); return d && d >= from && d <= to; }), [trades, from, to]);
+  const found = useMemo(() => {
+    const k = q.trim().toUpperCase();
+    if (!k) return [];
+    return (trades || []).filter((t) => String(t.symbol || "").toUpperCase().includes(k) && !near.includes(t))
+      .sort((a, b) => String(dateKey(b)).localeCompare(String(dateKey(a)))).slice(0, 8);
+  }, [trades, q, near]);
+  const picked = (trades || []).filter((t) => ids.includes(t.id) && !near.includes(t));
+  const chip = (t) => (
+    <button key={t.id} type="button" className={`jl-trade-chip ${ids.includes(t.id) ? "jl-trade-chip-on" : ""}`} onClick={() => onToggle(t.id)}>
+      {ids.includes(t.id) ? <Check size={11} /> : <Link2 size={11} />} {tradeLabel(t)} <small>{tradeDay(t)}</small>
+    </button>
+  );
+  return (
+    <div className="jl-picker">
+      <span className="jl-picker-label"><Link2 size={12} /> Gắn vào lệnh <small>(không bắt buộc)</small></span>
+      <span className="jl-trade-list">
+        {near.length ? near.map(chip) : <small className="field-hint" style={{ margin: 0 }}>Không có lệnh trong {draft.scope === "week" ? "tuần" : "ngày"} này.</small>}
+        {picked.map(chip)}
+      </span>
+      <span className="jl-picker-search">
+        <Search size={12} />
+        <input className="input input-inline" value={q} placeholder="Lệnh ngày khác: gõ mã, VD XAU" onChange={(e) => setQ(e.target.value)} />
+      </span>
+      {found.length ? <span className="jl-trade-list">{found.map(chip)}</span> : null}
+    </div>
+  );
+}
+
+function Composer({ draft, setDraft, tags, trades, editing, onSave, onCancel, boxRef }) {
   const set = (k) => (v) => setDraft((p) => ({ ...p, [k]: v }));
   const toggleTag = (id) => setDraft((p) => ({ ...p, tags: (p.tags || []).includes(id) ? p.tags.filter((x) => x !== id) : [...(p.tags || []), id] }));
+  const toggleTrade = (id) => setDraft((p) => ({ ...p, tradeIds: (p.tradeIds || []).includes(id) ? p.tradeIds.filter((x) => x !== id) : [...(p.tradeIds || []), id] }));
   const canSave = !!String(draft.text || "").trim();
   const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSave) { e.preventDefault(); onSave(); } };
   return (
@@ -74,9 +113,10 @@ function Composer({ draft, setDraft, tags, editing, onSave, onCancel, boxRef }) 
         <textarea className="input textarea jl-cause" value={draft.cause} onChange={(e) => set("cause")(e.target.value)} onKeyDown={onKey}
           placeholder="VD: thua 2 lệnh trước nên muốn gỡ; ngủ ít; vào lệnh khi chưa đủ tín hiệu..." />
       </Field>
+      <TradePicker trades={trades} draft={draft} onToggle={toggleTrade} />
       <div className="jl-composer-actions">
         <span className="field-hint">Ctrl/⌘ + Enter để lưu</span>
-        {editing ? <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy sửa</button> : null}
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>{editing ? "Hủy sửa" : "Đóng"}</button>
         <button type="button" className="btn btn-primary" disabled={!canSave} onClick={onSave}><Check size={14} /> {editing ? "Lưu thay đổi" : "Ghi log"}</button>
       </div>
     </div>
@@ -120,6 +160,7 @@ function TagManager({ tags, entries, onChange, onClose }) {
 function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLesson }) {
   const { from, to } = logRange(e);
   const mood = moodMeta(e.mood);
+  const linked = (trades || []).filter((t) => (e.tradeIds || []).includes(t.id));
   return (
     <div className={`jl-entry ${e.scope === "week" ? "jl-entry-week" : ""}`}>
       <div className="jl-entry-head">
@@ -138,7 +179,18 @@ function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLess
       </div>
       <p className="jl-entry-text">{e.text}</p>
       {e.cause ? <p className="jl-entry-cause"><span>Nguyên nhân</span>{e.cause}</p> : null}
-      <div className="jl-entry-foot"><TradeResult trades={trades} from={from} to={to} onOpenTrade={onOpenTrade} /></div>
+      <div className="jl-entry-foot">
+        <TradeResult trades={trades} from={from} to={to} onOpenTrade={onOpenTrade} />
+        {linked.length ? (
+          <span className="jl-linked">
+            {linked.map((t) => (
+              <button key={t.id} type="button" className="jl-trade-chip jl-trade-chip-on" title="Lệnh đã gắn — bấm để xem" onClick={() => onOpenTrade && onOpenTrade(t)}>
+                <Link2 size={11} /> {tradeLabel(t)} <small>{tradeDay(t)}</small>
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -259,6 +311,8 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
   const [view, setView] = useStickyTab("journeyLogView", "list", ["list", "calendar"]);
   const [draft, setDraft] = useState(() => emptyLogEntry());
   const [editingId, setEditingId] = useState(null);
+  // Ô ghi log gấp lại cho đỡ chiếm chỗ — bấm "Ghi log" mới mở.
+  const [composerOpen, setComposerOpen] = useState(false);
   const [filters, setFilters] = useState({ q: "", tag: "", mood: 0 });
   const [showTags, setShowTags] = useState(false);
   const [cursor, setCursor] = useState(() => new Date());
@@ -273,11 +327,13 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
     onChange({ ...data, entries: exists ? entries.map((x) => (x.id === e.id ? e : x)) : [e, ...entries] });
     setDraft(emptyLogEntry(draft.date));
     setEditingId(null);
+    setComposerOpen(false);
   };
-  const edit = (e) => { setDraft({ ...emptyLogEntry(), ...e }); setEditingId(e.id); boxRef.current && boxRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); };
-  const cancel = () => { setDraft(emptyLogEntry()); setEditingId(null); };
+  const openComposer = (next) => { if (next) setDraft(next); setComposerOpen(true); setTimeout(() => boxRef.current && boxRef.current.scrollIntoView({ behavior: "smooth", block: "start" }), 30); };
+  const edit = (e) => { setEditingId(e.id); openComposer({ ...emptyLogEntry(), ...e }); };
+  const cancel = () => { setDraft(emptyLogEntry()); setEditingId(null); setComposerOpen(false); };
   const remove = (id) => { onChange({ ...data, entries: entries.filter((x) => x.id !== id) }); if (id === editingId) cancel(); };
-  const addFor = (date, scope) => { setDraft({ ...emptyLogEntry(date), scope }); setEditingId(null); boxRef.current && boxRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const addFor = (date, scope) => { setEditingId(null); openComposer({ ...emptyLogEntry(date), scope }); };
   // Log về sau hoá ra là bài học thật thì chép sang tab Bài học, giữ nguyên ngày và nguyên nhân.
   const toLesson = onChangeLessons ? (e) => {
     const lesson = {
@@ -309,15 +365,17 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
       <p className="field-hint" style={{ marginTop: 0 }}>
         Ghi lại chuyện đã xảy ra và tâm sự của mình — không cần là bài học hay lỗi. Ghi kèm <b>nguyên nhân</b>: mọi thứ đều có lý do, nhìn lại cả tháng mới thấy vấn đề nằm ở đâu.
       </p>
-      <Composer draft={draft} setDraft={setDraft} tags={tags} editing={!!editingId} onSave={save} onCancel={cancel} boxRef={boxRef} />
-
       <div className="jl-toolbar">
+        {!composerOpen ? (
+          <button type="button" className="btn btn-primary jl-new" onClick={() => { setEditingId(null); openComposer(emptyLogEntry()); }}><Plus size={14} /> Ghi log</button>
+        ) : null}
         <div className="jl-seg">
           <button type="button" className={view === "list" ? "jl-seg-on" : ""} onClick={() => setView("list")}><List size={13} /> Danh sách</button>
           <button type="button" className={view === "calendar" ? "jl-seg-on" : ""} onClick={() => setView("calendar")}><CalendarDays size={13} /> Lịch tháng</button>
         </div>
         <button type="button" className={`btn btn-ghost jl-tagman-btn ${showTags ? "jl-seg-on" : ""}`} onClick={() => setShowTags(!showTags)}><Tags size={13} /> Tag</button>
       </div>
+      {composerOpen ? <Composer draft={draft} setDraft={setDraft} tags={tags} trades={trades} editing={!!editingId} onSave={save} onCancel={cancel} boxRef={boxRef} /> : null}
       {showTags ? <TagManager tags={tags} entries={entries} onChange={(next) => onChange({ ...data, tags: next })} onClose={() => setShowTags(false)} /> : null}
 
       {view === "calendar" ? (

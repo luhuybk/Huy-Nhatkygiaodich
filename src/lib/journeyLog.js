@@ -37,7 +37,7 @@ export function normalizeJourneyLog(raw) {
 }
 
 export function emptyLogEntry(date) {
-  return { id: null, date: date || todayStr(), scope: "day", mood: 0, tags: [], text: "", cause: "" };
+  return { id: null, date: date || todayStr(), scope: "day", mood: 0, tags: [], text: "", cause: "", tradeIds: [] };
 }
 
 // Log "cả tuần" luôn neo vào thứ 2 của tuần đó, để lịch và danh sách xếp đúng chỗ dù lúc ghi
@@ -120,4 +120,10 @@ export function monthRange(y, m) {
 
 export function firstLine(text) {
   return String(text || "").split("\n").map((x) => x.trim()).find(Boolean) || "";
+}
+
+// Log đã gắn vào một lệnh — để chi tiết lệnh hiện lại đúng những dòng tâm sự về lệnh đó.
+export function logsForTrade(data, tradeId) {
+  const entries = (data && data.entries) || [];
+  return entries.filter((e) => (e.tradeIds || []).includes(tradeId)).sort(byNewest);
 }

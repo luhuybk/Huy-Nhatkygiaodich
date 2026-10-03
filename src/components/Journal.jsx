@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
@@ -264,7 +265,7 @@ function tradeImageShots(t) {
   return shots;
 }
 
-export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, onDelete }) {
+export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete }) {
   if (!trade) return null;
   const t = trade;
   const { rr, outcome, status, profit } = computeResult(t);
@@ -273,6 +274,7 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
   const score = avgPillarScore(t);
   const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
   const rv = reviewState(t);
+  const logs = journeyLog ? logsForTrade(journeyLog, t.id) : [];
   // Chỉ hiện mục ĐÃ tick. Mục checklist bị gỡ khỏi Tài nguyên vẫn nằm lại trong lệnh cũ, và
   // hiện dấu ✗ đỏ cho một mục không còn tồn tại thì đọc thành "lệnh này làm thiếu" — trong khi
   // sự thật chỉ là mục đó đã bỏ. Cái đã tick thì giữ, vì đó là chuyện đã xảy ra thật.
@@ -352,6 +354,15 @@ export function TradeDetailModal({ trade, setupErrors, skills, onClose, onEdit, 
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
               <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
+              {logs.length ? (
+                <>
+                  <DetailRow label="Log hành trình" value={<button type="button" className="link-btn" onClick={onOpenLog}>{logs.length} log đã gắn · mở tab Log</button>} />
+                  {logs.map((e) => (
+                    <DetailRow key={e.id} prose label={`${moodMeta(e.mood) ? `${moodMeta(e.mood).icon} ` : ""}${logRangeLabel(e)}`}
+                      value={`${e.text}${e.cause ? `\nNguyên nhân: ${e.cause}` : ""}`} />
+                  ))}
+                </>
+              ) : null}
               {rv ? (
                 <>
                   <DetailRow label="Nhìn lại"
