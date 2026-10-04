@@ -452,7 +452,7 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
       <h3 className="block-title">Nhắc đối chiếu file sàn</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Đối chiếu chỉ bắt được lệnh quên ghi nếu bạn nhớ chạy nó. Mỗi tuần một lần, nhắc xuất CSV
-        lịch sử giao dịch từ sàn rồi quét ở Nhật ký → Đối chiếu sàn. Đặt vào lúc thị trường đã đóng
+        lịch sử giao dịch từ sàn rồi quét ở Nhật ký → Đối chiếu Exness. Đặt vào lúc thị trường đã đóng
         cửa để file phủ trọn tuần.
       </p>
       <div className="account-form">

@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet } from "lucide-react";
-import { Field, ResourceSelect, StatCard } from "./ui.jsx";
+import { useMemo, useRef } from "react";
+import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet, Flag, Scale, RotateCcw } from "lucide-react";
+import { Field, ResourceSelect, useRemembered } from "./ui.jsx";
 import { readXlsx, xlsxSupported } from "../lib/xlsx.js";
+import { computeResult } from "../lib/helpers.js";
 import {
-  applyDnseTripTo, buildDnseTrips, findOpenMatch, fmtMoney, fmtQty, holdingDays,
-  parseDnseOrders, parseDnsePnl, tradeFromDnseOpen, tradeFromDnseTrip,
+  applyDnsePlan, buildDnsePositions, buildDnseTrips, fmtMoney, fmtQty, parseDnseOrders, parseDnsePnl,
+  reconcileDnse, tradeFromDnsePosition, DNSE_PROFIT_TOLERANCE,
 } from "../lib/dnseImport.js";
 
 // Đoán tài khoản dùng để ghi cổ phiếu Việt: ưu tiên tên có "vn"/"stock"/"chứng khoán"/"dnse",
@@ -48,185 +49,141 @@ function DropBox({ label, hint, file, onPick, onClear, required }) {
   );
 }
 
-// Ghi chú của DÒNG XEM TRƯỚC, không phải của lệnh — lệnh nhập vào để trống ô ghi chú cho
-// người dùng tự viết. Ở đây chỉ nói những thứ có ý nghĩa lúc đang chọn nhập.
-function rowNote(r) {
-  const x = r.trip || r.lot;
-  const bits = [];
-  if (x.cashRatio > 0 && x.cashRatio < 1) bits.push(`margin ${Math.round((1 - x.cashRatio) * 100)}%`);
-  else if (x.cashRatio >= 1) bits.push("tiền mặt");
-  if (r.trip) bits.push(`phí+thuế ${fmtMoney(r.trip.costs)}đ`);
+const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "");
+const vnd = (n) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? "—" : `${fmtMoney(n)}đ`);
+const tone = (n) => (n > 0 ? "text-win" : n < 0 ? "text-loss" : "");
+
+// Các lần bán của một vị thế, đọc một dòng: "21/09 50% · 02/10 50%" — nhìn là biết nhả mấy lần.
+function sellsText(pos) {
+  if (!pos.legs.length) return "—";
+  return pos.legs.map((l) => `${dm(l.exitDate)} ${fmtQty(l.qty)}cp`).join(" · ");
+}
+
+function statusText(pos) {
+  if (!pos.legs.length) return `đang cầm ${fmtQty(pos.openQty)}cp`;
+  if (!pos.closed) return `đã bán ${fmtQty(pos.soldQty)}/${fmtQty(pos.lotQty)}cp · còn cầm ${fmtQty(pos.openQty)}`;
+  return pos.legs.length > 1 ? `đã bán hết · ${pos.legs.length} lần` : "đã bán hết";
+}
+
+function marginText(pos) {
+  if (pos.cashRatio > 0 && pos.cashRatio < 1) return `margin ${Math.round((1 - pos.cashRatio) * 100)}%`;
+  return pos.cashRatio >= 1 ? "tiền mặt" : "";
+}
+
+// Nói bằng lời cái sắp ghi vào, đọc xong mới bấm.
+function planSummary(plan) {
+  const parts = [];
+  if (plan.partials.length) parts.push(`${plan.partials.length} lần chốt bớt (${plan.partials.map((x) => `${x.percent}%`).join(" + ")})`);
+  if (plan.close) parts.push(`đóng ${dm(plan.close.exitDate)} · lãi theo giá ${vnd(Number(plan.close.profit))}`);
+  else if (plan.replace) parts.push("bỏ ngày thoát — sàn còn cầm");
+  if (plan.fees !== null) parts.push(`phí+thuế+lãi vay ${vnd(Number(plan.fees))}`);
+  return parts.join(" · ");
+}
+
+function SymbolCell({ pos }) {
   return (
     <>
-      {r.mode === "dup" ? <span>đã có trong nhật ký · </span> : null}
-      {r.mode === "update" ? <span style={{ color: "var(--accent)" }}>điền kết quả vào lệnh đang mở · </span> : null}
-      {r.trip && r.trip.source === "tinh" ? <span style={{ color: "var(--loss)" }}>chưa có lãi vay · </span> : null}
-      {bits.join(" · ")}
+      <b>{pos.symbol}</b>
+      {pos.legs.length > 1 ? <span className="rec-tag">{pos.legs.length} lần bán</span> : null}
+      {pos.noInterest ? <span className="rec-tag" title="Nằm ngoài khoảng của file lãi lỗ — chưa trừ lãi vay">chưa có lãi vay</span> : null}
     </>
   );
 }
 
-// Lệnh đã có trong nhật ký rồi thì bỏ tick sẵn — nhập lại lần hai sẽ nhân đôi lãi lỗ,
-// mà lệch số kiểu đó rất khó phát hiện về sau.
-// ĐẾM chứ không chỉ đánh dấu có/không: mua cùng một mã hai lần trong cùng một ngày là
-// hai lô riêng, nếu nhật ký mới có một thì chỉ được coi MỘT dòng là trùng.
-function existingCounts(trades, account) {
-  const map = new Map();
-  (trades || []).forEach((t) => {
-    if (account && t.account !== account) return;
-    const sym = String(t.symbol || "").trim().toUpperCase();
-    if (!sym) return;
-    const key = `${sym}|${t.entryDate || ""}|${t.exitDate || ""}`;
-    map.set(key, (map.get(key) || 0) + 1);
-  });
-  return map;
-}
-
-// Trừ dần: mỗi lệnh trong nhật ký chỉ "che" được một dòng nhập.
-function takeDup(counts, key) {
-  const left = counts.get(key) || 0;
-  if (left <= 0) return false;
-  counts.set(key, left - 1);
-  return true;
-}
-
-export function DnseImport({ trades, resources, onAddTrades }) {
+export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEditTrade, onUpdateTrade }) {
   const accounts = resources.accounts || [];
   const symbols = resources.symbols || [];
-  const [orderFile, setOrderFile] = useState(null);
-  const [pnlFile, setPnlFile] = useState(null);
-  const [account, setAccount] = useState(() => guessVnAccount(accounts, trades));
-  const [picked, setPicked] = useState(null);
-  const [added, setAdded] = useState(null);
+  // Bấm "Ghi vào nhật ký" / "Mở lệnh" là sang trang form — giữ file đã nạp để lưu xong quay lại
+  // vẫn soát tiếp được, khỏi nạp lại hai file từ đầu.
+  const [orderFile, setOrderFile] = useRemembered("dnse.orders", null);
+  const [pnlFile, setPnlFile] = useRemembered("dnse.pnl", null);
+  const [account, setAccount] = useRemembered("dnse.account", () => guessVnAccount(accounts, trades));
+  const [done, setDone] = useRemembered("dnse.done", "");
 
   const pick = async (f, kind) => {
     const { rows, error } = await readXlsx(await f.arrayBuffer());
-    if (error) {
-      const bad = { name: f.name, error };
-      if (kind === "orders") setOrderFile(bad); else setPnlFile(bad);
-      return;
-    }
+    const set = kind === "orders" ? setOrderFile : setPnlFile;
+    if (error) { set({ name: f.name, error }); return; }
     const res = kind === "orders" ? parseDnseOrders(rows) : parseDnsePnl(rows);
-    const next = { name: f.name, error: res.error, ...res };
-    if (kind === "orders") setOrderFile(next); else setPnlFile(next);
-    setPicked(null);
-    setAdded(null);
+    set({ name: f.name, ...res });
+    setDone("");
   };
 
   const result = useMemo(() => {
     if (!orderFile || orderFile.error) return null;
     return buildDnseTrips(orderFile.orders, pnlFile && !pnlFile.error ? pnlFile.groups : []);
   }, [orderFile, pnlFile]);
+  const positions = useMemo(() => (result ? buildDnsePositions(result) : []), [result]);
+  // Đọc lại từ `trades` mỗi lần: bấm nút nào là dòng đó tự chuyển nhóm / biến mất.
+  const rec = useMemo(
+    () => (result && account ? reconcileDnse(positions, trades, account, orderFile.orders) : null),
+    [result, positions, trades, account, orderFile]
+  );
 
-  const rows = useMemo(() => {
-    if (!result) return [];
-    const counts = existingCounts(trades, account);
-    // Một lệnh trong nhật ký chỉ được một dòng nhập "nhận", không thì hai lô cùng mã cùng
-    // ngày sẽ cùng trỏ vào một lệnh rồi ghi đè lẫn nhau.
-    const claimed = new Set();
-    const trips = result.trips.map((t) => {
-      if (takeDup(counts, `${t.symbol}|${t.entryDate}|${t.exitDate}`)) {
-        return { kind: "closed", key: t.id, trip: t, mode: "dup" };
-      }
-      // Chưa có bản đã đóng, nhưng có thể đã ghi tay từ lúc lệnh còn mở.
-      const open = findOpenMatch(trades, account, t.symbol, t.entryDate, claimed);
-      if (open) {
-        claimed.add(open.id);
-        return { kind: "closed", key: t.id, trip: t, mode: "update", target: open };
-      }
-      return { kind: "closed", key: t.id, trip: t, mode: "add" };
-    });
-    const opens = result.open.map((o) => ({
-      kind: "open", key: o.id, lot: o,
-      mode: takeDup(counts, `${o.symbol}|${o.date}|`) ? "dup" : "add",
-    }));
-    return [...trips, ...opens];
-  }, [result, trades, account]);
-
-  // Mặc định tick những lệnh chưa có trong nhật ký. Người dùng bấm thì giữ đúng ý người dùng.
-  const chosen = picked || new Set(rows.filter((r) => r.mode !== "dup").map((r) => r.key));
-  const toggle = (key) => {
-    const next = new Set(chosen);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    setPicked(next);
+  const reset = () => { setOrderFile(null); setPnlFile(null); setDone(""); };
+  const addDirect = (list) => {
+    const fresh = list.map((pos) => tradeFromDnsePosition(pos, account, symbols));
+    if (!fresh.length) return;
+    onAddTrades(fresh, []);
+    setDone(`Đã thêm ${fresh.length} lệnh vào nhật ký.`);
   };
-  // Ô tick đầu bảng chỉ chọn những lệnh CHƯA có trong nhật ký. Chọn hết bằng một cú bấm mà
-  // gồm cả lệnh đã có là nhân đôi lãi lỗ — muốn thêm lại thì vẫn tick tay từng dòng được.
-  const fresh = rows.filter((r) => r.mode !== "dup");
-  const toggleAll = () => {
-    const allFresh = fresh.length > 0 && fresh.every((r) => chosen.has(r.key));
-    setPicked(allFresh ? new Set() : new Set(fresh.map((r) => r.key)));
+  const applyPlans = (list, label) => {
+    if (!list.length) return;
+    onUpdateTrade(list.map((x) => applyDnsePlan(x.trade, x.plan)));
+    setDone(`${label} cho ${list.length} lệnh.`);
   };
-  const dupChosen = rows.filter((r) => r.mode === "dup" && chosen.has(r.key));
-  const dupList = [...new Set(rows.filter((r) => r.mode === "dup").map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)))];
-  const chosenRows = rows.filter((r) => chosen.has(r.key));
-  const toUpdate = chosenRows.filter((r) => r.mode === "update");
-  const toAdd = chosenRows.filter((r) => r.mode !== "update");
-
-  const add = () => {
-    const picks = rows.filter((r) => chosen.has(r.key));
-    const fresh = picks.filter((r) => r.mode !== "update").map((r) => (
-      r.kind === "closed"
-        ? tradeFromDnseTrip(r.trip, account, symbols)
-        : tradeFromDnseOpen(r.lot, account, symbols)
-    ));
-    const patched = picks.filter((r) => r.mode === "update").map((r) => applyDnseTripTo(r.target, r.trip));
-    if (!fresh.length && !patched.length) return;
-    onAddTrades(fresh, patched);
-    setAdded({ added: fresh.length, updated: patched.length });
-    setPicked(new Set());
-  };
-
-  const closedNet = result ? result.trips.reduce((s, t) => s + t.net, 0) : 0;
-  const openValue = result ? result.open.reduce((s, o) => s + o.value, 0) : 0;
-  const noPnl = result ? [...new Set(result.trips.filter((t) => t.source === "tinh").map((t) => t.symbol))] : [];
 
   if (!xlsxSupported()) {
     return (
       <div className="account-form">
-        <h3 className="block-title" style={{ marginTop: 0 }}>Nhập lệnh từ DNSE</h3>
-        <p className="error-text">Trình duyệt này chưa đọc được file .xlsx. Hãy mở bằng trình duyệt mới hơn, hoặc dùng tab "Đối chiếu sàn" với file .csv.</p>
+        <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu DNSE</h3>
+        <p className="error-text">Trình duyệt này chưa đọc được file .xlsx. Hãy mở bằng trình duyệt mới hơn.</p>
       </div>
     );
   }
 
+  const noPnl = result && pnlFile && !pnlFile.error
+    ? [...new Set(result.trips.filter((t) => t.source === "tinh").map((t) => t.symbol))] : [];
+
   return (
-    <div>
-      <div className="account-form">
-        <h3 className="block-title" style={{ marginTop: 0 }}>Nhập lệnh từ DNSE</h3>
-        <p className="field-hint" style={{ marginBottom: 12 }}>
-          DNSE xuất hai báo cáo và mỗi cái thiếu đúng thứ cái kia có: <b>Lịch sử lệnh</b> có ngày mua
-          nhưng không có lãi vay margin, <b>Lịch sử lãi lỗ</b> có lãi vay nhưng không có ngày mua.
-          Thả cả hai vào đây, app tự ghép mua với bán theo FIFO rồi dựng thành lệnh — kể cả phần đang cầm.
-        </p>
-        <div className="dnse-drops">
-          <DropBox required label="Lịch sử lệnh" file={orderFile}
-            hint="Báo cáo có cả lệnh MUA và BÁN. Nhớ xuất đủ khoảng thời gian từ lúc mua."
-            onPick={(f) => pick(f, "orders")} onClear={() => { setOrderFile(null); setPicked(null); }} />
-          <DropBox label="Lịch sử lãi lỗ" file={pnlFile}
-            hint="Để lấy lãi vay margin và con số sàn đã chốt. Xuất trùng khoảng thời gian với file trên."
-            onPick={(f) => pick(f, "pnl")} onClear={() => { setPnlFile(null); setPicked(null); }} />
-        </div>
-        {orderFile && !orderFile.error ? (
-          <p className="field-hint" style={{ marginTop: 10 }}>
-            Đọc được <b>{orderFile.orders.length} lệnh đã khớp</b>
-            {orderFile.skipped ? <> · bỏ qua {orderFile.skipped} lệnh huỷ / từ chối / hết hiệu lực</> : null}
-            {pnlFile && !pnlFile.error ? <> · file lãi lỗ có {pnlFile.groups.length} lần bán</> : null}
-          </p>
-        ) : null}
+    <div className="account-form">
+      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu DNSE</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        DNSE xuất hai báo cáo và mỗi cái thiếu đúng thứ cái kia có: <b>Lịch sử lệnh</b> có ngày mua
+        nhưng không có lãi vay margin, <b>Lịch sử lãi lỗ</b> có lãi vay nhưng không có ngày mua.
+        Thả cả hai vào đây, app ghép mua với bán theo FIFO — <b>một lần mua là một lệnh</b>, bán nhiều
+        lần thì thành các lần chốt bớt của lệnh đó — rồi so với nhật ký.
+      </p>
+      <div className="dnse-drops">
+        <DropBox required label="Lịch sử lệnh" file={orderFile}
+          hint="Báo cáo có cả lệnh MUA và BÁN. Nhớ xuất đủ khoảng thời gian từ lúc mua."
+          onPick={(f) => pick(f, "orders")} onClear={() => setOrderFile(null)} />
+        <DropBox label="Lịch sử lãi lỗ" file={pnlFile}
+          hint="Để lấy lãi vay margin và con số sàn đã chốt. Xuất trùng khoảng thời gian với file trên."
+          onPick={(f) => pick(f, "pnl")} onClear={() => setPnlFile(null)} />
       </div>
+      {orderFile && !orderFile.error ? (
+        <p className="field-hint" style={{ marginTop: 10 }}>
+          Đọc được <b>{orderFile.orders.length} lệnh đã khớp</b>
+          {orderFile.skipped ? <> · bỏ qua {orderFile.skipped} lệnh huỷ / từ chối / hết hiệu lực</> : null}
+          {pnlFile && !pnlFile.error ? <> · file lãi lỗ có {pnlFile.groups.length} lần bán</> : null}
+        </p>
+      ) : null}
 
       {result ? (
         <>
-          <div className="stat-grid" style={{ marginTop: 14 }}>
-            <StatCard label="Lệnh đã đóng" value={String(result.trips.length)}
-              sub={`Lãi lỗ ${fmtMoney(closedNet)}đ`} tone={closedNet > 0 ? "win" : closedNet < 0 ? "loss" : ""} />
-            <StatCard label="Đang cầm" value={String(result.open.length)} sub={`Vốn ${fmtMoney(openValue)}đ`} />
-            <StatCard label="Sẽ ghi vào nhật ký" value={toUpdate.length ? `${toAdd.length}+${toUpdate.length}` : String(toAdd.length)}
-              sub={toUpdate.length
-                ? `${toUpdate.length} lệnh bạn đã ghi tay lúc còn mở — điền kết quả vào, không tạo bản mới`
-                : dupList.length ? `Đã có sẵn, bỏ tick: ${dupList.join(", ")}` : "Chưa lệnh nào trùng nhật ký"} />
+          <div style={{ marginTop: 12, maxWidth: 360 }}>
+            <Field label="Tài khoản trong nhật ký" hint="Tài khoản đang dùng cho cổ phiếu Việt Nam (VND)">
+              <ResourceSelect value={account} onChange={(next) => setAccount(next)}
+                options={accounts.map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
+            </Field>
           </div>
+          {!account ? (
+            <p className="error-text" style={{ marginTop: 6 }}>
+              <Wallet size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Chọn tài khoản để đối chiếu. Chưa có thì tạo ở Tài nguyên → Tài khoản (đơn vị VND) rồi quay lại.
+            </p>
+          ) : null}
 
           {noPnl.length ? (
             <p className="error-text" style={{ marginTop: 10 }}>
@@ -246,99 +203,172 @@ export function DnseImport({ trades, resources, onAddTrades }) {
           {result.orphanSells.length ? (
             <p className="error-text" style={{ marginTop: 10 }}>
               {result.orphanSells.length} lệnh bán không tìm thấy lệnh mua tương ứng
-              ({result.orphanSells.map((s) => `${s.symbol} ${fmtQty(s.qty)}cp`).join(", ")}) — cổ phiếu này mua trước
+              ({result.orphanSells.map((x) => `${x.symbol} ${fmtQty(x.qty)}cp`).join(", ")}) — cổ phiếu này mua trước
               khoảng thời gian của file. Xuất Lịch sử lệnh từ sớm hơn để ghép được.
             </p>
           ) : null}
 
-          <div className="account-form" style={{ marginTop: 14 }}>
-            <Field label="Ghi vào tài khoản" hint="Lãi lỗ tính bằng đồng, nên chọn tài khoản đang dùng cho cổ phiếu Việt Nam">
-              <ResourceSelect value={account} onChange={(next) => { setAccount(next); setPicked(null); }}
-                options={accounts.map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
-            </Field>
-            {!account ? (
-              <p className="error-text" style={{ marginTop: 6 }}>
-                <Wallet size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-                Chưa chọn tài khoản. Nếu chưa có tài khoản cho cổ phiếu Việt, tạo ở mục Tài nguyên → Tài khoản (đơn vị VND) rồi quay lại.
-              </p>
-            ) : null}
-          </div>
+          {rec ? (
+            <>
+              <div className="rec-summary">
+                <span className="rec-chip">{positions.length} lệnh trên sàn</span>
+                <span className="rec-chip rec-chip-ok"><CheckCircle2 size={13} /> {rec.ok.length} khớp nhật ký</span>
+                {rec.missing.length ? <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {rec.missing.length} chưa ghi nhật ký</span> : null}
+                {rec.outcome.length ? <span className="rec-chip rec-chip-bad"><Flag size={13} /> {rec.outcome.length} chưa ghi kết quả</span> : null}
+                {rec.off.length ? <span className="rec-chip rec-chip-warn">{rec.off.length} lệch tiền</span> : null}
+                {rec.extra.length ? <span className="rec-chip rec-chip-warn">{rec.extra.length} chỉ có trong nhật ký</span> : null}
+                <button type="button" className="btn btn-ghost" onClick={reset}><RotateCcw size={13} /> Xoá file</button>
+              </div>
+              {done ? <p className="field-hint" style={{ color: "var(--win)" }}><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> {done}</p> : null}
 
-          <div className="table-wrap" style={{ marginTop: 14 }}>
-            <table className="table dnse-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 34 }}>
-                    <input type="checkbox" title="Chọn những lệnh chưa có trong nhật ký"
-                      checked={fresh.length > 0 && fresh.every((r) => chosen.has(r.key))} onChange={toggleAll} />
-                  </th>
-                  <th>Mã</th>
-                  <th className="cell-num">KL</th>
-                  <th>Mua</th>
-                  <th>Bán</th>
-                  <th className="cell-num">Giữ</th>
-                  <th className="cell-num">Giá mua</th>
-                  <th className="cell-num">Giá bán</th>
-                  <th className="cell-num">Lãi/Lỗ</th>
-                  <th>Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const t = r.trip;
-                  const o = r.lot;
-                  const days = t ? holdingDays(t) : null;
-                  return (
-                    <tr key={r.key} className={r.mode === "dup" ? "dnse-row-dup" : r.mode === "update" ? "dnse-row-update" : ""}>
-                      <td><input type="checkbox" checked={chosen.has(r.key)} onChange={() => toggle(r.key)} /></td>
-                      <td><b>{t ? t.symbol : o.symbol}</b></td>
-                      <td className="cell-num">{fmtQty(t ? t.qty : o.qty)}</td>
-                      <td>{t ? t.entryDate : o.date}</td>
-                      <td>{t ? t.exitDate : <span className="field-hint">đang cầm</span>}</td>
-                      <td className="cell-num">{days === null ? "" : `${days}n`}</td>
-                      <td className="cell-num">{fmtMoney(t ? t.entryPrice : o.price)}</td>
-                      <td className="cell-num">{t ? fmtMoney(t.exitPrice) : ""}</td>
-                      <td className="cell-num" style={t ? { color: t.net > 0 ? "var(--win)" : t.net < 0 ? "var(--loss)" : "" } : undefined}>
-                        {t ? fmtMoney(t.net) : <span className="field-hint">{fmtMoney(o.value)} vốn</span>}
-                      </td>
-                      <td className="cell-soft">{rowNote(r)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+              {!rec.missing.length && !rec.outcome.length && !rec.off.length && !rec.extra.length ? (
+                <p className="empty-note" style={{ color: "var(--win)" }}>
+                  Nhật ký khớp hoàn toàn với DNSE trong khoảng thời gian của file.
+                </p>
+              ) : null}
 
-          {dupChosen.length ? (
-            <p className="error-text" style={{ marginTop: 10 }}>
-              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-              Đang tick {dupChosen.length} lệnh <b>đã có trong nhật ký</b> ({dupChosen.map((r) => (r.trip ? r.trip.symbol : r.lot.symbol)).join(", ")}) —
-              thêm nữa là nhật ký có hai lệnh giống nhau và lãi lỗ bị tính hai lần.
-            </p>
+              {rec.missing.length ? (
+                <>
+                  <h4 className="rec-title rec-title-bad">Có trên sàn, chưa thấy trong nhật ký ({rec.missing.length})</h4>
+                  <div className="table-wrap">
+                    <table className="table dnse-table">
+                      <thead>
+                        <tr><th>Mã</th><th>Mua</th><th className="cell-num">KL</th><th className="cell-num">Giá mua</th><th>Các lần bán</th><th className="cell-num">Lãi/Lỗ</th><th>Trạng thái</th><th /></tr>
+                      </thead>
+                      <tbody>
+                        {rec.missing.map((pos) => (
+                          <tr key={pos.id}>
+                            <td><SymbolCell pos={pos} /></td>
+                            <td>{pos.entryDate} {pos.entryTime}</td>
+                            <td className="cell-num">{fmtQty(pos.lotQty)}</td>
+                            <td className="cell-num">{fmtMoney(pos.entryPrice)}</td>
+                            <td>{sellsText(pos)}</td>
+                            <td className={`cell-num ${tone(pos.net)}`}>{pos.legs.length ? vnd(pos.net) : <span className="field-hint">{vnd(pos.openQty * pos.entryPrice)} vốn</span>}</td>
+                            <td className="cell-soft">{[statusText(pos), marginText(pos)].filter(Boolean).join(" · ")}</td>
+                            <td className="rec-actions">
+                              <button type="button" className="btn btn-ghost" onClick={() => onCreateTrade(tradeFromDnsePosition(pos, account, symbols))}>
+                                <PlusCircle size={13} /> Ghi vào nhật ký
+                              </button>
+                              <button type="button" className="btn btn-ghost" title="Thêm luôn, không mở form" onClick={() => addDirect([pos])}>Thêm thẳng</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="field-hint">
+                    Mỗi dòng là một lần mua. "Ghi vào nhật ký" mở form đã điền sẵn mã, ngày, các lần chốt bớt,
+                    lãi lỗ và phí để bạn bổ sung setup, ảnh, đánh giá; "Thêm thẳng" ghi luôn phần sàn biết chắc.
+                  </p>
+                  {rec.missing.length > 1 ? (
+                    <button type="button" className="btn" onClick={() => addDirect(rec.missing)}>
+                      <PlusCircle size={13} /> Thêm thẳng cả {rec.missing.length} lệnh
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+
+              {rec.outcome.length ? (
+                <>
+                  <h4 className="rec-title rec-title-bad"><Flag size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Sàn đã có kết quả, nhật ký còn bỏ ngỏ ({rec.outcome.length})</h4>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr><th>Mã</th><th>Mua</th><th>Trên sàn</th><th>Sẽ điền vào</th><th /></tr></thead>
+                      <tbody>
+                        {rec.outcome.map((x) => (
+                          <tr key={x.pos.id}>
+                            <td><SymbolCell pos={x.pos} /></td>
+                            <td>{x.trade.entryDate} {x.trade.entryTime || ""}</td>
+                            <td>{statusText(x.pos)} · {vnd(x.pos.net)}</td>
+                            <td>{planSummary(x.plan)}</td>
+                            <td className="rec-actions">
+                              <button type="button" className="btn btn-ghost" onClick={() => applyPlans([x], "Đã điền kết quả")}><Flag size={13} /> Điền kết quả</button>
+                              <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(x.trade)}>Mở lệnh</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="field-hint">
+                    Lệnh bạn ghi tay lúc còn mở, giờ sàn đã bán. Chỉ điền ngày thoát, các lần chốt bớt, lãi lỗ và phí —
+                    setup, ảnh, đánh giá giữ nguyên. Còn cầm một phần thì chỉ ghi phần đã bán, lệnh vẫn để mở.
+                  </p>
+                  {rec.outcome.length > 1 ? (
+                    <button type="button" className="btn" onClick={() => applyPlans(rec.outcome, "Đã điền kết quả")}>
+                      <Flag size={13} /> Điền kết quả cho cả {rec.outcome.length} lệnh
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+
+              {rec.off.length ? (
+                <>
+                  <h4 className="rec-title rec-title-warn"><Scale size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Lệch so với sàn ({rec.off.length})</h4>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr><th>Mã</th><th>Mua</th><th className="cell-num">Nhật ký</th><th className="cell-num">Sàn</th><th className="cell-num">Lệch</th><th>Lấy theo sàn sẽ ghi</th><th /></tr></thead>
+                      <tbody>
+                        {rec.off.map((x) => (
+                          <tr key={x.pos.id}>
+                            <td><SymbolCell pos={x.pos} /></td>
+                            <td>{x.trade.entryDate}</td>
+                            <td className="cell-num">{vnd(x.journal)}</td>
+                            <td className="cell-num">{x.pos.closed ? vnd(x.pos.net) : <span className="field-hint">{statusText(x.pos)}</span>}</td>
+                            <td className="cell-num text-loss">{x.diff === null ? "—" : vnd(x.diff)}</td>
+                            <td className="cell-soft">{planSummary(x.plan)}</td>
+                            <td className="rec-actions">
+                              <button type="button" className="btn btn-ghost" onClick={() => applyPlans([x], "Đã lấy theo sàn")}><Scale size={13} /> Lấy theo sàn</button>
+                              <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(x.trade)}>Mở lệnh</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="field-hint">
+                    Lệch trên {vnd(DNSE_PROFIT_TOLERANCE)}, hoặc nhật ký đã đóng mà sàn còn cầm. "Lấy theo sàn" ghi lại các lần
+                    chốt bớt, lần đóng và phí đúng như DNSE — ảnh/ghi chú của từng lần chốt được giữ nếu số lần chốt không đổi.
+                    Lệnh từng nhập kiểu cũ (mỗi lần bán một lệnh) sẽ hiện ở đây cùng một bản thừa ở bảng dưới.
+                  </p>
+                  {rec.off.length > 1 ? (
+                    <button type="button" className="btn" onClick={() => applyPlans(rec.off, "Đã lấy theo sàn")}>
+                      <Scale size={13} /> Lấy theo sàn cho cả {rec.off.length} lệnh
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+
+              {rec.extra.length ? (
+                <>
+                  <h4 className="rec-title rec-title-warn">Có trong nhật ký, không thấy trên sàn ({rec.extra.length})</h4>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr><th>Mã</th><th>Mua</th><th>Bán</th><th className="cell-num">Lãi/Lỗ</th><th /></tr></thead>
+                      <tbody>
+                        {rec.extra.map((t) => {
+                          const r = computeResult(t);
+                          return (
+                            <tr key={t.id}>
+                              <td><b>{t.symbol}</b></td>
+                              <td>{t.entryDate} {t.entryTime || ""}</td>
+                              <td>{t.exitDate || <span className="field-hint">đang mở</span>}</td>
+                              <td className={`cell-num ${tone(r.profit)}`}>{vnd(r.profit)}</td>
+                              <td className="rec-actions"><button type="button" className="btn btn-ghost" onClick={() => onEditTrade(t)}>Mở lệnh</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="field-hint">
+                    Thường là gõ nhầm mã/ngày mua/tài khoản, hoặc bản thừa của một lần nhập trước đó tách mỗi lần bán
+                    thành một lệnh — mở ra xoá đi sau khi đã "Lấy theo sàn" cho bản còn lại.
+                  </p>
+                </>
+              ) : null}
+            </>
           ) : null}
-          <div className="form-actions" style={{ marginTop: 12 }}>
-            {added ? (
-              <span className="field-hint" style={{ color: "var(--win)" }}>
-                <CheckCircle2 size={13} style={{ verticalAlign: -2 }} />
-                {added.added ? ` Đã thêm ${added.added} lệnh` : ""}
-                {added.added && added.updated ? " ·" : ""}
-                {added.updated ? ` Đã điền kết quả cho ${added.updated} lệnh đang mở` : ""}
-              </span>
-            ) : null}
-            <button type="button" className="btn btn-primary" onClick={add} disabled={!account || chosen.size === 0}>
-              <PlusCircle size={14} />
-              {toUpdate.length
-                ? `Thêm ${toAdd.length} · cập nhật ${toUpdate.length} lệnh`
-                : `Thêm ${toAdd.length} lệnh vào nhật ký`}
-            </button>
-          </div>
-          <p className="field-hint" style={{ marginTop: 8 }}>
-            Lệnh nào bạn đã ghi tay từ lúc còn mở thì app <b>điền kết quả vào chính lệnh đó</b> (ngày thoát,
-            lãi lỗ, phí) — setup, chấm điểm, ảnh, đánh giá của bạn giữ nguyên, không đẻ thêm bản trùng.
-            Lệnh nhập mới chỉ mang những gì sàn biết chắc: mã, ngày, lãi lỗ và phí. <b>Ô ghi chú để trống</b> —
-            cột Ghi chú ở đây chỉ phục vụ lúc chọn, không ghi vào lệnh. Setup, lý do vào lệnh, tâm lý và
-            đánh giá cũng để trống cho bạn tự viết. Khối lượng và giá thì xem ở bảng trên trước khi nhập.
-          </p>
         </>
       ) : null}
     </div>

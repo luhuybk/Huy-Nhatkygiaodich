@@ -822,7 +822,7 @@ export function TradingCalendar({ trades, resources, onEdit, columns }) {
   );
 }
 
-// Tab đang xem nhớ ở cấp module: sửa một lệnh từ "Đối chiếu sàn" là sang trang form rồi lưu
+// Tab đang xem nhớ ở cấp module: sửa một lệnh từ tab đối chiếu Exness/DNSE là sang trang form rồi lưu
 // quay về — không nhớ thì bị đá về Danh sách, phải bấm lại tab và soát tiếp từ đầu.
 let lastJournalTab = "list";
 
@@ -891,8 +891,8 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}><BookOpen size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Danh sách</button>
         <button className={`subtab ${tab === "calendar" ? "subtab-active" : ""}`} onClick={() => setTab("calendar")}><CalendarDays size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Lịch</button>
         <button className={`subtab ${tab === "compare" ? "subtab-active" : ""}`} onClick={() => setTab("compare")}><GitCompare size={13} style={{ marginRight: 5, verticalAlign: -2 }} />So sánh bộ lọc</button>
-        <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu sàn</button>
-        <button className={`subtab ${tab === "dnse" ? "subtab-active" : ""}`} onClick={() => setTab("dnse")}><Landmark size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Nhập DNSE</button>
+        <button className={`subtab ${tab === "reconcile" ? "subtab-active" : ""}`} onClick={() => setTab("reconcile")}><FileSpreadsheet size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu Exness</button>
+        <button className={`subtab ${tab === "dnse" ? "subtab-active" : ""}`} onClick={() => setTab("dnse")}><Landmark size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Đối chiếu DNSE</button>
       </div>
       {tab === "compare" ? (
         <FilterCompare trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} presets={filterPresets} currentFilters={filters} />
@@ -901,7 +901,7 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
         <BrokerReconcile trades={trades} resources={resources} onCreateTrade={onCreate} onEditTrade={onEdit} onUpdateTrade={onUpdate} />
       ) : null}
       {tab === "dnse" ? (
-        <DnseImport trades={trades} resources={resources} onAddTrades={onAddTrades} />
+        <DnseImport trades={trades} resources={resources} onAddTrades={onAddTrades} onCreateTrade={onCreate} onEditTrade={onEdit} onUpdateTrade={onUpdate} />
       ) : null}
       {tab === "list" ? (
         <div>

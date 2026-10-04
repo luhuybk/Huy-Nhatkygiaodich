@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Coins, FileSpreadsheet, Flag, ListChecks, PlusCircle, RotateCcw, Scissors, X } from "lucide-react";
-import { Field, ResourceSelect } from "./ui.jsx";
+import { Field, ResourceSelect, useRemembered } from "./ui.jsx";
 import {
   guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerPosition,
   withBrokerFees, withBrokerOutcome, withBrokerTimes,
@@ -358,28 +358,14 @@ function FollowUp({ list, resources, onEditTrade, onDismiss }) {
 }
 
 // Bấm "Mở lệnh" / "Ghi vào nhật ký" là sang trang form, trang Nhật ký bị gỡ hẳn — giữ file
-// trong state của component thì lưu xong quay lại là mất sạch, phải nạp lại từ đầu dù còn cả
-// chục lệnh lệch chưa sửa. Giữ ở cấp module: sống qua lúc rời trang, mất khi tải lại trang
-// (đúng lời hứa "không lưu lại" ở trên).
-const memory = { files: [], touched: [] };
-
-function useRemembered(key) {
-  const [value, setValue] = useState(memory[key]);
-  const set = (updater) => setValue((prev) => {
-    const next = typeof updater === "function" ? updater(prev) : updater;
-    memory[key] = next;
-    return next;
-  });
-  return [value, set];
-}
-
+// bằng useRemembered để lưu xong quay lại vẫn còn, khỏi nạp lại giữa chừng.
 const KIND_LABEL = { open: "lệnh đang mở", closed: "lịch sử đã đóng" };
 
 export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
   const accounts = resources.accounts || [];
   const symbols = resources.symbols || [];
-  const [files, setFiles] = useRemembered("files");
-  const [touched, setTouched] = useRemembered("touched");
+  const [files, setFiles] = useRemembered("exness.files", []);
+  const [touched, setTouched] = useRemembered("exness.touched", []);
   const fileRef = useRef(null);
 
   const fillOutcome = (list) => {
@@ -446,7 +432,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
 
   return (
     <div className="account-form">
-      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu với file sàn xuất ra</h3>
+      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu Exness</h3>
       <p className="field-hint">
         Sàn cho xuất lịch sử giao dịch ra CSV theo khoảng thời gian. Thả vào đây cả loạt file của
         nhiều tài khoản một lượt để soi xem có lệnh nào đã đánh mà quên ghi nhật ký không — sàn là

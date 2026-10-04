@@ -4,7 +4,7 @@
 //   - "Lịch sử lãi lỗ":        có lãi vay và con số sàn chốt — nhưng KHÔNG có ngày mua.
 // Nên file sao kê là bắt buộc (dựng được lệnh trọn vẹn), file lãi lỗ là tuỳ chọn để bù
 // lãi vay. Ghép hai file bằng khoá (mã + giây bán).
-import { computeResult, emptyTrade } from "./helpers.js";
+import { computeResult, emptyPartialExit, emptyTrade, partialExitsOf } from "./helpers.js";
 import { excelDateParts } from "./xlsx.js";
 
 export const DNSE_FILLED = "Đã khớp";
@@ -233,6 +233,7 @@ export function buildDnseTrips(orders, pnlGroups) {
         id: `${o.symbol}-${lot.at}-${o.at}-${trips.length}`,
         symbol: o.symbol,
         qty: take,
+        lotQty: lot.qty,
         entryDate: lot.date, entryTime: lot.time, entryPrice: lot.price, entryAt: lot.at,
         exitDate: o.date, exitTime: o.time, exitPrice: o.price, exitAt: o.at,
         cashRatio: lot.cashRatio,
@@ -259,7 +260,7 @@ export function buildDnseTrips(orders, pnlGroups) {
     if (lot.left > 0) {
       open.push({
         id: `open-${lot.symbol}-${lot.at}`,
-        symbol: lot.symbol, qty: lot.left, date: lot.date, time: lot.time, at: lot.at,
+        symbol: lot.symbol, qty: lot.left, lotQty: lot.qty, date: lot.date, time: lot.time, at: lot.at,
         price: lot.price, value: lot.left * lot.price, cashRatio: lot.cashRatio, channel: lot.channel,
       });
     }
@@ -295,64 +296,6 @@ function money(n) {
   return String(Math.round(n));
 }
 
-// Một lệnh trong nhật ký. Giữ đúng quy ước của app: `profit` là lãi lỗ theo GIÁ, `fees` là
-// khoản bị trừ (số âm) — cộng lại mới ra con số cuối. Nhồi hết vào `profit` sẽ bị trừ phí hai lần.
-// KHÔNG tự viết gì vào ô ghi chú: đó là chỗ của người dùng, chi tiết khối lượng/giá đã hiện
-// sẵn ở bảng xem trước rồi.
-export function tradeFromDnseTrip(trip, account, symbols) {
-  const known = (symbols || []).find((s) => String(s).trim().toUpperCase() === trip.symbol);
-  return {
-    ...emptyTrade(),
-    account,
-    symbol: known || trip.symbol,
-    direction: "buy",
-    entryDate: trip.entryDate,
-    entryTime: trip.entryTime,
-    exitDate: trip.exitDate,
-    exitTime: trip.exitTime,
-    profit: money(trip.gross),
-    fees: money(-trip.costs),
-  };
-}
-
-// Lệnh đã ghi tay lúc còn ĐANG MỞ, giờ sàn báo đã đóng — đó vẫn là một vị thế, không phải
-// lệnh mới. Ghép theo mã + ngày vào lệnh, chỉ ghép với lệnh chưa điền lợi nhuận. Thiếu bước
-// này thì mỗi lần nhập lại đẻ thêm một bản sao, mà bản ghi tay mới là bản có setup và đánh giá.
-export function findOpenMatch(trades, account, symbol, entryDate, usedIds) {
-  const used = usedIds || new Set();
-  return (trades || []).find((t) => {
-    if (!t || used.has(t.id)) return false;
-    if (account && t.account !== account) return false;
-    if (String(t.symbol || "").trim().toUpperCase() !== symbol) return false;
-    if ((t.entryDate || "") !== entryDate) return false;
-    return computeResult(t).status === "open";
-  }) || null;
-}
-
-// Điền kết quả của sàn vào lệnh đang mở. Chỉ đụng bốn ô sàn biết chắc — setup, đánh giá,
-// ghi chú, ảnh, chấm điểm... giữ nguyên hết, đó mới là phần công sức của người dùng.
-export function applyDnseTripTo(trade, trip) {
-  return {
-    ...trade,
-    exitDate: trip.exitDate,
-    exitTime: trip.exitTime || trade.exitTime || "",
-    profit: money(trip.gross),
-    fees: money(-trip.costs),
-  };
-}
-
-export function tradeFromDnseOpen(lot, account, symbols) {
-  const known = (symbols || []).find((s) => String(s).trim().toUpperCase() === lot.symbol);
-  return {
-    ...emptyTrade(),
-    account,
-    symbol: known || lot.symbol,
-    direction: "buy",
-    entryDate: lot.date,
-    entryTime: lot.time,
-  };
-}
-
 export function fmtMoney(n) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(Number(n) || 0));
 }
@@ -361,9 +304,146 @@ export function fmtQty(n) {
   return new Intl.NumberFormat("vi-VN").format(Number(n) || 0);
 }
 
-export function holdingDays(trip) {
-  const a = Date.parse(`${trip.entryDate}T00:00:00Z`);
-  const b = Date.parse(`${trip.exitDate}T00:00:00Z`);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-  return Math.round((b - a) / 86400000);
+// ---- Vị thế: một lần mua = một lệnh ------------------------------------------
+// Mua 2.800 BSR rồi nhả 1.400 hôm 21/9, 1.400 hôm 2/10 là MỘT lệnh có chốt bớt, không phải hai
+// lệnh — giống hệt cách bên Exness gom các lần đóng cùng ticket. Gom các chuyến FIFO theo lô
+// mua: mọi lần bán ăn vào cùng một lô là các lần chốt của cùng một vị thế, phần lô chưa bán
+// hết thì vị thế vẫn đang mở.
+export function buildDnsePositions(result) {
+  const map = new Map();
+  const ensure = (symbol, at, base) => {
+    const key = `${symbol}@${at}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        id: `pos-${symbol}-${at}`, symbol, entryAt: at,
+        entryDate: base.date, entryTime: base.time, entryPrice: base.price,
+        lotQty: base.lotQty, cashRatio: base.cashRatio, channel: base.channel,
+        legs: [], openQty: 0,
+      });
+    }
+    return map.get(key);
+  };
+  ((result && result.trips) || []).forEach((t) => {
+    ensure(t.symbol, t.entryAt, { date: t.entryDate, time: t.entryTime, price: t.entryPrice, lotQty: t.lotQty, cashRatio: t.cashRatio, channel: t.channel })
+      .legs.push(t);
+  });
+  ((result && result.open) || []).forEach((o) => {
+    ensure(o.symbol, o.at, o).openQty += o.qty;
+  });
+  return [...map.values()].map((p) => {
+    const legs = [...p.legs].sort((a, b) => a.exitAt - b.exitAt);
+    const gross = legs.reduce((n, l) => n + l.gross, 0);
+    const costs = legs.reduce((n, l) => n + l.costs, 0);
+    const soldQty = legs.reduce((n, l) => n + l.qty, 0);
+    const closed = p.openQty <= 0 && legs.length > 0;
+    const last = legs[legs.length - 1];
+    return {
+      ...p, legs, gross, costs, net: gross - costs, soldQty, closed,
+      lotQty: p.lotQty || soldQty + p.openQty,
+      exitDate: closed ? last.exitDate : "", exitTime: closed ? last.exitTime : "",
+      noInterest: legs.some((l) => l.source === "tinh"),
+    };
+  }).sort((a, b) => b.entryAt - a.entryAt || a.symbol.localeCompare(b.symbol));
+}
+
+function pctOf(qty, total) {
+  if (!total) return "";
+  const v = (qty / total) * 100;
+  return String(Number(v.toFixed(v >= 10 ? 1 : 2)));
+}
+
+function filled(v) {
+  return v !== "" && v !== null && v !== undefined;
+}
+
+// Kết quả sàn biết chắc của một vị thế, viết theo đúng quy ước nhật ký: các lần bán trước là
+// chốt bớt (mục 1B), lần bán cuối là lần đóng — chỉ khi đã bán hết lô. `profit` theo giá,
+// phí + thuế + lãi vay của cả vị thế gom vào `fees` (số âm).
+export function dnseOutcome(pos) {
+  const partialLegs = pos.closed ? pos.legs.slice(0, -1) : pos.legs;
+  const final = pos.closed ? pos.legs[pos.legs.length - 1] : null;
+  return {
+    partials: partialLegs.map((l) => ({
+      date: l.exitDate, time: l.exitTime || "", percent: pctOf(l.qty, pos.lotQty), profit: money(l.gross),
+    })),
+    close: final ? { exitDate: final.exitDate, exitTime: final.exitTime || "", profit: money(final.gross) } : null,
+    fees: pos.legs.length ? money(-pos.costs) : null,
+  };
+}
+
+// Ghi kết quả của sàn vào một lệnh.
+//   - mặc định (lệnh còn mở trong nhật ký): chỉ điền chỗ còn trống, chốt bớt đã tự ghi thì
+//     để nguyên vì không biết dòng nào ứng với lần nào;
+//   - overwrite ("Lấy theo sàn" cho lệnh lệch tiền): dựng lại chốt bớt + lần đóng + phí theo
+//     sàn, nhưng giữ ảnh/ghi chú của từng lần chốt nếu số lần chốt không đổi.
+export function dnsePlan(trade, pos, overwrite = false) {
+  const out = dnseOutcome(pos);
+  const has = partialExitsOf(trade);
+  const partials = overwrite || !has.length ? out.partials : [];
+  const close = out.close && (overwrite || !filled(trade.profit)) ? out.close : null;
+  const fees = out.fees !== null && (overwrite || !filled(trade.fees)) ? out.fees : null;
+  return { changed: overwrite || !!(partials.length || close), partials, close, fees, replace: overwrite };
+}
+
+export function applyDnsePlan(trade, plan) {
+  const next = { ...trade };
+  const has = partialExitsOf(trade);
+  if (plan.replace) {
+    next.partialExits = plan.partials.map((p, i) => ({ ...(has.length === plan.partials.length ? has[i] : emptyPartialExit()), ...p }));
+  } else if (plan.partials.length) {
+    next.partialExits = [...has, ...plan.partials.map((p) => ({ ...emptyPartialExit(), ...p }))];
+  }
+  if (plan.close) Object.assign(next, plan.close);
+  else if (plan.replace) { next.profit = ""; next.exitDate = ""; next.exitTime = ""; }
+  if (plan.fees !== null) next.fees = plan.fees;
+  return next;
+}
+
+export function tradeFromDnsePosition(pos, account, symbols) {
+  const known = (symbols || []).find((s) => String(s).trim().toUpperCase() === pos.symbol);
+  const base = {
+    ...emptyTrade(), account, symbol: known || pos.symbol, direction: "buy",
+    entryDate: pos.entryDate, entryTime: pos.entryTime,
+  };
+  return pos.legs.length ? applyDnsePlan(base, dnsePlan(base, pos)) : base;
+}
+
+// Lệch dưới mức này coi như làm tròn (mỗi lần chốt làm tròn về đồng).
+export const DNSE_PROFIT_TOLERANCE = 1000;
+
+// Đối chiếu vị thế DNSE với nhật ký, chia đúng các nhóm như bên Exness để mỗi nhóm có nút
+// riêng: thiếu trong nhật ký / sàn đã có kết quả mà nhật ký bỏ ngỏ / lệch tiền / thừa.
+// Ghép 1-1 theo (tài khoản, mã, ngày mua); cùng mã cùng ngày có hai lệnh thì ưu tiên lệnh có
+// ngày thoát trùng — lệnh nhập theo kiểu cũ (BSR tách hai) sẽ có một bản khớp, bản kia hiện
+// ra ở nhóm "chỉ có trong nhật ký" để bạn xoá.
+export function reconcileDnse(positions, trades, account, orders) {
+  const pool = (trades || []).filter((t) => t && (!account || t.account === account) && t.symbol && t.entryDate);
+  const claimed = new Set();
+  const out = { missing: [], outcome: [], off: [], ok: [], extra: [] };
+  [...(positions || [])].sort((a, b) => a.entryAt - b.entryAt).forEach((pos) => {
+    const cands = pool.filter((t) => !claimed.has(t.id)
+      && String(t.symbol).trim().toUpperCase() === pos.symbol && t.entryDate === pos.entryDate);
+    const hit = cands.find((t) => (t.exitDate || "") === pos.exitDate) || cands[0];
+    if (!hit) { out.missing.push(pos); return; }
+    claimed.add(hit.id);
+    const res = computeResult(hit);
+    if (res.status === "open") {
+      const plan = dnsePlan(hit, pos);
+      if (pos.legs.length && plan.changed) out.outcome.push({ pos, trade: hit, plan });
+      else out.ok.push({ pos, trade: hit });
+      return;
+    }
+    // Nhật ký đã đóng mà sàn còn cầm, hoặc đóng rồi mà tiền lệch — cả hai đều là "lệch".
+    const diff = pos.closed ? res.profit - pos.net : null;
+    if (!pos.closed || Math.abs(diff) > DNSE_PROFIT_TOLERANCE) {
+      out.off.push({ pos, trade: hit, journal: res.profit, diff, plan: dnsePlan(hit, pos, true) });
+    } else out.ok.push({ pos, trade: hit });
+  });
+  const dates = (orders || []).map((o) => o.date).filter(Boolean).sort();
+  if (dates.length) {
+    const from = dates[0];
+    const to = dates[dates.length - 1];
+    out.extra = pool.filter((t) => !claimed.has(t.id) && t.entryDate >= from && t.entryDate <= to);
+  }
+  return out;
 }

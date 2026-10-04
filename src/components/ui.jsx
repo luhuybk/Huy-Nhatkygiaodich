@@ -3,6 +3,22 @@ import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Im
 import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 
+// State sống qua lúc component bị gỡ (rời trang sang form sửa lệnh rồi quay lại) nhưng mất khi
+// tải lại trang. Dùng cho file đối chiếu đã nạp: không lưu đi đâu, chỉ khỏi phải nạp lại giữa chừng.
+const sessionMemory = new Map();
+export function useRemembered(key, initial) {
+  const [value, setValue] = useState(() => {
+    if (sessionMemory.has(key)) return sessionMemory.get(key);
+    return typeof initial === "function" ? initial() : initial;
+  });
+  const set = (updater) => setValue((prev) => {
+    const next = typeof updater === "function" ? updater(prev) : updater;
+    sessionMemory.set(key, next);
+    return next;
+  });
+  return [value, set];
+}
+
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
 // không làm màn hình trắng — rơi về fallback.
 export function useStickyTab(key, fallback, allowed) {

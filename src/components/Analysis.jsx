@@ -286,7 +286,7 @@ function FeeBreakdown({ closed }) {
     <div>
       {!filled ? (
         <p className="empty-note">
-          Chưa lệnh nào điền phí. Điền ở mục 1C của từng lệnh, hoặc nhanh hơn: vào Nhật ký → Đối chiếu sàn,
+          Chưa lệnh nào điền phí. Điền ở mục 1C của từng lệnh, hoặc nhanh hơn: vào Nhật ký → Đối chiếu Exness,
           thả file CSV vào rồi bấm "Điền phí" — nó lấy đúng số hoa hồng + qua đêm sàn đã tính.
         </p>
       ) : (
