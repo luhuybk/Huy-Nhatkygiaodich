@@ -1,11 +1,12 @@
 import { useMemo, useRef } from "react";
-import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet, Flag, Scale, RotateCcw } from "lucide-react";
+import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet, Flag, Scale, RotateCcw, CalendarClock } from "lucide-react";
 import { Field, ResourceSelect, useRemembered } from "./ui.jsx";
 import { readXlsx, xlsxSupported } from "../lib/xlsx.js";
-import { computeResult } from "../lib/helpers.js";
+import { accountSyncsTime, computeResult, tradeCompletion } from "../lib/helpers.js";
+import { FollowUp } from "./BrokerReconcile.jsx";
 import {
   applyDnsePlan, buildDnsePositions, buildDnseTrips, fmtMoney, fmtQty, parseDnseOrders, parseDnsePnl,
-  reconcileDnse, tradeFromDnsePosition, DNSE_PROFIT_TOLERANCE,
+  reconcileDnse, tradeFromDnsePosition, withDnseTimes, DNSE_DATE_TOLERANCE_DAYS, DNSE_PROFIT_TOLERANCE,
 } from "../lib/dnseImport.js";
 
 // Đoán tài khoản dùng để ghi cổ phiếu Việt: ưu tiên tên có "vn"/"stock"/"chứng khoán"/"dnse",
@@ -99,6 +100,16 @@ export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEd
   const [pnlFile, setPnlFile] = useRemembered("dnse.pnl", null);
   const [account, setAccount] = useRemembered("dnse.account", () => guessVnAccount(accounts, trades));
   const [done, setDone] = useRemembered("dnse.done", "");
+  const [touched, setTouched] = useRemembered("dnse.touched", []);
+  const acc = accounts.find((a) => a.name === account);
+  const syncTime = accountSyncsTime(acc);
+  const touch = (list) => setTouched((prev) => Array.from(new Set([...prev, ...list.map((t) => t.id)])));
+  // Điền kết quả xong lệnh rời khỏi bảng vừa bấm — giữ lại ở danh sách "còn phải điền nốt"
+  // như bên Exness, đọc lại từ `trades` để điền đủ ở đâu là tự biến mất ở đây.
+  const followUp = useMemo(() => {
+    const byId = new Map((trades || []).map((t) => [t.id, t]));
+    return touched.map((id) => byId.get(id)).filter((t) => t && tradeCompletion(t).percent < 100);
+  }, [touched, trades]);
 
   const pick = async (f, kind) => {
     const { rows, error } = await readXlsx(await f.arrayBuffer());
@@ -116,21 +127,29 @@ export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEd
   const positions = useMemo(() => (result ? buildDnsePositions(result) : []), [result]);
   // Đọc lại từ `trades` mỗi lần: bấm nút nào là dòng đó tự chuyển nhóm / biến mất.
   const rec = useMemo(
-    () => (result && account ? reconcileDnse(positions, trades, account, orderFile.orders) : null),
-    [result, positions, trades, account, orderFile]
+    () => (result && account ? reconcileDnse(positions, trades, account, orderFile.orders, { syncTime }) : null),
+    [result, positions, trades, account, orderFile, syncTime]
   );
 
-  const reset = () => { setOrderFile(null); setPnlFile(null); setDone(""); };
+  const reset = () => { setOrderFile(null); setPnlFile(null); setDone(""); setTouched([]); };
   const addDirect = (list) => {
     const fresh = list.map((pos) => tradeFromDnsePosition(pos, account, symbols));
     if (!fresh.length) return;
     onAddTrades(fresh, []);
+    touch(fresh);
     setDone(`Đã thêm ${fresh.length} lệnh vào nhật ký.`);
   };
   const applyPlans = (list, label) => {
     if (!list.length) return;
-    onUpdateTrade(list.map((x) => applyDnsePlan(x.trade, x.plan)));
+    const next = list.map((x) => applyDnsePlan(x.trade, x.plan));
+    onUpdateTrade(next);
+    touch(next);
     setDone(`${label} cho ${list.length} lệnh.`);
+  };
+  const applyTimes = (list) => {
+    if (!list.length) return;
+    onUpdateTrade(list.map((x) => withDnseTimes(x.trade, x.pos, syncTime)));
+    setDone(`Đã lấy ngày/giờ theo sàn cho ${list.length} lệnh.`);
   };
 
   if (!xlsxSupported()) {
@@ -216,12 +235,15 @@ export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEd
                 {rec.missing.length ? <span className="rec-chip rec-chip-bad"><AlertTriangle size={13} /> {rec.missing.length} chưa ghi nhật ký</span> : null}
                 {rec.outcome.length ? <span className="rec-chip rec-chip-bad"><Flag size={13} /> {rec.outcome.length} chưa ghi kết quả</span> : null}
                 {rec.off.length ? <span className="rec-chip rec-chip-warn">{rec.off.length} lệch tiền</span> : null}
+                {rec.time.length ? <span className="rec-chip rec-chip-warn">{rec.time.length} lệch {syncTime ? "ngày/giờ" : "ngày"}</span> : null}
                 {rec.extra.length ? <span className="rec-chip rec-chip-warn">{rec.extra.length} chỉ có trong nhật ký</span> : null}
                 <button type="button" className="btn btn-ghost" onClick={reset}><RotateCcw size={13} /> Xoá file</button>
               </div>
               {done ? <p className="field-hint" style={{ color: "var(--win)" }}><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> {done}</p> : null}
 
-              {!rec.missing.length && !rec.outcome.length && !rec.off.length && !rec.extra.length ? (
+              <FollowUp list={followUp} resources={resources} onEditTrade={onEditTrade} onDismiss={() => setTouched([])} />
+
+              {!rec.missing.length && !rec.outcome.length && !rec.off.length && !rec.extra.length && !rec.time.length ? (
                 <p className="empty-note" style={{ color: "var(--win)" }}>
                   Nhật ký khớp hoàn toàn với DNSE trong khoảng thời gian của file.
                 </p>
@@ -334,6 +356,50 @@ export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEd
                   {rec.off.length > 1 ? (
                     <button type="button" className="btn" onClick={() => applyPlans(rec.off, "Đã lấy theo sàn")}>
                       <Scale size={13} /> Lấy theo sàn cho cả {rec.off.length} lệnh
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+
+              {rec.time.length ? (
+                <>
+                  <h4 className="rec-title rec-title-warn">
+                    <CalendarClock size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
+                    Lệch {syncTime ? "ngày/giờ" : "ngày"} so với sàn ({rec.time.length})
+                  </h4>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr><th>Mã</th><th>Mua — nhật ký</th><th>Mua — sàn</th><th>Bán — nhật ký</th><th>Bán — sàn</th><th /></tr></thead>
+                      <tbody>
+                        {rec.time.map((x) => {
+                          const entryOff = x.fields.includes("entryDate") || x.fields.includes("entryTime");
+                          const exitOff = x.fields.includes("exitDate") || x.fields.includes("exitTime");
+                          return (
+                            <tr key={x.pos.id}>
+                              <td><SymbolCell pos={x.pos} /></td>
+                              <td className={entryOff ? "text-loss" : ""}>{x.trade.entryDate} {x.trade.entryTime || "—"}</td>
+                              <td>{x.pos.entryDate} {x.pos.entryTime}</td>
+                              <td className={exitOff ? "text-loss" : ""}>{x.trade.exitDate ? `${x.trade.exitDate} ${x.trade.exitTime || "—"}` : "chưa điền"}</td>
+                              <td>{x.pos.closed ? `${x.pos.exitDate} ${x.pos.exitTime}` : "—"}</td>
+                              <td className="rec-actions">
+                                <button type="button" className="btn btn-ghost" onClick={() => applyTimes([x])}><CalendarClock size={13} /> Lấy theo sàn</button>
+                                <button type="button" className="btn btn-ghost" onClick={() => onEditTrade(x.trade)}>Mở lệnh</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="field-hint">
+                    Ngày mua lệch tới {DNSE_DATE_TOLERANCE_DAYS} ngày vẫn ghép là cùng một lệnh — sửa lại cho đúng để lịch và thống kê
+                    theo ngày đếm đúng chỗ.{" "}
+                    {syncTime ? "Giờ lấy theo thời gian đặt lệnh trên DNSE." : `Tài khoản "${account}" đang tắt đồng bộ giờ nên chỉ soi ngày.`}
+                    {" "}Lệnh có chốt bớt thì chỉ sửa lúc mua, phần bán để nguyên.
+                  </p>
+                  {rec.time.length > 1 ? (
+                    <button type="button" className="btn" onClick={() => applyTimes(rec.time)}>
+                      <CalendarClock size={13} /> Lấy theo sàn cho cả {rec.time.length} lệnh
                     </button>
                   ) : null}
                 </>

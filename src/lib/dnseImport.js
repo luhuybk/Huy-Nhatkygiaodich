@@ -4,7 +4,7 @@
 //   - "Lịch sử lãi lỗ":        có lãi vay và con số sàn chốt — nhưng KHÔNG có ngày mua.
 // Nên file sao kê là bắt buộc (dựng được lệnh trọn vẹn), file lãi lỗ là tuỳ chọn để bù
 // lãi vay. Ghép hai file bằng khoá (mã + giây bán).
-import { computeResult, emptyPartialExit, emptyTrade, partialExitsOf } from "./helpers.js";
+import { computeResult, emptyPartialExit, emptyTrade, partialExitsOf, todayStr } from "./helpers.js";
 import { excelDateParts } from "./xlsx.js";
 
 export const DNSE_FILLED = "Đã khớp";
@@ -385,8 +385,12 @@ export function dnsePlan(trade, pos, overwrite = false) {
   return { changed: overwrite || !!(partials.length || close), partials, close, fees, replace: overwrite };
 }
 
-export function applyDnsePlan(trade, plan) {
+// Sàn điền hộ lợi nhuận là lệnh thành "đã đóng" ngay dù setup, ảnh, đánh giá vẫn trống —
+// gắn cùng dấu `brokerFilled` như bên Exness để nhật ký hiện nhãn "sàn", bộ lọc "Kết quả từ
+// sàn, chưa soát" và trang Sức khỏe dữ liệu nhặt ra được. Mở lệnh ra lưu lại là hết dấu.
+export function applyDnsePlan(trade, plan, stampedAt = null) {
   const next = { ...trade };
+  if (plan.changed) next.brokerFilled = stampedAt || todayStr();
   const has = partialExitsOf(trade);
   if (plan.replace) {
     next.partialExits = plan.partials.map((p, i) => ({ ...(has.length === plan.partials.length ? has[i] : emptyPartialExit()), ...p }));
@@ -411,21 +415,70 @@ export function tradeFromDnsePosition(pos, account, symbols) {
 // Lệch dưới mức này coi như làm tròn (mỗi lần chốt làm tròn về đồng).
 export const DNSE_PROFIT_TOLERANCE = 1000;
 
+// Gõ nhầm ngày mua một hai hôm (hay ghi theo ngày đặt lệnh tối hôm trước) vẫn là cùng một lệnh —
+// đòi trùng khít thì lệnh đó vừa hiện "chưa ghi nhật ký" vừa hiện "chỉ có trong nhật ký".
+export const DNSE_DATE_TOLERANCE_DAYS = 3;
+
+function dayGap(a, b) {
+  const x = Date.parse(`${a}T00:00:00Z`);
+  const y = Date.parse(`${b}T00:00:00Z`);
+  return Number.isFinite(x) && Number.isFinite(y) ? Math.abs(x - y) / 86400000 : Infinity;
+}
+
+// Những mốc thời gian nhật ký ghi khác sàn — cùng quy tắc với Exness: tài khoản tắt đồng bộ giờ
+// thì chỉ soi ngày; lệnh có chốt bớt hoặc sàn còn cầm thì không đụng tới phần thoát.
+export function dnseTimeFields(trade, pos, syncTime = true) {
+  const out = [];
+  if (trade.entryDate !== pos.entryDate) out.push("entryDate");
+  if (syncTime && pos.entryTime && (trade.entryTime || "") !== pos.entryTime) out.push("entryTime");
+  if (trade.exitDate && pos.closed && !partialExitsOf(trade).length) {
+    if (trade.exitDate !== pos.exitDate) out.push("exitDate");
+    if (syncTime && pos.exitTime && (trade.exitTime || "") !== pos.exitTime) out.push("exitTime");
+  }
+  return out;
+}
+
+export function withDnseTimes(trade, pos, syncTime = true) {
+  const fields = dnseTimeFields(trade, pos, syncTime);
+  if (!fields.length) return trade;
+  const next = { ...trade };
+  fields.forEach((f) => { next[f] = pos[f]; });
+  return next;
+}
+
 // Đối chiếu vị thế DNSE với nhật ký, chia đúng các nhóm như bên Exness để mỗi nhóm có nút
 // riêng: thiếu trong nhật ký / sàn đã có kết quả mà nhật ký bỏ ngỏ / lệch tiền / thừa.
 // Ghép 1-1 theo (tài khoản, mã, ngày mua); cùng mã cùng ngày có hai lệnh thì ưu tiên lệnh có
 // ngày thoát trùng — lệnh nhập theo kiểu cũ (BSR tách hai) sẽ có một bản khớp, bản kia hiện
 // ra ở nhóm "chỉ có trong nhật ký" để bạn xoá.
-export function reconcileDnse(positions, trades, account, orders) {
+export function reconcileDnse(positions, trades, account, orders, { syncTime = true } = {}) {
   const pool = (trades || []).filter((t) => t && (!account || t.account === account) && t.symbol && t.entryDate);
+  const out = { missing: [], outcome: [], off: [], ok: [], extra: [], time: [] };
+  // Ghép 1-1 theo cặp lệch ít nhất trước (như Exness): đúng ngày mua giành chỗ trước, rồi tới
+  // lệnh có ngày thoát trùng, rồi mới tới lệnh lệch vài ngày.
+  const pairs = [];
+  (positions || []).forEach((pos) => {
+    pool.forEach((t) => {
+      if (String(t.symbol).trim().toUpperCase() !== pos.symbol) return;
+      const gap = dayGap(t.entryDate, pos.entryDate);
+      if (gap > DNSE_DATE_TOLERANCE_DAYS) return;
+      pairs.push({ pos, trade: t, gap, exitMiss: (t.exitDate || "") === pos.exitDate ? 0 : 1 });
+    });
+  });
+  pairs.sort((a, b) => a.gap - b.gap || a.exitMiss - b.exitMiss);
+  const byPos = new Map();
   const claimed = new Set();
-  const out = { missing: [], outcome: [], off: [], ok: [], extra: [] };
+  pairs.forEach(({ pos, trade }) => {
+    if (byPos.has(pos.id) || claimed.has(trade.id)) return;
+    byPos.set(pos.id, trade);
+    claimed.add(trade.id);
+  });
+
   [...(positions || [])].sort((a, b) => a.entryAt - b.entryAt).forEach((pos) => {
-    const cands = pool.filter((t) => !claimed.has(t.id)
-      && String(t.symbol).trim().toUpperCase() === pos.symbol && t.entryDate === pos.entryDate);
-    const hit = cands.find((t) => (t.exitDate || "") === pos.exitDate) || cands[0];
+    const hit = byPos.get(pos.id);
     if (!hit) { out.missing.push(pos); return; }
-    claimed.add(hit.id);
+    const fields = dnseTimeFields(hit, pos, syncTime);
+    if (fields.length) out.time.push({ pos, trade: hit, fields });
     const res = computeResult(hit);
     if (res.status === "open") {
       const plan = dnsePlan(hit, pos);

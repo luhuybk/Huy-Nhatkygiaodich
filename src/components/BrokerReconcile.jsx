@@ -313,7 +313,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
 // Điền kết quả xong là lệnh có lợi nhuận, tức là "đã đóng" theo cách app tính — nó rời khỏi
 // nhóm đang mở VÀ rời khỏi luôn bảng bên trên (bảng đó chỉ nhặt lệnh chưa có lợi nhuận). Nếu
 // không giữ lại ở đây thì bấm xong là mất dấu, trong khi ảnh thoát, tâm lý, chấm điểm vẫn trống.
-function FollowUp({ list, resources, onEditTrade, onDismiss }) {
+export function FollowUp({ list, resources, onEditTrade, onDismiss }) {
   if (!list.length) return null;
   return (
     <div className="rec-followup">
