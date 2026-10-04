@@ -822,8 +822,13 @@ export function TradingCalendar({ trades, resources, onEdit, columns }) {
   );
 }
 
+// Tab đang xem nhớ ở cấp module: sửa một lệnh từ "Đối chiếu sàn" là sang trang form rồi lưu
+// quay về — không nhớ thì bị đá về Danh sách, phải bấm lại tab và soát tiếp từ đầu.
+let lastJournalTab = "list";
+
 export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, onAddTrades, uiSettings, onUiSettingsChange }) {
-  const [tab, setTab] = useState("list");
+  const [tab, setTabState] = useState(lastJournalTab);
+  const setTab = (v) => { lastJournalTab = v; setTabState(v); };
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
   // Phải qua useMemo: chưa lưu bộ lọc nào thì `|| {}` đẻ ra object MỚI mỗi lần render,

@@ -50,7 +50,10 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
   return (
     <div className="rec-file">
       <div className="rec-file-head">
-        <span className="rec-file-name"><FileSpreadsheet size={14} /> {file.name}</span>
+        <span className="rec-file-name">
+          <FileSpreadsheet size={14} /> {file.name}
+          {KIND_LABEL[file.kind] ? <span className="rec-tag">{KIND_LABEL[file.kind]}</span> : null}
+        </span>
         <span className="rec-file-account">
           <ResourceSelect value={file.account} onChange={onAccountChange}
             options={accounts.map((a) => a.name)} placeholder="Chọn tài khoản" />
@@ -296,6 +299,8 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
               <p className="field-hint">
                 Thường là gõ nhầm tài khoản, nhầm symbol hoặc nhầm ngày — cũng có thể chỉ vì file
                 bạn xuất chưa phủ hết khoảng thời gian của những lệnh này.
+                {file.kind === "open" ? " File này là danh sách lệnh đang mở nên chỉ soi những lệnh nhật ký còn để mở." : null}
+                {file.kind === "closed" ? " File này là lịch sử đã đóng nên lệnh nhật ký còn đang chạy không bị tính ở đây." : null}
               </p>
             </>
           ) : null}
@@ -352,11 +357,29 @@ function FollowUp({ list, resources, onEditTrade, onDismiss }) {
   );
 }
 
+// Bấm "Mở lệnh" / "Ghi vào nhật ký" là sang trang form, trang Nhật ký bị gỡ hẳn — giữ file
+// trong state của component thì lưu xong quay lại là mất sạch, phải nạp lại từ đầu dù còn cả
+// chục lệnh lệch chưa sửa. Giữ ở cấp module: sống qua lúc rời trang, mất khi tải lại trang
+// (đúng lời hứa "không lưu lại" ở trên).
+const memory = { files: [], touched: [] };
+
+function useRemembered(key) {
+  const [value, setValue] = useState(memory[key]);
+  const set = (updater) => setValue((prev) => {
+    const next = typeof updater === "function" ? updater(prev) : updater;
+    memory[key] = next;
+    return next;
+  });
+  return [value, set];
+}
+
+const KIND_LABEL = { open: "lệnh đang mở", closed: "lịch sử đã đóng" };
+
 export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade, onUpdateTrade }) {
   const accounts = resources.accounts || [];
   const symbols = resources.symbols || [];
-  const [files, setFiles] = useState([]);
-  const [touched, setTouched] = useState([]);
+  const [files, setFiles] = useRemembered("files");
+  const [touched, setTouched] = useRemembered("touched");
   const fileRef = useRef(null);
 
   const fillOutcome = (list) => {
@@ -377,7 +400,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
       const res = parseBrokerCsv(await f.text());
       const guess = res.error ? "" : guessAccount(res.rows, trades, accounts);
       return {
-        id: uid(), name: f.name, rows: res.rows, error: res.error,
+        id: uid(), name: f.name, rows: res.rows, error: res.error, kind: res.kind || "mixed",
         // Chỉ có một tài khoản thì khỏi đoán, cứ dùng nó.
         account: guess || (accounts.length === 1 ? accounts[0].name : ""),
         guessed: !!guess,
@@ -387,14 +410,23 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const results = useMemo(
-    () => files.map((f) => {
+  const results = useMemo(() => {
+    const raw = files.map((f) => {
       if (!f.account || !f.rows.length) return null;
       const acc = accounts.find((a) => a.name === f.account);
-      return reconcileBrokerRows(f.rows, trades, { account: f.account, syncTime: accountSyncsTime(acc) });
-    }),
-    [files, trades, accounts]
-  );
+      return reconcileBrokerRows(f.rows, trades, { account: f.account, syncTime: accountSyncsTime(acc), kind: f.kind });
+    });
+    // Thả cả file lệnh đóng lẫn file lệnh mở của cùng một tài khoản: lệnh đã khớp ở file này
+    // thì file kia không được kêu "không thấy trên sàn" nữa — sàn có nó, chỉ là ở file khác.
+    return raw.map((r, i) => {
+      if (!r) return r;
+      const elsewhere = new Set();
+      raw.forEach((o, j) => {
+        if (o && j !== i && files[j].account === files[i].account) o.matched.forEach((m) => elsewhere.add(m.trade.id));
+      });
+      return elsewhere.size ? { ...r, extra: r.extra.filter((t) => !elsewhere.has(t.id)) } : r;
+    });
+  }, [files, trades, accounts]);
 
   const reset = () => {
     setFiles([]);

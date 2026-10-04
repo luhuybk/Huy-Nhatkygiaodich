@@ -178,7 +178,11 @@ export function parseBrokerCsv(text) {
     });
   });
   if (!out.length) return { rows: [], error: "Đọc được file nhưng không có dòng lệnh nào." };
-  return { rows: out.sort((a, b) => a.openAt - b.openAt), error: "" };
+  // Exness xuất hai loại file: lịch sử lệnh ĐÃ ĐÓNG và danh sách lệnh ĐANG MỞ (không có cột
+  // giờ đóng). Mỗi loại chỉ chứa một nửa sự thật — phải biết file thuộc loại nào thì mới nói
+  // được lệnh nào "đáng lẽ phải có mặt" trong đó.
+  const kind = idx.closeAt === undefined ? "open" : out.every((r) => r.closeAt) ? "closed" : "mixed";
+  return { rows: out.sort((a, b) => a.openAt - b.openAt), error: "", kind };
 }
 
 // Sàn tách một vị thế thành nhiều dòng khi bạn chốt bớt: cùng số ticket, khác giờ đóng.
@@ -231,7 +235,7 @@ export const DEFAULT_TOLERANCE_HOURS = 48;
 // Ghép mỗi dòng CSV với đúng một lệnh trong nhật ký: cùng symbol, cùng tài khoản, và giờ mở
 // gần nhau nhất. Ghép 1-1 theo thứ tự lệch ít nhất trước, để hai lệnh cùng symbol trong một
 // ngày không cùng nhận một bản ghi.
-export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DEFAULT_TOLERANCE_HOURS, syncTime = true } = {}) {
+export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DEFAULT_TOLERANCE_HOURS, syncTime = true, kind = "mixed" } = {}) {
   const tol = Math.max(1, Number(toleranceHours) || DEFAULT_TOLERANCE_HOURS) * 3600000;
   const pool = (trades || []).filter((t) => t.account === account && t.symbol && t.entryDate);
   const pairs = [];
@@ -293,15 +297,21 @@ export function reconcileBrokerRows(rows, trades, { account, toleranceHours = DE
 
   // Lệnh trong nhật ký nằm trong khoảng thời gian của file mà sàn không có: hoặc gõ nhầm
   // tài khoản/symbol/ngày, hoặc là lệnh của sàn khác.
+  // Nhưng chỉ tính những lệnh ĐÁNG LẼ phải có trong loại file này: file lệnh đang mở thì
+  // không thể chứa lệnh nhật ký đã đóng (LLY đóng SL hôm 30/9 mà bị báo "không thấy trên
+  // sàn" chỉ vì nó không còn mở), file lịch sử đã đóng thì không chứa lệnh còn đang chạy.
   const from = rows.length ? rows[0].openAt.getTime() : 0;
   const to = rows.length ? rows[rows.length - 1].openAt.getTime() : 0;
   const extra = pool.filter((t) => {
     if (tradeTaken.has(t.id)) return false;
+    const closed = computeResult(t).status === "closed";
+    if (kind === "open" && closed) return false;
+    if (kind === "closed" && !closed && !partialExitsOf(t).length) return false;
     const ms = tradeOpenMs(t);
     return ms !== null && ms >= from - 86400000 && ms <= to + 86400000;
   });
 
-  return { matched, missing, extra, tolerance: PROFIT_TOLERANCE, syncTime };
+  return { matched, missing, extra, tolerance: PROFIT_TOLERANCE, syncTime, kind };
 }
 
 // % vị thế của một lần đóng. Sàn ghi lot đóng và khối lượng ban đầu, chia ra là ra đúng
