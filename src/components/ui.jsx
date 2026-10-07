@@ -2,6 +2,7 @@ import { Fragment, useState, useEffect, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
 import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
+import { imageFromLink } from "../lib/printTrades.js";
 
 // State sống qua lúc component bị gỡ (rời trang sang form sửa lệnh rồi quay lại) nhưng mất khi
 // tải lại trang. Dùng cho file đối chiếu đã nạp: không lưu đi đâu, chỉ khỏi phải nạp lại giữa chừng.
@@ -48,7 +49,7 @@ export function CellImagePreview({ image, link, title }) {
       <ImageIcon size={15} color="var(--accent)" />
       {hover ? (
         <div className="link-preview-popup">
-          {failed ? <p className="link-preview-fallback">Không xem trước được — bấm để mở link.</p> : <img src={link} alt="" onError={() => setFailed(true)} />}
+          {failed ? <p className="link-preview-fallback">Không xem trước được — bấm để mở link.</p> : <img src={imageFromLink(link) || link} alt="" onError={() => setFailed(true)} />}
         </div>
       ) : null}
     </a>

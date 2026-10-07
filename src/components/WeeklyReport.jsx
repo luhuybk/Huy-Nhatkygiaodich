@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { PrintTrades } from "./PrintTrades.jsx";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ChartCard, StatCard, FxWarning } from "./ui.jsx";
 import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
@@ -61,6 +62,7 @@ function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
 export function WeeklyReportPage({ trades, resources }) {
   const [mode, setMode] = useState(() => (readLocalUi("reportMode", "week") === "month" ? "month" : "week"));
   const [anchor, setAnchor] = useState(() => periodStart(mode, todayStr()));
+  const [printing, setPrinting] = useState(false);
   const meta = periodOf(mode);
   const to = periodEnd(mode, anchor);
   const thisPeriod = periodStart(mode, todayStr());
@@ -120,7 +122,15 @@ export function WeeklyReportPage({ trades, resources }) {
         {anchor !== thisPeriod ? (
           <button type="button" className="btn btn-ghost" onClick={() => setAnchor(thisPeriod)}>{meta.back}</button>
         ) : <span className="field-hint" style={{ margin: 0 }}>{meta.current}</span>}
+        <button type="button" className="btn btn-ghost" title="In mỗi lệnh đóng thành 2 tờ A4: ảnh vào lệnh và ảnh thoát lệnh"
+          onClick={() => setPrinting(true)}>
+          <Printer size={14} /> In lệnh {meta.noun} này
+        </button>
       </div>
+      {printing ? (
+        <PrintTrades trades={trades} resources={resources} from={anchor} to={to}
+          label={`${meta.noun} ${periodLabel(mode, anchor, to)}`} onClose={() => setPrinting(false)} />
+      ) : null}
 
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Lệnh được xếp vào kỳ theo <b>ngày đóng</b> — đó là lúc kết quả thành hình. {meta.note}

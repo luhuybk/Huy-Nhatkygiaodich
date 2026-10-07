@@ -1656,3 +1656,50 @@ span.jl-tag { cursor: default; }
 .jl-entry-foot { flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 .jl-linked { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .link-btn { font: inherit; font-size: 12.5px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---- In lệnh ra giấy ---------------------------------------------------- */
+.print-root { position: fixed; inset: 0; z-index: 2000; overflow: auto; background: #d9dbe0; color: #111; }
+body.printing-trades { overflow: hidden; }
+.print-toolbar { position: sticky; top: 0; z-index: 1; background: var(--surface, #fff); color: var(--text, #111);
+  border-bottom: 1px solid var(--border, #ccc); padding: 10px 16px; }
+.print-toolbar-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.print-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 96px; overflow: auto; }
+.print-pick { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 9px; border-radius: 20px;
+  border: 1px solid var(--border, #ccc); cursor: pointer; }
+.print-pick.is-off { opacity: 0.45; text-decoration: line-through; }
+.print-warn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; font-size: 12px; color: var(--loss, #c0392b); }
+.print-pages { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+/* Tờ xem trước theo đúng tỉ lệ A4 ngang (297×210) để thấy trước ảnh sẽ nằm thế nào. */
+.print-sheet { width: min(100%, 1040px); aspect-ratio: 297 / 210; background: #fff; color: #111;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18); display: flex; flex-direction: column; padding: 14px 16px; box-sizing: border-box; }
+.print-head { border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 8px; }
+.print-head-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.print-symbol { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+.print-dir { font-size: 13px; font-weight: 800; padding: 1px 8px; border: 1.5px solid #111; border-radius: 4px; }
+.print-dir.is-sell { background: #111; color: #fff; }
+.print-kind { font-size: 15px; font-weight: 700; }
+.print-count { margin-left: auto; font-size: 12px; color: #555; }
+.print-head-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 4px; }
+.print-rr { font-size: 15px; }
+.print-dim { color: #666; }
+/* Ảnh nằm tuyệt đối trong khung: để ảnh trong luồng thì chart cao vượt tờ, đẩy ra một trang trắng. */
+.print-img { flex: 1; min-height: 0; position: relative; }
+.print-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.print-noimg { text-align: center; color: #777; border: 1.5px dashed #bbb; border-radius: 8px; padding: 24px; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; box-sizing: border-box; }
+.print-noimg p { margin: 0; font-size: 13px; }
+.print-link { font-size: 11px !important; word-break: break-all; max-width: 90%; }
+
+@media print {
+  @page { size: A4 landscape; margin: 7mm; }
+  body.printing-trades > *:not(.print-root) { display: none !important; }
+  body.printing-trades { overflow: visible; background: #fff; }
+  .print-root { position: static; overflow: visible; background: #fff; }
+  .print-toolbar { display: none; }
+  .print-pages { padding: 0; gap: 0; display: block; }
+  .print-sheet { width: 100%; height: 185mm; aspect-ratio: auto; box-shadow: none; padding: 0; overflow: hidden;
+    break-inside: avoid; }
+  /* Ngắt TRƯỚC mỗi tờ (trừ tờ đầu) thay vì sau: ngắt sau tờ cuối đẻ thêm một trang trắng. */
+  .print-sheet + .print-sheet { break-before: page; page-break-before: always; }
+  .print-img img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
