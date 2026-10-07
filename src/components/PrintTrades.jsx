@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Download, ImageOff, Printer, X } from "lucide-react";
-import { computeResult, fmtMoney, fmtR, periodAccountReport, reviewEntries, shiftDate, tradeCurrency } from "../lib/helpers.js";
-import { fmtDateVN, printableImage, reviewTradesToPrint, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
+import { computeResult, fmtMoney, fmtR, mistakeImages, periodAccountReport, reviewEntries, shiftDate, tradeCurrency } from "../lib/helpers.js";
+import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
 import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
 
@@ -87,15 +87,36 @@ function ReviewStrip({ trade, kind }) {
   );
 }
 
+// Sổ lỗi: tờ VÀO mang lỗi setup đã tick, tờ THOÁT mang lỗi thực thi đã ghi (mục 8).
+function ErrorStrip({ trade, kind, errors }) {
+  if (kind === "entry") {
+    const names = setupErrorNames(trade, errors);
+    return (
+      <div className="print-review">
+        <b>⚠ Lỗi setup:</b> {names.length ? names.join(" · ") : <i>không tick lỗi setup nào</i>}
+      </div>
+    );
+  }
+  const note = String(trade.mistakeNote || "").trim();
+  return (
+    <div className="print-review">
+      <b>⚠ Lỗi thực thi:</b> {trade.hasMistake ? (note || <i>đã đánh dấu có lỗi nhưng chưa ghi — viết tay vào đây.</i>) : <i>không đánh dấu</i>}
+    </div>
+  );
+}
+
 // Một tờ A4: dải thông tin trên cùng, ảnh phủ phần còn lại. Chữ đen nền trắng bất kể giao diện
 // đang sáng hay tối — in mực màu nền tối vừa tốn mực vừa khó đọc.
-function Sheet({ trade, kind, index, total, resources, onImage, review }) {
+// kind: "entry" | "exit" | "mistake" (ảnh lỗi thứ `shot` của mục 8, chỉ in ở Sổ lỗi).
+function Sheet({ trade, kind, shot, index, total, resources, onImage, book, errors }) {
   const r = computeResult(trade);
   const entry = kind === "entry";
-  const src = entry ? printableImage(trade.entryImage, trade.entryLink) : printableImage(trade.exitImage, trade.exitLink);
-  const link = entry ? trade.entryLink : trade.exitLink;
+  const mis = kind === "mistake" ? mistakeImages(trade)[shot] || {} : null;
+  const src = mis ? printableImage(mis.image, mis.link) : entry ? printableImage(trade.entryImage, trade.entryLink) : printableImage(trade.exitImage, trade.exitLink);
+  const link = mis ? mis.link : entry ? trade.entryLink : trade.exitLink;
+  const imageKey = mis ? `${trade.id}-mistake-${shot}` : `${trade.id}-${kind}`;
   const [state, setState] = useState(src ? "loading" : "missing");
-  useEffect(() => { onImage(`${trade.id}-${kind}`, state); }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onImage(imageKey, state); }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
   const dir = trade.direction === "sell" ? "SELL" : "BUY";
   return (
     <section className="print-sheet">
@@ -103,13 +124,14 @@ function Sheet({ trade, kind, index, total, resources, onImage, review }) {
         <div className="print-head-main">
           <span className="print-symbol">{trade.symbol || "—"}</span>
           <span className={`print-dir ${dir === "SELL" ? "is-sell" : ""}`}>{dir}</span>
-          <span className="print-kind">{entry ? "VÀO LỆNH" : "THOÁT LỆNH"}</span>
-          {trade.needsReview && !review ? <span className="print-pin">📌 cần nhìn lại</span> : null}
+          <span className="print-kind">{mis ? `ẢNH LỖI ${shot + 1}/${mistakeImages(trade).length}` : entry ? "VÀO LỆNH" : "THOÁT LỆNH"}</span>
+          {trade.needsReview && book !== "review" ? <span className="print-pin">📌 cần nhìn lại</span> : null}
+          {hasAnyError(trade) && book !== "errors" ? <span className="print-pin">⚠ có lỗi</span> : null}
           <span className="print-count">Lệnh {index + 1}/{total}</span>
         </div>
         <div className="print-head-meta">
           <span><b>Vào:</b> {fmtDateVN(trade.entryDate)} {trade.entryTime || ""}</span>
-          {!entry ? <span><b>Thoát:</b> {trade.exitDate ? `${fmtDateVN(trade.exitDate)} ${trade.exitTime || ""}` : "đang mở"}</span> : null}
+          {kind === "exit" ? <span><b>Thoát:</b> {trade.exitDate ? `${fmtDateVN(trade.exitDate)} ${trade.exitTime || ""}` : "đang mở"}</span> : null}
           <span><b>Setup:</b> {trade.setup || "—"}</span>
           <span><b>Khung:</b> {trade.timeframe || "—"}</span>
           <span className="print-rr"><b>RR:</b> {fmtR(r.rr)}</span>
@@ -128,7 +150,8 @@ function Sheet({ trade, kind, index, total, resources, onImage, review }) {
           </div>
         )}
       </div>
-      {review ? <ReviewStrip trade={trade} kind={kind} /> : null}
+      {book === "review" && !mis ? <ReviewStrip trade={trade} kind={kind} /> : null}
+      {book === "errors" && !mis ? <ErrorStrip trade={trade} kind={kind} errors={errors} /> : null}
     </section>
   );
 }
@@ -137,10 +160,44 @@ function rCell(v, n) {
   return n ? fmtR(v) : "—";
 }
 
+// Trang đầu Sổ lỗi: mắc bao nhiêu lệnh, mất bao nhiêu R vì chúng, và lỗi nào lặp lại nhiều nhất.
+function ErrorSummary({ list, errors }) {
+  const freq = errorFrequency(list, errors);
+  let rSum = 0; let rN = 0; let losses = 0;
+  list.forEach((t) => {
+    const r = computeResult(t);
+    if (r.rr !== null && Number.isFinite(r.rr)) { rSum += r.rr; rN += 1; }
+    if (r.outcome === "loss") losses += 1;
+  });
+  return (
+    <>
+      <div className="print-cover-kpis">
+        <div><span>Lệnh có lỗi</span><b>{list.length}</b></div>
+        <div><span>Trong đó thua</span><b>{losses}</b></div>
+        <div><span>R của các lệnh lỗi</span><b>{rN ? fmtR(rSum) : "—"}</b></div>
+        <div><span>Lỗi thực thi</span><b>{freq.execution}</b></div>
+        <div><span>Loại lỗi setup</span><b>{freq.rows.length}</b></div>
+      </div>
+      {freq.rows.length ? (
+        <>
+          <h3 className="print-cover-h">Lỗi setup lặp lại</h3>
+          <table className="print-table">
+            <thead><tr><th>Lỗi</th><th>Số lệnh</th></tr></thead>
+            <tbody>{freq.rows.map((r) => <tr key={r.name}><td>{r.name}</td><td><b>{r.n}</b></td></tr>)}</tbody>
+          </table>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 // Trang tổng kết đầu tập: kỳ từ ngày nào đến ngày nào, từng tài khoản ra sao, vốn tuần sau,
 // tuần đó đã nghĩ gì (Log hành trình), rồi mục lục các lệnh — số thứ tự khớp "Lệnh n/N" ở
 // từng tờ để lật tìm nhanh. Không cố nhét vừa một tờ: dài thì tự sang tờ thứ hai.
-function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyLog, review, allReview, weekly }) {
+// book: "closed" (tổng kết kỳ) | "review" (Sổ nhìn lại) | "errors" (Sổ lỗi). Hai sổ chỉ cần mục lục
+// (và bảng lỗi lặp lại cho Sổ lỗi), không cần bảng tài khoản/vốn/log.
+function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyLog, book, allMarked, weekly, errors }) {
+  const review = book !== "closed";
   const rep = useMemo(() => periodAccountReport(trades, resources, from, to), [trades, resources, from, to]);
   const accounts = (resources && resources.accounts) || [];
   const nextFrom = shiftDate(to, 1);
@@ -171,8 +228,8 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
       <header className="print-cover-head">
         <div className="print-cover-title">{title}</div>
         <div className="print-cover-range">
-          {review && allReview
-            ? `Tất cả lệnh đã đánh dấu 📌 · ${list.length} lệnh`
+          {review && allMarked
+            ? `${book === "errors" ? "Tất cả lệnh có lỗi" : "Tất cả lệnh đã đánh dấu 📌"} · ${list.length} lệnh`
             : `${weekdayVN(from)} ${fmtDateVN(from)} → ${weekdayVN(to)} ${fmtDateVN(to)}`}
         </div>
       </header>
@@ -255,11 +312,13 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
         </>
       ) : null}
 
-      <h3 className="print-cover-h">{review ? "Các lệnh cần nhìn lại" : "Các lệnh trong tập này"}</h3>
+      {book === "errors" ? <ErrorSummary list={list} errors={errors} /> : null}
+
+      <h3 className="print-cover-h">{book === "review" ? "Các lệnh cần nhìn lại" : book === "errors" ? "Các lệnh có lỗi" : "Các lệnh trong tập này"}</h3>
       {list.length ? (
         <table className="print-table">
           <thead>
-            <tr><th>#</th><th>Mã</th><th>Tài khoản</th><th>Vào</th><th>Đóng</th><th>Setup</th><th>Khung</th><th>RR</th><th>{review ? "Vì sao cần nhìn lại" : ""}</th></tr>
+            <tr><th>#</th><th>Mã</th><th>Tài khoản</th><th>Vào</th><th>Đóng</th><th>Setup</th><th>Khung</th><th>RR</th><th>{book === "review" ? "Vì sao cần nhìn lại" : book === "errors" ? "Lỗi" : ""}</th></tr>
           </thead>
           <tbody>
             {list.map((x, i) => (
@@ -272,7 +331,11 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
                 <td>{x.setup || "—"}</td>
                 <td>{x.timeframe || "—"}</td>
                 <td><b>{fmtR(computeResult(x).rr)}</b></td>
-                <td className="print-small">{review ? x.reviewReason || "" : x.needsReview ? "📌" : ""}</td>
+                <td className="print-small">
+                  {book === "review" ? x.reviewReason || ""
+                    : book === "errors" ? [...setupErrorNames(x, errors), x.hasMistake ? `thực thi${x.mistakeNote ? `: ${String(x.mistakeNote).trim().slice(0, 80)}` : ""}` : ""].filter(Boolean).join(" · ")
+                    : [x.needsReview ? "📌" : "", hasAnyError(x) ? "⚠" : ""].join(" ")}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -284,15 +347,16 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
 
 // Trang xem trước bản in, phủ toàn màn hình. Bấm In là gọi hộp thoại in của trình duyệt —
 // chọn máy Canon ở đó; khổ A4 ngang và lề đã đặt sẵn bằng @page.
-export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, from, to, label, onClose }) {
-  const [kind, setKind] = useState("closed");
-  const [allReview, setAllReview] = useState(false);
+export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupErrors, mode, from, to, label, onClose }) {
+  const [book, setBook] = useState("closed");
+  const [allMarked, setAllMarked] = useState(false);
   const [withCover, setWithCover] = useState(true);
-  const review = kind === "review";
-  const all = useMemo(
-    () => (review ? reviewTradesToPrint(trades, from, to, allReview) : tradesToPrint(trades, from, to)),
-    [review, trades, from, to, allReview]
-  );
+  const [withMistakeShots, setWithMistakeShots] = useState(true);
+  const all = useMemo(() => {
+    if (book === "review") return reviewTradesToPrint(trades, from, to, allMarked);
+    if (book === "errors") return errorTradesToPrint(trades, from, to, allMarked);
+    return tradesToPrint(trades, from, to);
+  }, [book, trades, from, to, allMarked]);
   const [skip, setSkip] = useState(() => new Set());
   const [images, setImages] = useState({});
   const [exporting, setExporting] = useState(null);
@@ -308,14 +372,17 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
     return () => { document.body.classList.remove("printing-trades"); window.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const keys = list.flatMap((t) => [`${t.id}-entry`, `${t.id}-exit`]);
+  // Sổ lỗi in thêm mỗi ảnh lỗi (mục 8) một tờ — đó thường là chỗ thấy lỗi rõ nhất.
+  const mistakeShots = (t) => (book === "errors" && withMistakeShots ? mistakeImages(t).map((_, n) => n) : []);
+  const keys = list.flatMap((t) => [`${t.id}-entry`, `${t.id}-exit`, ...mistakeShots(t).map((n) => `${t.id}-mistake-${n}`)]);
   const loading = keys.filter((k) => images[k] === "loading").length;
   const bad = list.filter((t) => ["missing", "failed"].includes(images[`${t.id}-entry`]) || ["missing", "failed"].includes(images[`${t.id}-exit`]));
   const toggle = (id) => setSkip((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
-  const title = review ? "SỔ NHÌN LẠI" : `TỔNG KẾT ${noun}`;
-  const pages = list.length * 2 + (withCover ? 1 : 0);
-  const fileName = `${review ? "So-nhin-lai" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan"}_${review && allReview ? "tat-ca" : `${from}_${to}`}.pdf`;
+  const title = book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`;
+  const pages = list.reduce((n, t) => n + 2 + mistakeShots(t).length, 0) + (withCover ? 1 : 0);
+  const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
+  const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}.pdf`;
   const download = async () => {
     const nodes = pagesRef.current ? [...pagesRef.current.querySelectorAll(".print-cover, .print-sheet")] : [];
     if (!nodes.length) return;
@@ -334,12 +401,16 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
     <div className="print-root">
       <div className="print-toolbar">
         <div className="print-toolbar-row">
-          <div className="seg" style={{ maxWidth: 360 }}>
-            <button type="button" className={`seg-btn ${!review ? "seg-active" : ""}`} onClick={() => setKind("closed")}>Lệnh đóng · {label}</button>
-            <button type="button" className={`seg-btn ${review ? "seg-active" : ""}`} onClick={() => setKind("review")}>📌 Sổ nhìn lại</button>
+          <div className="seg" style={{ maxWidth: 480 }}>
+            <button type="button" className={`seg-btn ${book === "closed" ? "seg-active" : ""}`} onClick={() => setBook("closed")}>Lệnh đóng · {label}</button>
+            <button type="button" className={`seg-btn ${book === "review" ? "seg-active" : ""}`} onClick={() => setBook("review")}>📌 Sổ nhìn lại</button>
+            <button type="button" className={`seg-btn ${book === "errors" ? "seg-active" : ""}`} onClick={() => setBook("errors")}>⚠ Sổ lỗi</button>
           </div>
-          {review ? (
-            <label className="print-opt"><input type="checkbox" checked={allReview} onChange={(e) => setAllReview(e.target.checked)} /> Mọi lệnh đã đánh dấu (không chỉ {label})</label>
+          {book !== "closed" ? (
+            <label className="print-opt"><input type="checkbox" checked={allMarked} onChange={(e) => setAllMarked(e.target.checked)} /> {book === "errors" ? "Mọi lệnh có lỗi" : "Mọi lệnh đã đánh dấu"} (không chỉ {label})</label>
+          ) : null}
+          {book === "errors" ? (
+            <label className="print-opt"><input type="checkbox" checked={withMistakeShots} onChange={(e) => setWithMistakeShots(e.target.checked)} /> Kèm ảnh lỗi</label>
           ) : null}
           <label className="print-opt"><input type="checkbox" checked={withCover} onChange={(e) => setWithCover(e.target.checked)} /> Kèm trang tổng kết</label>
           <span className="field-hint" style={{ margin: 0 }}>{list.length} lệnh · khoảng {pages} tờ A4 ngang</span>
@@ -377,16 +448,21 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
       <div className="print-pages" ref={pagesRef}>
         {withCover ? (
           <Cover title={title} from={from} to={to} list={list} trades={trades} resources={resources}
-            capitalPlan={capitalPlan} journeyLog={journeyLog} review={review} allReview={allReview} weekly={mode !== "month"} />
+            capitalPlan={capitalPlan} journeyLog={journeyLog} book={book} allMarked={allMarked} weekly={mode !== "month"} errors={setupErrors} />
         ) : null}
         {list.length ? list.map((t, i) => (
           <Fragment key={t.id}>
-            <Sheet trade={t} kind="entry" index={i} total={list.length} resources={resources} onImage={onImage} review={review} />
-            <Sheet trade={t} kind="exit" index={i} total={list.length} resources={resources} onImage={onImage} review={review} />
+            <Sheet trade={t} kind="entry" index={i} total={list.length} resources={resources} onImage={onImage} book={book} errors={setupErrors} />
+            <Sheet trade={t} kind="exit" index={i} total={list.length} resources={resources} onImage={onImage} book={book} errors={setupErrors} />
+            {mistakeShots(t).map((n) => (
+              <Sheet key={`m${n}`} trade={t} kind="mistake" shot={n} index={i} total={list.length} resources={resources} onImage={onImage} book={book} errors={setupErrors} />
+            ))}
           </Fragment>
         )) : (
           <p className="empty-note" style={{ padding: 24 }}>
-            {review ? `Không có lệnh nào đánh dấu 📌 ${allReview ? "" : `trong ${label}`}.` : `Không có lệnh nào đóng trong ${label}.`}
+            {book === "review" ? `Không có lệnh nào đánh dấu 📌 ${allMarked ? "" : `trong ${label}`}.`
+              : book === "errors" ? `Không có lệnh nào có lỗi ${allMarked ? "" : `trong ${label}`}.`
+              : `Không có lệnh nào đóng trong ${label}.`}
           </p>
         )}
       </div>

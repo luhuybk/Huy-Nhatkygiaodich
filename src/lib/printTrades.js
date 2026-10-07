@@ -58,3 +58,39 @@ export function weekdayVN(d) {
   const x = new Date(`${d}T00:00:00`);
   return Number.isNaN(x.getTime()) ? "" : WEEKDAYS[x.getDay()];
 }
+
+// Sổ lỗi: lệnh có lỗi thực thi (bấm "Lệnh này có lỗi" ở mục 8) hoặc có tick lỗi setup. Cùng
+// cách chọn kỳ như Sổ nhìn lại — trong kỳ theo ngày đóng, hoặc tất cả.
+export function hasAnyError(t) {
+  return !!(t && (t.hasMistake || (t.setupErrors || []).length));
+}
+
+export function errorTradesToPrint(trades, from, to, all = false) {
+  return (trades || [])
+    .filter((t) => {
+      if (!hasAnyError(t)) return false;
+      if (all) return true;
+      const d = dateKey(t);
+      return d && d >= from && d <= to;
+    })
+    .sort((a, b) => `${dateKey(a)} ${a.exitTime || a.entryTime || ""}`.localeCompare(`${dateKey(b)} ${b.exitTime || b.entryTime || ""}`));
+}
+
+// Tên các lỗi setup đã tick. Lỗi đã bị xoá khỏi bộ lỗi thì không còn tên — bỏ qua.
+export function setupErrorNames(t, errors) {
+  const byId = new Map((errors || []).filter((e) => e && e.id).map((e) => [e.id, e.name]));
+  return (t.setupErrors || []).map((id) => byId.get(id)).filter(Boolean);
+}
+
+// Lỗi nào lặp lại nhiều nhất trong tập — đọc trang đầu là biết đang mắc gì, đếm cả lỗi thực
+// thi (không có tên, gom chung một dòng) để không bỏ sót lệnh chỉ ghi chú tay.
+export function errorFrequency(list, errors) {
+  const counts = new Map();
+  let execution = 0;
+  (list || []).forEach((t) => {
+    setupErrorNames(t, errors).forEach((n) => counts.set(n, (counts.get(n) || 0) + 1));
+    if (t.hasMistake) execution += 1;
+  });
+  const rows = [...counts.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  return { rows, execution };
+}
