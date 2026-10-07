@@ -37,3 +37,24 @@ export function tradesToPrint(trades, from, to) {
 export function fmtDateVN(d) {
   return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—";
 }
+
+// Sổ nhìn lại: những lệnh đã đánh dấu 📌 — thứ đáng để trên giấy nhất. Lệnh còn mở vẫn lấy
+// (đánh dấu là vì nó đáng xem, không phải vì đã đóng). `all` = mọi lệnh đã đánh dấu, không
+// thì chỉ lệnh rơi vào kỳ đang xem theo ngày đóng (chưa đóng thì ngày vào).
+export function reviewTradesToPrint(trades, from, to, all = false) {
+  return (trades || [])
+    .filter((t) => {
+      if (!t || !t.needsReview) return false;
+      if (all) return true;
+      const d = dateKey(t);
+      return d && d >= from && d <= to;
+    })
+    .sort((a, b) => `${dateKey(a)} ${a.exitTime || a.entryTime || ""}`.localeCompare(`${dateKey(b)} ${b.exitTime || b.entryTime || ""}`));
+}
+
+const WEEKDAYS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+export function weekdayVN(d) {
+  if (!d) return "";
+  const x = new Date(`${d}T00:00:00`);
+  return Number.isNaN(x.getTime()) ? "" : WEEKDAYS[x.getDay()];
+}

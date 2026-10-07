@@ -1690,8 +1690,38 @@ body.printing-trades { overflow: hidden; }
 .print-noimg p { margin: 0; font-size: 13px; }
 .print-link { font-size: 11px !important; word-break: break-all; max-width: 90%; }
 
+.print-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; cursor: pointer; }
+.print-pin { font-size: 12px; font-weight: 700; padding: 1px 7px; border: 1px dashed #111; border-radius: 4px; }
+.print-review { border-top: 1.5px solid #111; margin-top: 6px; padding-top: 5px; font-size: 12px; line-height: 1.4;
+  max-height: 30mm; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.print-review-entry { display: block; }
+/* Trang tổng kết: cao tự do, dài thì sang tờ sau. */
+.print-cover { width: min(100%, 1040px); min-height: calc(min(100vw, 1040px) * 210 / 297); background: #fff; color: #111;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18); padding: 16px 20px; box-sizing: border-box; font-size: 12.5px; }
+.print-cover-head { border-bottom: 3px solid #111; padding-bottom: 6px; margin-bottom: 10px; display: flex; align-items: baseline;
+  justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.print-cover-title { font-size: 24px; font-weight: 800; letter-spacing: 1px; }
+.print-cover-range { font-size: 16px; font-weight: 700; }
+.print-cover-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 4px; }
+.print-cover-kpis > div { border: 1.5px solid #111; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.print-cover-kpis span { font-size: 11px; color: #555; }
+.print-cover-kpis b { font-size: 17px; }
+.print-cover-h { font-size: 14px; margin: 12px 0 5px; border-bottom: 1px solid #999; padding-bottom: 2px; }
+.print-cover-empty { color: #666; font-style: italic; margin: 4px 0; }
+.print-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.print-table th, .print-table td { border: 1px solid #bbb; padding: 3px 6px; text-align: left; vertical-align: top; }
+.print-table th { background: #eee; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-small { font-size: 11px; color: #333; }
+.print-logs { display: flex; flex-direction: column; gap: 6px; }
+.print-log { border-left: 3px solid #111; padding: 2px 0 2px 8px; break-inside: avoid; }
+.print-log-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.print-log p { margin: 2px 0 0; white-space: pre-wrap; }
+
 @media print {
   @page { size: A4 landscape; margin: 7mm; }
+  .print-cover { width: 100%; min-height: 0; box-shadow: none; padding: 0; }
+  .print-cover + .print-sheet { break-before: page; page-break-before: always; }
+  .print-table tr { break-inside: avoid; }
   body.printing-trades > *:not(.print-root) { display: none !important; }
   body.printing-trades { overflow: visible; background: #fff; }
   .print-root { position: static; overflow: visible; background: #fff; }
