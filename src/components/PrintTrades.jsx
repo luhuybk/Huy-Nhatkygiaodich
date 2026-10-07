@@ -1,12 +1,68 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ImageOff, Printer, X } from "lucide-react";
+import { AlertTriangle, Download, ImageOff, Printer, X } from "lucide-react";
 import { computeResult, fmtMoney, fmtR, periodAccountReport, reviewEntries, shiftDate, tradeCurrency } from "../lib/helpers.js";
 import { fmtDateVN, printableImage, reviewTradesToPrint, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
 import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
 
 const ACTION_LABEL = { up: "▲ tăng", down: "▼ hạ", same: "= giữ", none: "—" };
+
+// Ảnh trắng 1×1 thay cho ảnh nào không tải được — một ảnh lỗi không được làm hỏng cả file.
+const BLANK_PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+const PAGE_RATIO = 210 / 297;
+const EXPORT_WIDTH = 2000;
+
+// Tải về thành PDF để cất lên Google Drive: chụp từng tờ ĐANG HIỆN ở trang xem trước thành ảnh
+// rồi xếp vào PDF A4 ngang — file ra đúng y như bản in. Hai thư viện (~400 KB) chỉ được tải lúc
+// bấm nút, trang web bình thường không nặng thêm. Trang tổng kết cao hơn một tờ thì cắt ra nhiều tờ.
+async function exportPdf(nodes, fileName, onProgress) {
+  const [{ toCanvas }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  let first = true;
+  const addPage = (canvas) => {
+    if (!first) pdf.addPage("a4", "landscape");
+    first = false;
+    const h = Math.min(210, (canvas.height / canvas.width) * 297);
+    pdf.addImage(canvas.toDataURL("image/jpeg", 0.86), "JPEG", 0, 0, 297, h);
+  };
+  for (let i = 0; i < nodes.length; i += 1) {
+    onProgress(i + 1, nodes.length);
+    const node = nodes[i];
+    const canvas = await toCanvas(node, {
+      pixelRatio: EXPORT_WIDTH / Math.max(1, node.offsetWidth),
+      backgroundColor: "#ffffff",
+      imagePlaceholder: BLANK_PX,
+      cacheBust: false,
+      // Không nhúng font web: trang in dùng font hệ thống, còn nhúng thì thư viện tải về cả chục
+      // file font Google của app — lần bấm đầu tiên đứng hàng chục giây ở trang 1.
+      skipFonts: true,
+    });
+    const pageH = Math.round(canvas.width * PAGE_RATIO);
+    if (canvas.height <= pageH + 4) { addPage(canvas); continue; }
+    // Dải cuối mỏng hơn ~2% tờ chỉ là lề thừa, cắt ra thành một trang gần trắng thì bỏ.
+    for (let y = 0; y < canvas.height && canvas.height - y > pageH * 0.02; y += pageH) {
+      const slice = document.createElement("canvas");
+      slice.width = canvas.width;
+      slice.height = Math.min(pageH, canvas.height - y);
+      const ctx = slice.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, slice.width, slice.height);
+      ctx.drawImage(canvas, 0, -y);
+      addPage(slice);
+    }
+  }
+  const blob = pdf.output("blob");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return { pages: pdf.getNumberOfPages(), size: blob.size };
+}
 
 // Ghi chú nhìn lại in dưới ảnh: tờ VÀO mang lý do đánh dấu, tờ THOÁT mang các lần đã nhìn lại.
 function ReviewStrip({ trade, kind }) {
@@ -239,6 +295,9 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
   );
   const [skip, setSkip] = useState(() => new Set());
   const [images, setImages] = useState({});
+  const [exporting, setExporting] = useState(null);
+  const [exported, setExported] = useState("");
+  const pagesRef = useRef(null);
   const list = all.filter((t) => !skip.has(t.id));
   const onImage = (key, state) => setImages((prev) => (prev[key] === state ? prev : { ...prev, [key]: state }));
 
@@ -256,6 +315,20 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
   const title = review ? "SỔ NHÌN LẠI" : `TỔNG KẾT ${noun}`;
   const pages = list.length * 2 + (withCover ? 1 : 0);
+  const fileName = `${review ? "So-nhin-lai" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan"}_${review && allReview ? "tat-ca" : `${from}_${to}`}.pdf`;
+  const download = async () => {
+    const nodes = pagesRef.current ? [...pagesRef.current.querySelectorAll(".print-cover, .print-sheet")] : [];
+    if (!nodes.length) return;
+    setExported("");
+    try {
+      const res = await exportPdf(nodes, fileName, (done, total) => setExporting({ done, total }));
+      setExported(`Đã tải ${fileName} · ${res.pages} trang · ${(res.size / 1048576).toFixed(1)} MB`);
+    } catch (err) {
+      setExported(`Không tạo được PDF: ${(err && err.message) || err}. Dùng nút In → chọn "Lưu dưới dạng PDF" thay thế.`);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return createPortal(
     <div className="print-root">
@@ -271,7 +344,11 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
           <label className="print-opt"><input type="checkbox" checked={withCover} onChange={(e) => setWithCover(e.target.checked)} /> Kèm trang tổng kết</label>
           <span className="field-hint" style={{ margin: 0 }}>{list.length} lệnh · khoảng {pages} tờ A4 ngang</span>
           <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-primary" disabled={!list.length || loading > 0} onClick={() => window.print()}>
+          <button type="button" className="btn" disabled={!list.length || loading > 0 || !!exporting} onClick={download}
+            title="Tải về file PDF (A4 ngang) để lưu lên Google Drive">
+            <Download size={14} /> {exporting ? `Đang tạo trang ${exporting.done}/${exporting.total}…` : "Tải PDF"}
+          </button>
+          <button type="button" className="btn btn-primary" disabled={!list.length || loading > 0 || !!exporting} onClick={() => window.print()}>
             <Printer size={14} /> {loading ? `Đang tải ảnh (${loading})…` : "In"}
           </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}><X size={14} /> Đóng</button>
@@ -292,11 +369,12 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, mode, 
             Link TradingView (tradingview.com/x/…) và link ảnh trực tiếp thì in được; link loại khác thì không.
           </p>
         ) : null}
+        {exported ? <p className="field-hint" style={{ margin: "6px 0 0", color: exported.startsWith("Đã") ? "var(--win)" : "var(--loss)" }}>{exported}</p> : null}
         <p className="field-hint" style={{ margin: "6px 0 0" }}>
-          Trong hộp thoại in: chọn máy Canon, khổ A4, hướng <b>Ngang</b>, bỏ tick "Đầu trang và chân trang" để tờ sạch.
+          "Tải PDF" lưu file vào thư mục Tải về — kéo thả lên Google Drive là xong. Trong hộp thoại in: chọn máy Canon, khổ A4, hướng <b>Ngang</b>, bỏ tick "Đầu trang và chân trang" để tờ sạch.
         </p>
       </div>
-      <div className="print-pages">
+      <div className="print-pages" ref={pagesRef}>
         {withCover ? (
           <Cover title={title} from={from} to={to} list={list} trades={trades} resources={resources}
             capitalPlan={capitalPlan} journeyLog={journeyLog} review={review} allReview={allReview} weekly={mode !== "month"} />

@@ -1658,7 +1658,8 @@ span.jl-tag { cursor: default; }
 .link-btn { font: inherit; font-size: 12.5px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---- In lệnh ra giấy ---------------------------------------------------- */
-.print-root { position: fixed; inset: 0; z-index: 2000; overflow: auto; background: #d9dbe0; color: #111; }
+.print-root { position: fixed; inset: 0; z-index: 2000; overflow: auto; background: #d9dbe0; color: #111;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
 body.printing-trades { overflow: hidden; }
 .print-toolbar { position: sticky; top: 0; z-index: 1; background: var(--surface, #fff); color: var(--text, #111);
   border-bottom: 1px solid var(--border, #ccc); padding: 10px 16px; }
@@ -1696,7 +1697,8 @@ body.printing-trades { overflow: hidden; }
   max-height: 30mm; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .print-review-entry { display: block; }
 /* Trang tổng kết: cao tự do, dài thì sang tờ sau. */
-.print-cover { width: min(100%, 1040px); min-height: calc(min(100vw, 1040px) * 210 / 297); background: #fff; color: #111;
+/* aspect-ratio chứ không tính theo 100vw: nội dung ngắn thì đúng một tờ, dài hơn thì tự cao ra. */
+.print-cover { width: min(100%, 1040px); aspect-ratio: 297 / 210; background: #fff; color: #111;
   box-shadow: 0 2px 10px rgba(0,0,0,0.18); padding: 16px 20px; box-sizing: border-box; font-size: 12.5px; }
 .print-cover-head { border-bottom: 3px solid #111; padding-bottom: 6px; margin-bottom: 10px; display: flex; align-items: baseline;
   justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -1719,7 +1721,7 @@ body.printing-trades { overflow: hidden; }
 
 @media print {
   @page { size: A4 landscape; margin: 7mm; }
-  .print-cover { width: 100%; min-height: 0; box-shadow: none; padding: 0; }
+  .print-cover { width: 100%; aspect-ratio: auto; box-shadow: none; padding: 0; }
   .print-cover + .print-sheet { break-before: page; page-break-before: always; }
   .print-table tr { break-inside: avoid; }
   body.printing-trades > *:not(.print-root) { display: none !important; }
@@ -1733,3 +1735,20 @@ body.printing-trades { overflow: hidden; }
   .print-sheet + .print-sheet { break-before: page; page-break-before: always; }
   .print-img img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---- Ảnh chart trong chi tiết lệnh ------------------------------------- */
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.shot-card { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shot-card figcaption { font-size: 12px; color: var(--text-dim); }
+.shot-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; padding: 0; border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
+.shot-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
+.shot-thumb:hover { border-color: var(--accent); }
+.shot-thumb-link { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--accent); cursor: pointer;
+  text-decoration: none; font-size: 13px; }
+.shot-lightbox { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.88); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 16px; gap: 10px; cursor: zoom-out; }
+.shot-lightbox img { max-width: 100%; max-height: calc(100% - 56px); object-fit: contain; border-radius: 6px; }
+.shot-lightbox-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; color: #fff; cursor: default; font-size: 13px; }
+.shot-lightbox-bar a { color: #9cc7ff; }
+.shot-lightbox-bar .btn { color: #fff; border-color: rgba(255,255,255,0.4); }

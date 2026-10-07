@@ -56,6 +56,56 @@ export function CellImagePreview({ image, link, title }) {
   );
 }
 
+// Ảnh chart thật trong chi tiết lệnh, thay cho biểu tượng link. Link TradingView đổi sang PNG;
+// `loading="lazy"` + chỉ hiện trong ô chi tiết nên mở lệnh nào mới tải ảnh lệnh đó (~0,2 MB/ảnh),
+// danh sách Nhật ký không nặng thêm. Bấm ảnh để xem to; link gốc vẫn mở được.
+export function ShotGallery({ shots }) {
+  const [open, setOpen] = useState(null);
+  const [failed, setFailed] = useState(() => new Set());
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setOpen(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <>
+      <div className="shot-grid">
+        {shots.map((s) => {
+          const src = s.image || imageFromLink(s.link);
+          const ok = src && !failed.has(s.key);
+          return (
+            <figure key={s.key} className="shot-card">
+              {ok ? (
+                <button type="button" className="shot-thumb" title={`Xem to: ${s.label}`} onClick={() => setOpen({ ...s, src })}>
+                  <img src={src} alt={s.label} loading="lazy"
+                    onError={() => setFailed((prev) => new Set(prev).add(s.key))} />
+                </button>
+              ) : (
+                <a className="shot-thumb shot-thumb-link" href={s.link || s.image} target="_blank" rel="noopener noreferrer"
+                  title="Link này không xem trước được — bấm để mở">
+                  <ImageIcon size={18} /> <span>Mở link</span>
+                </a>
+              )}
+              <figcaption>{s.label}</figcaption>
+            </figure>
+          );
+        })}
+      </div>
+      {open ? (
+        <div className="shot-lightbox" onClick={() => setOpen(null)}>
+          <img src={open.src} alt={open.label} />
+          <div className="shot-lightbox-bar" onClick={(e) => e.stopPropagation()}>
+            <b>{open.label}</b>
+            {open.link ? <a href={open.link} target="_blank" rel="noopener noreferrer">Mở link gốc ↗</a> : null}
+            <button type="button" className="btn btn-ghost" onClick={() => setOpen(null)}><X size={14} /> Đóng</button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 // Nhiều ảnh trên một dòng, ngăn nhau bằng dấu "|" để nhìn ra ngay có mấy tấm.
 // `empty` = false khi ô trống thì không cần hiện dấu "—" (các thẻ ghi chú).
 // Khung bộ lọc dùng chung. Xếp dọc trên điện thoại, bảy ô lọc cao 414px — hơn nửa màn hình

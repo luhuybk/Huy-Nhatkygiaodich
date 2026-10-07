@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
-import { CellImagePreview, CompletionBar, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
@@ -429,14 +429,7 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
 
           {shots.length > 0 ? (
             <DetailGroup title="Hình ảnh">
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                {shots.map((s) => (
-                  <div key={s.key}>
-                    <span className="field-hint">{s.label}</span><br />
-                    <CellImagePreview image={s.image} link={s.link} title={s.label} />
-                  </div>
-                ))}
-              </div>
+              <ShotGallery shots={shots} />
             </DetailGroup>
           ) : null}
 
