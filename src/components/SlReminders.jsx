@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
-import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X } from "lucide-react";
-import { ConfirmButton, DangerConfirmButton, Field, StatCard } from "./ui.jsx";
+import {
+  Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
+  CalendarDays, Pencil, Check, Clock, Settings2,
+} from "lucide-react";
+import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
+import { LifeHubExport } from "./Timeline.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
@@ -14,9 +18,35 @@ import { DEFAULT_AUTO_SLOTS, tfHours, vnToday } from "../lib/candles.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
+const hoursText = (list) => (list || []).filter(Boolean).map((h) => `${Number(h.slice(0, 2))}h${h.endsWith(":00") ? "" : h.slice(3)}`).join(" ");
+
+// Chế độ giờ đóng nến đang dùng, viết ngắn để nhắc ở đầu các mục: "mốc 00:00 · 08:30 · …".
+function candleModeText(settings) {
+  const slots = settings.autoSlots || DEFAULT_AUTO_SLOTS;
+  return slots.enabled
+    ? `chỉ nhắc ở các mốc ${hoursText(slots.hours).split(" ").join(" · ")}`
+    : "nhắc ngay khi nến đóng (trừ giờ nghỉ)";
+}
+
+function DayChips({ days, onToggle }) {
+  const active = days && days.length ? days : WEEKDAY_CODES;
+  return (
+    <div className="day-chips">
+      {WEEKDAY_CODES.map((d) => (
+        <button type="button" key={d} className={`day-chip ${active.includes(d) ? "day-chip-on" : ""}`} onClick={() => onToggle(d)}>{d}</button>
+      ))}
+    </div>
+  );
+}
+
+const toggleIn = (list, day) => {
+  const days = list && list.length ? list : [...WEEKDAY_CODES];
+  return days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
+};
+
 // Giờ riêng theo khung (chỉ lịch dời SL dùng). Chỉ gợi ý những khung tài khoản này đã từng
-// trade, theo thứ tự khung ở tab Tài nguyên — tài khoản chỉ đánh một khung thì khỏi bận tâm.
-function TimeframeSchedules({ account, base, schedules, resources, trades, onTf, settings }) {
+// trade — tài khoản chỉ đánh một khung thì khỏi bận tâm.
+function TimeframeSchedules({ account, base, schedules, resources, trades, onTf }) {
   const own = schedules.filter((sc) => sc.timeframe && sc.accountId === account.id);
   const order = resources.timeframes || [];
   const used = [...new Set((trades || []).filter((t) => t && t.account === account.name && t.timeframe).map((t) => t.timeframe))]
@@ -30,17 +60,12 @@ function TimeframeSchedules({ account, base, schedules, resources, trades, onTf,
         const n = openOf(ts);
         return (
           <div key={ts.timeframe} className="sl-tf-row">
-            <label className={`checklist-item ${ts.enabled ? "checklist-checked" : ""}`}>
-              <input type="checkbox" checked={!!ts.enabled} onChange={(e) => onTf.update(account, ts.timeframe, { enabled: e.target.checked })} />
-              <span>Khung <b>{ts.timeframe}</b></span>
-              <small className="sl-tf-open">{n ? `${n} lệnh mở` : "không có lệnh mở"}</small>
-            </label>
+            <Switch checked={!!ts.enabled} onChange={(v) => onTf.update(account, ts.timeframe, { enabled: v })} />
+            <span>Khung <b>{ts.timeframe}</b> <small className="sl-tf-open">{n ? `${n} lệnh mở` : "không có lệnh mở"}</small></span>
             <label className="sl-auto-toggle" title="Giờ nhắc = giờ đóng nến của khung này theo phiên của từng mã">
-              <input type="checkbox" checked={!!ts.auto} onChange={(e) => onTf.update(account, ts.timeframe, { auto: e.target.checked })} /> Tự tính
+              <input type="checkbox" checked={!!ts.auto} onChange={(e) => onTf.update(account, ts.timeframe, { auto: e.target.checked })} /> Theo nến
             </label>
-            {ts.auto ? (
-              <span className="field-hint sl-tf-auto">theo giờ đóng nến {ts.timeframe} của từng mã</span>
-            ) : (
+            {ts.auto ? null : (
               <input className="input input-inline" style={{ flex: 1 }} key={(ts.hours || []).join(",")}
                 defaultValue={(ts.hours || []).join(", ")} placeholder="Giờ dời SL cho khung này, VD 7, 15, 23"
                 onBlur={(e) => onTf.update(account, ts.timeframe, { hours: parseHoursInput(e.target.value) })} />
@@ -59,77 +84,46 @@ function TimeframeSchedules({ account, base, schedules, resources, trades, onTf,
           ))}
         </div>
       ) : null}
-      {own.length ? (
-        <p className="field-hint sl-tf-hint">
-          Lệnh khung {own.map((x) => x.timeframe).join(", ")} chỉ nhắc theo giờ riêng ở trên; lệnh khung khác (hoặc chưa ghi khung) vẫn theo giờ chung của tài khoản.
-          Thứ trong tuần và Topic dùng chung với tài khoản.
-        </p>
-      ) : null}
     </div>
   );
 }
 
-function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trades, onTf, settings }) {
+// Một thẻ = một tài khoản: công tắc, giờ (hoặc "theo nến"), thứ trong tuần. Topic Telegram nằm ở Cài đặt.
+function AccountScheduleCards({ schedules, resources, onUpdate, trades, onTf, settings, candle }) {
   const scheduleFor = (accountId) => schedules.find((sc) => sc.accountId === accountId && !sc.timeframe);
-  const toggleDay = (account, sched, day) => {
-    const days = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
-    const next = days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
-    onUpdate(account, { activeDays: next });
-  };
-
   if (resources.accounts.length === 0) {
     return <p className="empty-note">Chưa có tài khoản nào — thêm ở mục Tài khoản trước.</p>;
   }
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="acc-list">
       {resources.accounts.map((acc) => {
         const sched = scheduleFor(acc.id) || emptyReminderSchedule(acc.id, acc.name);
-        const activeDays = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
+        const auto = candle && sched.auto;
+        // Theo nến thì giờ gõ tay chỉ còn cho lệnh khung W / chưa ghi khung — có lệnh như vậy mới hiện ô.
+        const manualLeft = auto && (trades || []).some((t) => t && t.account === acc.name && t.entryDate && !t.exitDate && !tfHours(t.timeframe));
         return (
-          <div key={acc.id} className="account-form sl-reminder-card">
-            <div className="sl-reminder-row">
-              <label className={`checklist-item ${sched.enabled ? "checklist-checked" : ""}`} style={{ minWidth: 200 }}>
-                <input type="checkbox" checked={!!sched.enabled} onChange={(e) => onUpdate(acc, { enabled: e.target.checked })} />
-                <span>{acc.name}</span>
-              </label>
-              <input
-                className="input input-inline"
-                style={{ flex: 1 }}
-                defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
-                placeholder={sched.auto ? "Giờ cho lệnh khung W / chưa ghi khung" : "09:00, 12:00, 15:00, 18:00, 21:00"}
-                title={sched.auto ? "Chỉ dùng cho lệnh mà khung không tự tính được (W, M15, chưa ghi khung)" : undefined}
-                onBlur={(e) => onUpdate(acc, { hours: parseHoursInput(e.target.value) })}
-              />
-              <input
-                className="input input-inline mono"
-                style={{ width: 90 }}
-                defaultValue={sched.threadId || ""}
-                placeholder="Thread ID"
-                onBlur={(e) => onUpdate(acc, { threadId: e.target.value.trim() })}
-              />
-              <button type="button" className="row-btn" title="Gửi thử vào Topic này" onClick={() => onSendTest(sched.threadId)}>
-                <Send size={13} />
-              </button>
-            </div>
-            <div className="sl-reminder-days">
-              {WEEKDAY_CODES.map((day) => (
-                <label key={day} className={`sl-day-chip ${activeDays.includes(day) ? "sl-day-chip-active" : ""}`}>
-                  <input type="checkbox" checked={activeDays.includes(day)} onChange={() => toggleDay(acc, sched, day)} />
-                  {day}
+          <div key={acc.id} className={`acc-card ${sched.enabled ? "" : "acc-card-off"}`}>
+            <div className="acc-row">
+              <Switch checked={!!sched.enabled} onChange={(v) => onUpdate(acc, { enabled: v })} />
+              <b className="acc-name">{acc.name}</b>
+              {candle ? (
+                <label className={`acc-auto ${auto ? "acc-auto-on" : ""}`} title="Mỗi lệnh nhắc theo giờ đóng nến khung của nó (H4, H8, D…), theo phiên của mã">
+                  <input type="checkbox" checked={!!sched.auto} onChange={(e) => onUpdate(acc, { auto: e.target.checked })} /> Theo giờ đóng nến
                 </label>
-              ))}
+              ) : null}
+              {auto && !manualLeft ? <span className="acc-hours" /> : (
+              <input className="input input-inline acc-hours" key={(sched.hours || []).join(",")}
+                defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
+                placeholder={auto ? "Giờ cho lệnh khung W" : "9 12 15 18 21"}
+                title={auto ? "Chỉ dùng cho lệnh mà khung không tự tính được (W, M15, chưa ghi khung)" : "Giờ nhắc, giờ Việt Nam — gõ tắt \"9 14 20\" được"}
+                onBlur={(e) => onUpdate(acc, { hours: parseHoursInput(e.target.value) })} />
+              )}
+              <DayChips days={sched.activeDays} onToggle={(d) => onUpdate(acc, { activeDays: toggleIn(sched.activeDays, d) })} />
             </div>
-            {onTf ? (
-              <label className={`sl-auto-switch ${sched.auto ? "is-on" : ""}`}>
-                <input type="checkbox" checked={!!sched.auto} onChange={(e) => onUpdate(acc, { auto: e.target.checked })} />
-                <span><b>Tự tính theo giờ đóng nến</b> — mỗi lệnh nhắc đúng lúc nến khung của nó (H4, H8, D…) đóng, theo phiên của mã. Ô giờ bên trên chỉ còn dùng cho lệnh khung W hoặc chưa ghi khung.</span>
-              </label>
-            ) : null}
-            {onTf && sched.auto ? (
+            {auto && sched.enabled ? (
               <AutoHoursPreview settings={settings} trades={(trades || []).filter((t) => t && t.account === acc.name && t.entryDate && !t.exitDate && tradeInSchedule(t, sched, schedules))} />
             ) : null}
-            {onTf ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} settings={settings} /> : null}
+            {onTf && sched.enabled ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} /> : null}
           </div>
         );
       })}
@@ -162,11 +156,35 @@ function useTelegramTest(settings, defaultText) {
   return { testState, sendTest };
 }
 
-export function SlReminderPanel({ settings, resources, onChange, trades, mutedTrades, onMutedTradesChange, watches }) {
-  const s = settings;
-  const set = (k) => (v) => onChange({ ...s, [k]: v });
-  const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây.");
+function TestState({ state }) {
+  if (state === "ok") return <span className="field-hint test-ok"><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span>;
+  if (state === "error") return <span className="field-hint test-err"><XCircle size={13} /> Gửi thất bại — kiểm tra Token/Chat ID</span>;
+  return null;
+}
 
+// Một mục trong tab Lịch nhắc: dòng tóm tắt luôn hiện, bấm mới mở phần chỉnh.
+function PlanSection({ id, icon: Icon, title, summary, on, onToggle, open, onOpen, children }) {
+  return (
+    <div className={`plan ${open ? "plan-open" : ""} ${on === false ? "plan-off" : ""}`}>
+      <div className="plan-head" role="button" tabIndex={0} onClick={() => onOpen(open ? "" : id)}
+        onKeyDown={(e) => { if (e.key === "Enter") onOpen(open ? "" : id); }}>
+        <span className="plan-icon"><Icon size={16} /></span>
+        <span className="plan-text">
+          <b>{title}</b>
+          <span className="plan-summary">{summary}</span>
+        </span>
+        {onToggle ? <Switch checked={!!on} onChange={onToggle} title={on ? "Đang bật — bấm để tắt" : "Đang tắt — bấm để bật"} /> : null}
+        <ChevronDown size={16} className="plan-chev" />
+      </div>
+      {open ? <div className="plan-body">{children}</div> : null}
+    </div>
+  );
+}
+
+// ───────────────────────── Dời SL ─────────────────────────
+
+function SlBody({ settings, onChange, resources, trades, mutedTrades, onMutedTradesChange }) {
+  const s = settings;
   const isBase = (sc, account) => sc.accountId === account.id && !sc.timeframe;
   const updateSchedule = (account, patch) => {
     const exists = s.schedules.find((sc) => isBase(sc, account));
@@ -182,17 +200,6 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
     remove: (account, tf) => onChange({ ...s, schedules: s.schedules.filter((sc) => !isTf(sc, account, tf)) }),
   };
 
-  // Tài khoản có lịch tự tính (chung hoặc theo khung) — chỉ mã của chúng cần gán phiên.
-  const autoAccounts = useMemo(() => {
-    const ids = new Set((s.schedules || []).filter((sc) => sc && sc.auto).map((sc) => sc.accountId));
-    return (resources.accounts || []).filter((a) => ids.has(a.id)).map((a) => a.name);
-  }, [s.schedules, resources.accounts]);
-  // Nhóm symbol theo dõi có khung nến dùng chung phiên + chế độ nhắc ở đây.
-  const autoWatchSymbols = useMemo(
-    () => [...new Set((watches || []).filter(watchIsAuto).flatMap((w) => watchLiveSymbols(w).map((x) => x.name)))],
-    [watches]
-  );
-
   const muted = mutedTrades || [];
   const fill = s.mutedFillReminder || emptyMutedFillReminder();
   const fillDays = mutedFillDays(fill);
@@ -204,231 +211,86 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
   const unmute = (tradeId) => onMutedTradesChange(muted.filter((m) => m.tradeId !== tradeId));
 
   return (
-    <div>
-      <h3 className="block-title" style={{ marginTop: 0 }}>Nhắc dời SL qua Telegram</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Khi tài khoản đang có lệnh mở, hệ thống sẽ tự bắn tin nhắn Telegram vào đúng khung giờ bạn đặt bên dưới để nhắc kiểm tra dời SL.
-        <b> Mỗi tài khoản một tin dạng bảng</b>, mỗi lệnh một dòng kèm 2 nút: <b>Đã dời</b> (vẫn nhắc tiếp ở khung giờ sau) và <b>Kết thúc</b> (ngừng nhắc lệnh đó — dùng khi lệnh đã chạm SL/TP mà bạn chưa kịp ghi nhật ký). Bấm dòng nào thì chỉ dòng đó đổi trạng thái.
-        Việc gửi tin chạy nền trên server (Supabase Edge Function + Cron) nên hoạt động dù bạn không mở web — cần cài đặt 1 lần, xem hướng dẫn cuối trang.
+    <>
+      <p className="plan-hint">
+        Chỉ nhắc khi tài khoản có lệnh mở — mỗi tài khoản một tin, mỗi lệnh một dòng kèm nút <b>Đã dời</b> / <b>Kết thúc</b>.
+        Tick <b>Theo giờ đóng nến</b> thì mỗi lệnh nhắc theo nến khung của nó, hiện đang {candleModeText(s)}.
       </p>
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${s.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => set("enabled")(!s.enabled)}
-        >
-          <Bell size={15} /> {s.enabled ? "🔔 Đang bật nhắc dời SL" : "Bật nhắc dời SL (tùy chọn)"}
-        </button>
-        <div className="grid-2" style={{ marginTop: 12 }}>
-          <Field label="Telegram Bot Token" hint="Lấy từ @BotFather trên Telegram">
-            <input className="input mono" value={s.telegramBotToken} onChange={(e) => set("telegramBotToken")(e.target.value.trim())} placeholder="123456789:AA...xyz" />
-          </Field>
-          <Field label="Main Chat ID" hint="ID nhóm/cuộc trò chuyện chính sẽ nhận tin nhắn (Supergroup nếu dùng Topics)">
-            <input className="input mono" value={s.telegramChatId} onChange={(e) => set("telegramChatId")(e.target.value.trim())} placeholder="-100123456789" />
-          </Field>
-        </div>
-        <p className="field-hint" style={{ marginTop: 6 }}>Bot Token và Main Chat ID này dùng chung cho mọi loại nhắc nhở qua Telegram trong ứng dụng (nhắc dời SL, kiểm tra setup, nhắc việc chung).</p>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button type="button" className="btn btn-ghost" onClick={() => sendTest()} disabled={testState === "sending"}>
-            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử (chat chính)"}
-          </button>
-          {testState === "ok" ? <span className="field-hint" style={{ color: "var(--win)", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span> : null}
-          {testState === "error" ? <span className="field-hint" style={{ color: "var(--loss)", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> Gửi thất bại — kiểm tra lại Token/Chat ID</span> : null}
-        </div>
-      </div>
+      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} trades={trades} onTf={onTf} settings={s} candle />
 
-      <h3 className="block-title">Lịch nhắc theo tài khoản</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Chọn tài khoản cần nhắc, các khung giờ trong ngày (định dạng HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu nhóm Telegram có chia Topics riêng, và các ngày trong tuần được phép nhắc (VD bỏ T7/CN cho tài khoản Forex nghỉ cuối tuần). Chỉ gửi tin khi tài khoản đó đang có lệnh chưa đóng.
-      </p>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Tài khoản trade nhiều khung (VD hàng hóa đánh cả D, H8, H3) thì bấm <b>+ khung</b> trong thẻ tài khoản để đặt giờ dời SL riêng cho khung đó —
-        mỗi giờ nhắc chỉ hiện đúng các lệnh tới lúc cần dời.
-      </p>
-      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} trades={trades} onTf={onTf} settings={s} />
-
-      {autoAccounts.length || autoWatchSymbols.length ? (
-        <>
-          <h3 className="block-title">Giờ đóng nến</h3>
-          <p className="field-hint" style={{ marginBottom: 12 }}>
-            Nến H4/H8/D xếp từ giờ <b>mở phiên</b> của từng mã, và mỗi nguồn dữ liệu trên TradingView một phiên: vàng/bạc OANDA theo giờ forex
-            (H4 đóng 0-4-8-12-16-20h), đồng/nhôm FUSIONMARKETS theo giờ London (11-15-19-23h), dầu FOREXCOM theo giờ UTC (3-7-11-15-19-23h).
-            New York, London đổi giờ mùa vào tháng 3 và tháng 10–11 — mọi mốc tự nhích theo, bạn không phải sửa gì.
-          </p>
-          <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} watchSymbols={autoWatchSymbols} />
-        </>
-      ) : null}
-
-      <h3 className="block-title">Lệnh đang tắt nhắc</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Các lệnh bạn đã bấm "Kết thúc lệnh" trên Telegram. Lệnh vẫn nguyên trong Nhật ký, chỉ là không nhắc dời SL nữa —
-        bấm "Nhắc lại" nếu lỡ tay. Khi bạn điền ngày thoát cho lệnh, nó tự rời khỏi danh sách này.
-      </p>
-      {mutedList.length === 0 ? (
-        <p className="empty-note">Không có lệnh nào đang tắt nhắc.</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <h4 className="plan-sub">Lệnh đã bấm "Kết thúc" {mutedList.length ? <span className="plan-count">{mutedList.length}</span> : null}</h4>
+      {mutedList.length ? (
+        <div className="muted-list">
           {mutedList.map((m) => {
             const waited = daysSince(m.mutedAt);
             const overdue = fill.enabled !== false && waited !== null && waited >= fillDays;
             return (
-              <div key={m.tradeId} className="backup-row">
-                <span style={{ fontWeight: 600 }}>{m.trade ? (m.trade.symbol || "?") : "(lệnh không còn)"}</span>
-                <span className="field-hint" style={{ flex: 1 }}>
-                  {m.trade ? `${m.trade.account || ""} · vào lệnh ${m.trade.entryDate || "—"}` : "Lệnh đã bị xóa hoặc đã đóng"}
-                  {m.mutedAt ? ` · tắt lúc ${new Date(m.mutedAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}
+              <div key={m.tradeId} className="muted-row">
+                <b>{m.trade ? (m.trade.symbol || "?") : "(lệnh không còn)"}</b>
+                <span className="field-hint" style={{ flex: 1, margin: 0 }}>
+                  {m.trade ? `${m.trade.account || ""} · vào ${m.trade.entryDate || "—"}` : "đã xoá hoặc đã đóng"}
                   {waited !== null ? ` · chờ ${waited} ngày` : ""}
                 </span>
-                {m.fillDone ? (
-                  <span className="tl-tag" title="Bạn đã bấm Ngừng nhắc điền trên Telegram">đã tắt nhắc điền</span>
-                ) : overdue ? (
-                  <span className="tl-tag tl-tag-clash">quá hạn điền</span>
-                ) : null}
-                <button type="button" className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => unmute(m.tradeId)}>
-                  <Bell size={13} /> Nhắc lại
-                </button>
+                {m.fillDone ? <span className="tl-tag">đã tắt nhắc điền</span> : overdue ? <span className="tl-tag tl-tag-clash">quá hạn điền</span> : null}
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => unmute(m.tradeId)}><Bell size={12} /> Nhắc lại</button>
               </div>
             );
           })}
         </div>
-      )}
-
-      <h4 className="block-title" style={{ fontSize: 14 }}>Nhắc điền nốt lệnh đã bấm "Kết thúc lệnh"</h4>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Bấm "Kết thúc lệnh" trên Telegram nghĩa là lệnh đã xong thật, chỉ chưa kịp ghi nhật ký. Quá số ngày dưới đây mà
-        lệnh vẫn chưa có ngày thoát, bot sẽ nhắc riêng từng lệnh, mỗi ngày một lần — kèm nút "Ngừng nhắc điền" nếu bạn
-        muốn để đó. Điền ngày thoát vào Nhật ký là lệnh tự rời khỏi danh sách này và hết nhắc.
-      </p>
-      <div className="account-form">
-        <button type="button"
-          className={`lesson-toggle-btn ${fill.enabled !== false ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => setFill({ enabled: fill.enabled === false })}>
-          <Bell size={15} /> {fill.enabled !== false ? "🔔 Đang bật nhắc điền" : "Bật nhắc điền"}
-        </button>
-        <div className="grid-3" style={{ marginTop: 12 }}>
-          <Field label="Sau bao nhiêu ngày" hint="Tính từ lúc bấm Kết thúc lệnh">
-            <input type="number" min="1" max="60" className="input" value={fill.days ?? ""}
-              onChange={(e) => setFill({ days: e.target.value })} placeholder={`${fillDays}`} />
-          </Field>
-          <Field label="Giờ nhắc (giờ Việt Nam)">
-            <input type="time" className="input" value={fill.time || "20:00"} onChange={(e) => setFill({ time: e.target.value })} />
-          </Field>
-          <Field label="Thread ID (nếu có Topics)">
-            <input className="input mono" value={fill.threadId || ""} onChange={(e) => setFill({ threadId: e.target.value.trim() })} placeholder="Thread ID" />
-          </Field>
-        </div>
+      ) : <p className="field-hint">Không có lệnh nào — khi bạn bấm "Kết thúc" trên Telegram mà chưa ghi nhật ký, lệnh nằm ở đây.</p>}
+      <div className="job-row">
+        <Switch checked={fill.enabled !== false} onChange={(v) => setFill({ enabled: v })} />
+        <span className="job-label job-label-inline">Nhắc điền nhật ký nếu sau
+          <input type="number" min="1" max="60" className="input input-inline job-num" value={fill.days ?? ""}
+            onChange={(e) => setFill({ days: e.target.value })} placeholder={`${fillDays}`} />
+          ngày vẫn chưa có ngày thoát, lúc
+          <input type="time" className="input input-inline job-time" value={fill.time || "20:00"} onChange={(e) => setFill({ time: e.target.value })} />
+        </span>
       </div>
-
-      <details style={{ marginTop: 18 }}>
-        <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Hướng dẫn kích hoạt gửi nền (làm 1 lần trong Supabase Dashboard)</summary>
-        <ol className="field-hint" style={{ marginTop: 8, paddingLeft: 18, lineHeight: 1.7 }}>
-          <li>Deploy function <code>supabase/functions/sl-reminder</code> (đã có sẵn trong repo) bằng Supabase CLI: <code>supabase functions deploy sl-reminder</code>.</li>
-          <li>Vào Supabase Dashboard → Database → Extensions, bật <code>pg_cron</code> và <code>pg_net</code>.</li>
-          <li>Chạy file <code>supabase-sl-reminder-cron.sql</code> (đã có sẵn trong repo) trong SQL Editor để tạo cron job gọi function mỗi 5 phút.</li>
-          <li>Điền Bot Token + Main Chat ID ở trên, bật lịch cho tài khoản cần theo dõi, điền Thread ID nếu nhóm có chia Topics, bấm nút gửi thử để xác nhận đúng chỗ.</li>
-        </ol>
-        <p className="field-hint" style={{ marginTop: 8 }}>
-          Khung giờ bạn nhập luôn được hiểu theo giờ Việt Nam (Asia/Ho_Chi_Minh) — Edge Function tự quy đổi giờ máy chủ (UTC) sang giờ VN trước khi so khớp, nên nhập "09:00" là đúng 9 giờ sáng VN.
-        </p>
-      </details>
-    </div>
+    </>
   );
 }
 
-export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
-  const s = settings;
-  const set = (k) => (v) => onChange({ ...s, [k]: v });
-  const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
-  const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc kiểm tra setup sẽ gửi vào đây.");
-  const setupCheckSchedules = s.setupCheckSchedules || [];
-  const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
-  const setInc = (patch) => onChange({ ...s, incompleteReminder: { ...inc, ...patch } });
-  const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
-  const setWs = (patch) => onChange({ ...s, weeklySummary: { ...ws, ...patch } });
-  const rec = { ...emptyReconcileReminder(), ...(s.reconcileReminder || {}) };
-  const setRec = (patch) => onChange({ ...s, reconcileReminder: { ...rec, ...patch } });
+// ───────────────────────── Kiểm tra setup ─────────────────────────
 
+function SetupBody({ settings, onChange, resources, checkLog }) {
+  const s = settings;
+  const list = s.setupCheckSchedules || [];
   const week = useMemo(() => setupCheckStats(checkLog, 7), [checkLog]);
   const month = useMemo(() => setupCheckStats(checkLog, 30), [checkLog]);
   const streak = useMemo(() => setupCheckStreak(checkLog), [checkLog]);
-
   const updateSchedule = (account, patch) => {
-    const exists = setupCheckSchedules.find((sc) => sc.accountId === account.id);
+    const exists = list.find((sc) => sc.accountId === account.id);
     const next = exists
-      ? setupCheckSchedules.map((sc) => (sc.accountId === account.id ? { ...sc, ...patch } : sc))
-      : [...setupCheckSchedules, { ...emptyReminderSchedule(account.id, account.name), ...patch }];
+      ? list.map((sc) => (sc.accountId === account.id ? { ...sc, ...patch } : sc))
+      : [...list, { ...emptyReminderSchedule(account.id, account.name), ...patch }];
     onChange({ ...s, setupCheckSchedules: next });
   };
-
   return (
-    <div>
-      <h3 className="block-title" style={{ marginTop: 0 }}>Nhắc kiểm tra setup qua Telegram</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Hay bị miss setup vì không kịp theo dõi? Vào đúng khung giờ bạn đặt bên dưới, hệ thống sẽ bắn tin nhắc kiểm tra setup theo từng tài khoản —
-        không phụ thuộc lệnh đang mở hay đóng, chỉ đơn giản là lời nhắc "tới giờ ngồi soi bảng giá".
-      </p>
-      {!telegramReady ? (
-        <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
-          Chưa cấu hình Bot Token / Chat ID — điền ở tab "Nhắc dời SL" trước (dùng chung cho mọi loại nhắc nhở Telegram).
-        </p>
-      ) : null}
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${s.setupCheckEnabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => set("setupCheckEnabled")(!s.setupCheckEnabled)}
-        >
-          <Bell size={15} /> {s.setupCheckEnabled ? "🔔 Đang bật nhắc kiểm tra setup" : "Bật nhắc kiểm tra setup (tùy chọn)"}
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button type="button" className="btn btn-ghost" onClick={() => sendTest()} disabled={testState === "sending" || !telegramReady}>
-            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử (chat chính)"}
-          </button>
-          {testState === "ok" ? <span className="field-hint" style={{ color: "var(--win)", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span> : null}
-          {testState === "error" ? <span className="field-hint" style={{ color: "var(--loss)", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> Gửi thất bại — kiểm tra lại Token/Chat ID</span> : null}
-        </div>
-      </div>
-
-      <h3 className="block-title">Lịch nhắc theo tài khoản</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Chọn tài khoản cần nhắc, khung giờ trong ngày (HH:mm, giờ Việt Nam, cách nhau bằng dấu phẩy), Topic (Thread ID) nếu cần, và ngày trong tuần được phép nhắc.
-      </p>
-      <AccountScheduleCards schedules={setupCheckSchedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} />
-
-      <h3 className="block-title">Tỷ lệ hoàn thành</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Mỗi tin nhắc kiểm tra setup có nút <b>Đã kiểm tra</b>. Bấm nút đó là một lần hoàn thành —
-        phần trăm bên dưới cho biết bạn thực sự ngồi soi bảng giá được bao nhiêu trên tổng số lần được nhắc.
-        <b> Chuỗi</b> chỉ cộng thêm khi một ngày bấm đủ mọi lần nhắc, và chỉ đếm những ngày có lịch nhắc —
-        nên cuối tuần tắt lịch không làm đứt chuỗi.
-      </p>
+    <>
+      <p className="plan-hint">Lời nhắc "tới giờ ngồi soi bảng giá" theo từng tài khoản — không phụ thuộc lệnh đang mở. Tin có nút <b>Đã kiểm tra</b> để tính tỷ lệ.</p>
+      <AccountScheduleCards schedules={list} resources={resources} onUpdate={updateSchedule} />
+      <h4 className="plan-sub">Tỷ lệ hoàn thành</h4>
       {week.total === 0 && month.total === 0 ? (
-        <p className="empty-note">Chưa có lần nhắc nào được ghi nhận — số liệu sẽ xuất hiện sau lần nhắc đầu tiên.</p>
+        <p className="field-hint">Chưa có lần nhắc nào — số liệu hiện sau lần nhắc đầu tiên.</p>
       ) : (
         <>
-          <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-            <StatCard
-              label="Chuỗi hiện tại"
-              value={`${streak.current} ngày`}
-              tone={streak.current > 0 ? "win" : ""}
-              sub={streak.todayDone === false ? "hôm nay còn lần chưa bấm" : streak.todayDone ? "hôm nay đã đủ" : "hôm nay chưa có lịch nhắc"}
-            />
-            <StatCard label="Kỷ lục" value={`${streak.best} ngày`} sub="chuỗi dài nhất từ trước tới nay" />
-            <StatCard label="Bỏ lỡ 7 ngày" value={week.total - week.done} sub="lần chưa bấm" />
-            <StatCard label="7 ngày qua" value={week.percent === null ? "—" : `${week.percent}%`} sub={`${week.done}/${week.total} lần`} />
-            <StatCard label="30 ngày qua" value={month.percent === null ? "—" : `${month.percent}%`} sub={`${month.done}/${month.total} lần`} />
+          <div className="stat-grid stat-grid-4">
+            <StatCard label="Chuỗi hiện tại" value={`${streak.current} ngày`} tone={streak.current > 0 ? "win" : ""}
+              sub={streak.todayDone === false ? "hôm nay còn lần chưa bấm" : streak.todayDone ? "hôm nay đã đủ" : "hôm nay chưa có lịch"} />
+            <StatCard label="Kỷ lục" value={`${streak.best} ngày`} />
+            <StatCard label="7 ngày" value={week.percent === null ? "—" : `${week.percent}%`} sub={`${week.done}/${week.total} lần`} />
+            <StatCard label="30 ngày" value={month.percent === null ? "—" : `${month.percent}%`} sub={`${month.done}/${month.total} lần`} />
           </div>
-          {week.accounts.length ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+          {week.accounts.length > 1 ? (
+            <div className="muted-list" style={{ marginTop: 8 }}>
               {week.accounts.map((a) => {
                 const pct = a.total ? Math.round((a.done / a.total) * 100) : 0;
                 return (
-                  <div key={a.name} className="backup-row">
-                    <span style={{ fontWeight: 600, minWidth: 120 }}>{a.name}</span>
-                    <div className="completion-bar-track" style={{ flex: 1 }}>
-                      <div className="completion-bar-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="mono field-hint">{a.done}/{a.total} · {pct}%</span>
+                  <div key={a.name} className="muted-row">
+                    <b style={{ minWidth: 100 }}>{a.name}</b>
+                    <div className="completion-bar-track" style={{ flex: 1 }}><div className="completion-bar-fill" style={{ width: `${pct}%` }} /></div>
+                    <span className="mono field-hint" style={{ margin: 0 }}>{a.done}/{a.total} · {pct}%</span>
                   </div>
                 );
               })}
@@ -436,101 +298,56 @@ export function SetupCheckPanel({ settings, resources, onChange, checkLog }) {
           ) : null}
         </>
       )}
+    </>
+  );
+}
 
-      <h3 className="block-title">Nhắc điền nốt lệnh chưa hoàn thành</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Mỗi tuần một lần, liệt kê các lệnh có Tiến độ dưới 100% trong Nhật ký để bạn điền cho đủ trước khi quên mất bối cảnh.
-      </p>
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${inc.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => setInc({ enabled: !inc.enabled })}
-        >
-          <Bell size={15} /> {inc.enabled ? "🔔 Đang bật nhắc điền nốt lệnh" : "Bật nhắc điền nốt lệnh (tùy chọn)"}
-        </button>
-        <div className="grid-3" style={{ marginTop: 12 }}>
-          <Field label="Vào thứ">
-            <select className="input" value={inc.weekday} onChange={(e) => setInc({ weekday: e.target.value })}>
-              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
-            </select>
-          </Field>
-          <Field label="Giờ nhắc (giờ Việt Nam)">
-            <input type="time" className="input" value={inc.time || "20:00"} onChange={(e) => setInc({ time: e.target.value })} />
-          </Field>
-          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
-            <input className="input mono" defaultValue={inc.threadId || ""} placeholder="Thread ID" onBlur={(e) => setInc({ threadId: e.target.value.trim() })} />
-          </Field>
-        </div>
-      </div>
+// ───────────────────────── Việc định kỳ ─────────────────────────
 
-      <h3 className="block-title">Tổng kết tuần</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Mỗi tuần một lần, gom số liệu 7 ngày gần nhất thành một tin Telegram: số lệnh đã đóng, tỷ lệ thắng, tổng R,
-        lãi/lỗ quy ra USD, số setup miss/skip/biến thể mới, chuỗi kiểm tra setup và số lệnh còn chưa điền xong.
-      </p>
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${ws.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => setWs({ enabled: !ws.enabled })}
-        >
-          <Bell size={15} /> {ws.enabled ? "🔔 Đang bật tổng kết tuần" : "Bật tổng kết tuần (tùy chọn)"}
-        </button>
-        <div className="grid-3" style={{ marginTop: 12 }}>
-          <Field label="Vào thứ">
-            <select className="input" value={ws.weekday} onChange={(e) => setWs({ weekday: e.target.value })}>
-              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
-            </select>
-          </Field>
-          <Field label="Giờ gửi (giờ Việt Nam)">
-            <input type="time" className="input" value={ws.time || "19:00"} onChange={(e) => setWs({ time: e.target.value })} />
-          </Field>
-          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
-            <input className="input mono" defaultValue={ws.threadId || ""} placeholder="Thread ID" onBlur={(e) => setWs({ threadId: e.target.value.trim() })} />
-          </Field>
-        </div>
-      </div>
-
-      <h3 className="block-title">Nhắc đối chiếu file sàn</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Đối chiếu chỉ bắt được lệnh quên ghi nếu bạn nhớ chạy nó. Mỗi tuần một lần, nhắc xuất CSV
-        lịch sử giao dịch từ sàn rồi quét ở Nhật ký → Đối chiếu Exness. Đặt vào lúc thị trường đã đóng
-        cửa để file phủ trọn tuần.
-      </p>
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${rec.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => setRec({ enabled: !rec.enabled })}
-        >
-          <Bell size={15} /> {rec.enabled ? "🔔 Đang bật nhắc đối chiếu sàn" : "Bật nhắc đối chiếu sàn (tùy chọn)"}
-        </button>
-        <div className="grid-3" style={{ marginTop: 12 }}>
-          <Field label="Vào thứ">
-            <select className="input" value={rec.weekday} onChange={(e) => setRec({ weekday: e.target.value })}>
-              {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
-            </select>
-          </Field>
-          <Field label="Giờ nhắc (giờ Việt Nam)">
-            <input type="time" className="input" value={rec.time || "10:00"} onChange={(e) => setRec({ time: e.target.value })} />
-          </Field>
-          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
-            <input className="input mono" defaultValue={rec.threadId || ""} placeholder="Thread ID" onBlur={(e) => setRec({ threadId: e.target.value.trim() })} />
-          </Field>
-        </div>
-      </div>
+function JobRow({ label, hint, cfg, onChange }) {
+  return (
+    <div className={`job-row ${cfg.enabled ? "" : "job-off"}`}>
+      <Switch checked={!!cfg.enabled} onChange={(v) => onChange({ enabled: v })} />
+      <span className="job-label"><b>{label}</b>{hint ? <small>{hint}</small> : null}</span>
+      <select className="input input-inline job-day" value={cfg.weekday} onChange={(e) => onChange({ weekday: e.target.value })}>
+        {WEEKDAY_CODES.map((d) => <option key={d} value={d}>{WEEKDAY_FULL_LABEL[d]}</option>)}
+      </select>
+      <input type="time" className="input input-inline job-time" value={cfg.time || ""} onChange={(e) => onChange({ time: e.target.value })} />
     </div>
   );
 }
 
-// Ô nhập symbol dạng chip: gõ tên rồi phím cách / Enter / dấu phẩy là chốt thành một chip,
-// nên không phải gõ dấu phân cách nữa. Backspace ở ô rỗng xóa chip cuối. Hàng "gợi ý" bên dưới
-// lọc theo chữ đang gõ — symbol quen thì bấm một phát là xong, khỏi gõ.
+function PeriodicBody({ settings, onChange, remindersNode }) {
+  const s = settings;
+  const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
+  const rec = { ...emptyReconcileReminder(), ...(s.reconcileReminder || {}) };
+  const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
+  return (
+    <>
+      <div className="job-list">
+        <JobRow label="Tổng kết tuần" hint="lệnh đóng, winrate, R, lãi/lỗ, setup miss — 7 ngày" cfg={ws}
+          onChange={(p) => onChange({ ...s, weeklySummary: { ...ws, ...p } })} />
+        <JobRow label="Đối chiếu file sàn" hint="nhắc xuất CSV từ sàn để quét lệnh quên ghi" cfg={rec}
+          onChange={(p) => onChange({ ...s, reconcileReminder: { ...rec, ...p } })} />
+        <JobRow label="Điền nốt lệnh chưa xong" hint="liệt kê lệnh có tiến độ dưới 100%" cfg={inc}
+          onChange={(p) => onChange({ ...s, incompleteReminder: { ...inc, ...p } })} />
+      </div>
+      <h4 className="plan-sub">Nhắc nhở riêng</h4>
+      {remindersNode}
+    </>
+  );
+}
+
+// ───────────────────────── Symbol theo dõi ─────────────────────────
+
+// Ô nhập symbol dạng chip: gõ tên rồi phím cách / Enter / dấu phẩy là chốt thành một chip.
+// Backspace ở ô rỗng xóa chip cuối. Hàng "gợi ý" lọc theo chữ đang gõ.
 const SYMBOL_SUGGEST_SHOWN = 12;
 
 function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus, hideDone }) {
   const [text, setText] = useState("");
+  // Gợi ý chỉ hiện khi đang gõ vào ô (hoặc ô còn trống trơn) — không thì mỗi nhóm một hàng chip, rất rối.
+  const [focused, setFocused] = useState(false);
   const chosen = useMemo(() => new Set((items || []).map((x) => x.name)), [items]);
   // Ẩn mã đã ngừng chỉ là ẩn khỏi mắt: danh sách thật (để gợi ý, để chống trùng) vẫn đủ.
   const shown = hideDone ? (items || []).filter((x) => !x.done) : (items || []);
@@ -598,7 +415,8 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
             if (names.length) onAdd(names);
             setText("");
           }}
-          onBlur={() => { const names = parse(text); if (names.length) { onAdd(names); setText(""); } }} />
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); const names = parse(text); if (names.length) { onAdd(names); setText(""); } }} />
       </div>
       {telexed && fixed ? (
         <p className="field-hint telex-note">
@@ -606,11 +424,11 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
           Sai thì gõ lại sau khi chuyển bộ gõ sang tiếng Anh.
         </p>
       ) : null}
-      {hints.length ? (
+      {hints.length && (focused || text || !shown.length) ? (
         <div className="symbol-hints">
           <span className="field-hint">Gợi ý:</span>
           {hints.map((sym) => (
-            <button key={sym} type="button" className="symbol-hint-chip" onClick={() => { onAdd([sym]); setText(""); }}>
+            <button key={sym} type="button" className="symbol-hint-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => { onAdd([sym]); setText(""); }}>
               + {sym}
             </button>
           ))}
@@ -620,10 +438,12 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
   );
 }
 
-// Khung nến của nhóm theo dõi: để trống là giờ gõ tay như cũ; chọn H4/H8/D là giờ tự tính theo nến.
+
+// Khung nến của nhóm theo dõi: để trống là giờ gõ tay; chọn H4/H8/D là giờ tự tính theo nến.
 function WatchTfSelect({ value, options, onChange, inline }) {
   return (
-    <select className="input input-inline" style={inline ? { width: "auto", flex: "0 0 auto" } : undefined} value={value || ""} onChange={(e) => onChange(e.target.value)}
+    <select className="input input-inline" style={inline ? { width: "auto", flex: "0 0 auto" } : undefined} value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
       title="Chọn khung nến để giờ nhắc tự tính theo giờ đóng nến của từng mã, giống nhắc dời SL">
       <option value="">Giờ gõ tay</option>
       {options.map((tf) => <option key={tf} value={tf}>Nến {tf}</option>)}
@@ -631,28 +451,20 @@ function WatchTfSelect({ value, options, onChange, inline }) {
   );
 }
 
-export function SymbolWatchPanel({ settings, watches, resources, trades, onSettingsChange, onWatchesChange }) {
-  const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", "), timeframe: "" });
-  // Khung tự tính được: H4/H8/D luôn có, cộng các khung khác trong Tài nguyên (H1, H3, H12…), xếp theo độ dài nến.
-  const tfOptions = useMemo(() => {
-    const list = [...new Set(["H4", "H8", "D", ...((resources && resources.timeframes) || []).filter((tf) => tfHours(tf))])];
-    return list.sort((a, b) => tfHours(a) - tfHours(b));
-  }, [resources]);
-  const slotMode = !!(settings.autoSlots || DEFAULT_AUTO_SLOTS).enabled;
-  const autoModeText = slotMode
-    ? `chỉ nhắc ở các mốc ${((settings.autoSlots || DEFAULT_AUTO_SLOTS).hours || []).join(" · ")}`
-    : "nhắc ngay khi nến đóng (trừ giờ nghỉ)";
+function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
+  const [adding, setAdding] = useState(!watches.length);
+  const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", "), timeframe: "H4" });
   // Ẩn mã đã ngừng (gạch ngang) — nhớ trên máy này, áp cho mọi nhóm.
   const [hideDone, setHideDone] = useState(() => readLocalUi("watchHideDone", "0") === "1");
   const toggleHideDone = () => { const next = !hideDone; setHideDone(next); writeLocalUi("watchHideDone", next ? "1" : "0"); };
   const doneTotal = (watches || []).reduce((n, w) => n + (w.symbols || []).filter((x) => x.done).length, 0);
-  const s = settings;
-  const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
-  const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — cảnh báo symbol theo dõi sẽ gửi vào đây.");
+  // Khung tự tính được: H4/H8/D luôn có, cộng các khung khác trong Tài nguyên, xếp theo độ dài nến.
+  const tfOptions = useMemo(() => {
+    const list = [...new Set(["H4", "H8", "D", ...((resources && resources.timeframes) || []).filter((tf) => tfHours(tf))])];
+    return list.sort((a, b) => tfHours(a) - tfHours(b));
+  }, [resources]);
 
-  // Gợi ý chung cho mọi ô. Symbol đang nằm trong các nhóm khác đứng đầu — đó mới là cách
-  // viết quen tay ở màn hình này (nhiều người gõ tắt "AU", "GU" chứ không gõ đủ "AUDUSD"),
-  // sau đó mới tới symbol đánh nhiều nhất trong nhật ký và danh sách trong Tài nguyên.
+  // Symbol đang nằm trong các nhóm khác đứng đầu gợi ý — đó là cách viết quen tay ở màn hình này.
   const suggestions = useMemo(() => {
     const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).map((x) => x.name)))];
     return [...used, ...symbolSuggestions(resources, trades, used, 40)];
@@ -673,14 +485,13 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
       timeframe: draft.timeframe,
     }]);
     setDraft({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", "), timeframe: draft.timeframe });
+    setAdding(false);
   };
-  const draftItems = draft.symbols.map((name) => ({ name }));
   const addDraftSymbols = (names) =>
     setDraft((p) => ({ ...p, symbols: sortSymbolNames([...p.symbols, ...names.filter((n) => !p.symbols.includes(n))]) }));
 
-  // Thêm vào nhóm đã lưu: giữ nguyên symbol cũ (kèm trạng thái done) và bỏ qua trùng tên.
-  // Gõ lại một mã đã ngừng thì bật theo dõi lại — nhất là khi đang ẩn mã đã ngừng, không thì
-  // gõ xong chẳng thấy gì xảy ra vì mã đó "đã có" rồi.
+  // Thêm vào nhóm đã lưu: giữ symbol cũ (kèm trạng thái done), bỏ qua trùng tên. Gõ lại một mã
+  // đã ngừng thì bật theo dõi lại — không thì gõ xong chẳng thấy gì vì mã đó "đã có" rồi.
   const addWatchSymbols = (w, names) => {
     const cur = w.symbols || [];
     const want = new Set(names);
@@ -690,194 +501,70 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
     const changed = add.length || revived.some((x, i) => x !== cur[i]);
     if (changed) updateWatch(w.id, { symbols: sortWatchSymbols([...revived, ...add]) });
   };
-  const removeWatchSymbol = (w, item) =>
-    updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
-  // Dọn hẳn các mã đã ngừng (gạch ngang): một nhóm, hoặc mọi nhóm khi không truyền id.
+  const removeWatchSymbol = (w, item) => updateWatch(w.id, { symbols: (w.symbols || []).filter((x) => x.id !== item.id) });
   const purgeDone = (id) => onWatchesChange(watches.map((w) => (
     (!id || w.id === id) && (w.symbols || []).some((x) => x.done) ? { ...w, symbols: w.symbols.filter((x) => !x.done) } : w
   )));
-  const toggleDay = (w, day) => {
-    const days = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
-    updateWatch(w.id, { activeDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day] });
-  };
   const toggleSymbol = (w, symId) => {
     updateWatch(w.id, { symbols: (w.symbols || []).map((x) => (x.id === symId ? { ...x, done: !x.done } : x)) });
   };
 
   return (
-    <div>
-      <h3 className="block-title" style={{ marginTop: 0 }}>Symbol theo dõi</h3>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Mỗi nhóm là <b>một khung giờ nhắc dùng chung cho nhiều symbol</b> — thường đặt theo timeframe (H4, khung ngày),
-        nhưng dùng cho watchlist hay phiên giao dịch đều được. Đến giờ, cả nhóm được gửi thành
-        <b> một tin Telegram dạng bảng</b>, mỗi symbol một dòng kèm 2 nút: <b>Theo dõi</b> (nhắc lại ở khung giờ kế tiếp) và
-        <b> Ngừng</b> (chỉ tắt riêng symbol đó, các symbol còn lại vẫn nhắc bình thường).
+    <>
+      <p className="plan-hint">
+        Mỗi nhóm gửi một tin, mỗi mã một dòng kèm nút <b>Theo dõi</b> / <b>Ngừng</b>. Chọn <b>Nến H4/H8/D</b> thì mỗi mã nhắc theo
+        giờ đóng nến của nó, cùng lúc với dời SL — hiện đang {candleModeText(settings)}.
       </p>
-      <p className="field-hint" style={{ marginBottom: 12 }}>
-        Chọn <b>khung nến</b> cho nhóm (VD nhóm Ngắn → H4, Trung → H8, Dài → D) thì khỏi gõ giờ: mỗi mã được nhắc theo
-        giờ đóng nến của chính nó, <b>cùng chế độ với nhắc dời SL</b> — hiện đang {autoModeText}. Đổi chế độ hoặc phiên của
-        từng mã ở tab <b>Nhắc dời SL → Giờ đóng nến</b>.
-      </p>
-      {!telegramReady ? (
-        <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
-          Chưa cấu hình Bot Token / Chat ID — điền ở tab "Nhắc dời SL" trước (dùng chung cho mọi loại nhắc nhở Telegram).
-        </p>
-      ) : null}
-      <div className="account-form">
-        <button
-          type="button"
-          className={`lesson-toggle-btn ${s.symbolWatchEnabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
-          onClick={() => onSettingsChange({ ...s, symbolWatchEnabled: !s.symbolWatchEnabled })}
-        >
-          <Eye size={15} /> {s.symbolWatchEnabled ? "🔔 Đang bật cảnh báo symbol theo dõi" : "Bật cảnh báo symbol theo dõi (tùy chọn)"}
-        </button>
-        <div className="grid-2" style={{ marginTop: 12 }}>
-          <Field label="Topic (Thread ID)" hint="Bỏ trống nếu gửi vào chat chính">
-            <input className="input mono" defaultValue={s.symbolWatchThreadId || ""} placeholder="Thread ID"
-              onBlur={(e) => onSettingsChange({ ...s, symbolWatchThreadId: e.target.value.trim() })} />
-          </Field>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button type="button" className="btn btn-ghost" onClick={() => sendTest(s.symbolWatchThreadId)} disabled={testState === "sending" || !telegramReady}>
-            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử"}
-          </button>
-          {testState === "ok" ? <span className="field-hint" style={{ color: "var(--win)", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={13} /> Đã gửi, kiểm tra Telegram</span> : null}
-          {testState === "error" ? <span className="field-hint" style={{ color: "var(--loss)", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> Gửi thất bại — kiểm tra lại Token/Chat ID</span> : null}
-        </div>
-      </div>
-
-      <h3 className="block-title">Thêm nhóm theo dõi</h3>
-      <div className="account-form">
-        <div className="grid-3">
-          <Field label="Tên nhóm" hint="VD: Ngắn, Trung, Dài, Watchlist sáng">
-            <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))}
-              placeholder={draft.timeframe ? `Khung ${draft.timeframe}` : "Ngắn"} />
-          </Field>
-          <Field label="Khung nến" hint="Chọn khung thì giờ nhắc tự tính theo giờ đóng nến">
-            <WatchTfSelect value={draft.timeframe} options={tfOptions} onChange={(tf) => setDraft((p) => ({ ...p, timeframe: tf }))} />
-          </Field>
-          {draft.timeframe ? (
-            <Field label="Khung giờ nhắc" hint={`Tự tính: ${autoModeText}`}>
-              <input className="input" disabled value={`Theo giờ đóng nến ${draft.timeframe}`} />
-            </Field>
-          ) : (
-            <Field label="Khung giờ nhắc" hint="Giờ Việt Nam. Viết tắt được: gõ &quot;9 14 20&quot; ra 09:00, 14:00, 20:00">
-              <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))}
-                onBlur={(e) => {
-                  const hrs = parseHoursInput(e.target.value);
-                  setDraft((p) => ({ ...p, hours: (hrs.length ? hrs : SYMBOL_WATCH_DEFAULT_HOURS).join(", ") }));
-                }}
-                placeholder="9 14 20" />
-            </Field>
-          )}
-        </div>
-        <Field label="Các symbol" hint="Gõ tên rồi nhấn phím cách hoặc Enter là xong một symbol — hoặc bấm thẳng vào gợi ý bên dưới. Tới giờ, cả nhóm gửi thành một tin, mỗi symbol một dòng.">
-          <SymbolBox items={draftItems} suggestions={suggestions}
-            onAdd={addDraftSymbols}
-            onRemove={(x) => setDraft((p) => ({ ...p, symbols: p.symbols.filter((n) => n !== x.name) }))}
-            onSubmitEmpty={addWatch} />
-        </Field>
-        <Field label="Ghi chú (tùy chọn)" hint="Gửi kèm trong mọi tin của nhóm này">
-          <input className="input" value={draft.note} onChange={(e) => setDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Đang chờ gì ở nhóm này?" />
-        </Field>
-        <div className="form-actions" style={{ marginTop: 4 }}>
-          <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!draft.symbols.length}>
-            <PlusCircle size={14} /> Thêm nhóm
-          </button>
-        </div>
-      </div>
-
-      <div className="watch-list-head">
-        <h3 className="block-title">Các nhóm đang theo dõi</h3>
-        {doneTotal ? (
-          <div className="watch-head-actions">
-            <button type="button" className="btn btn-ghost" onClick={toggleHideDone}
-              title={hideDone ? "Hiện lại các mã đã ngừng (gạch ngang)" : "Ẩn các mã đã ngừng (gạch ngang) cho gọn"}>
-              {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
-            </button>
-            <DangerConfirmButton onConfirm={() => purgeDone()}
-              label={<><Trash2 size={13} /> Xóa {doneTotal} mã đã ngừng</>}
-              confirmLabel={<><Trash2 size={13} /> Bấm lần nữa để xóa hẳn {doneTotal} mã</>} />
-          </div>
-        ) : null}
-      </div>
-      {watches.length === 0 ? (
-        <p className="empty-note">Chưa có nhóm nào — thêm ở trên để bắt đầu nhận cảnh báo.</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {watches.length === 0 ? null : (
+        <div className="acc-list">
           {watches.map((w) => {
-            const activeDays = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
             const symbols = w.symbols || [];
             const remaining = symbols.filter((x) => !x.done).length;
             const auto = watchIsAuto(w);
             return (
-              <div key={w.id} className={`account-form sl-reminder-card ${remaining === 0 ? "symbol-watch-done" : ""}`}>
-                <div className="sl-reminder-row">
-                  <label className={`checklist-item ${w.enabled ? "checklist-checked" : ""}`} style={{ flex: "0 0 auto" }}
-                    title={w.enabled ? "Đang bật cảnh báo" : "Đang tắt cảnh báo"}>
-                    <input type="checkbox" checked={!!w.enabled} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked })} />
-                  </label>
-                  <input className="input input-inline" style={{ width: 132, fontWeight: 600 }} defaultValue={w.label || ""}
-                    placeholder="Tên nhóm" title="Bấm để sửa tên nhóm"
+              <div key={w.id} className={`acc-card ${w.enabled && remaining ? "" : "acc-card-off"}`}>
+                <div className="acc-row">
+                  <Switch checked={!!w.enabled} onChange={(v) => updateWatch(w.id, { enabled: v })} />
+                  <input className="input input-inline acc-name-input" defaultValue={w.label || ""} placeholder="Tên nhóm"
                     onBlur={(e) => updateWatch(w.id, { label: e.target.value.trim() })} />
-                  <input className="input input-inline" style={{ flex: 1, minWidth: 140 }} defaultValue={w.note || ""} placeholder="Ghi chú"
-                    onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
                   <WatchTfSelect inline value={auto ? w.timeframe : ""} options={tfOptions} onChange={(tf) => updateWatch(w.id, { timeframe: tf })} />
                   {auto ? (
-                    <span className="field-hint mono" style={{ flex: 1, minWidth: 150, margin: 0 }} title={`Giờ nhắc hôm nay — ${autoModeText}`}>
-                      {watchScheduleHours(w, settings, vnToday()).join(" · ") || "hôm nay không có nến đóng"}
+                    <span className="acc-hours acc-hours-auto mono" title="Giờ nhắc hôm nay">
+                      {hoursText(watchScheduleHours(w, settings, vnToday())).split(" ").join(" · ") || "hôm nay không có nến đóng"}
                     </span>
                   ) : (
-                  <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}
-                    defaultValue={(w.hours && w.hours.length ? w.hours : SYMBOL_WATCH_DEFAULT_HOURS).join(", ")}
-                    placeholder="9 14 20" title={'Giờ nhắc — viết tắt được: "9 14 20" ra 09:00, 14:00, 20:00'}
-                    onBlur={(e) => {
-                      // Không parse ra giờ nào thì trả lại giá trị cũ: nhóm mất sạch giờ là
-                      // âm thầm ngừng nhắc, mà nhìn thẻ vẫn thấy "đang bật".
-                      const hrs = parseHoursInput(e.target.value);
-                      const keep = hrs.length ? hrs : (w.hours && w.hours.length ? w.hours : [...SYMBOL_WATCH_DEFAULT_HOURS]);
-                      e.target.value = keep.join(", ");
-                      updateWatch(w.id, { hours: keep });
-                    }} />
+                    <input className="input input-inline acc-hours" key={(w.hours || []).join(",")}
+                      defaultValue={(w.hours && w.hours.length ? w.hours : SYMBOL_WATCH_DEFAULT_HOURS).join(", ")}
+                      placeholder="9 14 20" title={'Giờ nhắc — viết tắt được: "9 14 20"'}
+                      onBlur={(e) => {
+                        // Không parse ra giờ nào thì giữ giá trị cũ: nhóm mất sạch giờ là âm thầm ngừng nhắc.
+                        const hrs = parseHoursInput(e.target.value);
+                        const keep = hrs.length ? hrs : (w.hours && w.hours.length ? w.hours : [...SYMBOL_WATCH_DEFAULT_HOURS]);
+                        e.target.value = keep.join(", ");
+                        updateWatch(w.id, { hours: keep });
+                      }} />
                   )}
+                  <DayChips days={w.activeDays} onToggle={(d) => updateWatch(w.id, { activeDays: toggleIn(w.activeDays, d) })} />
                   <ConfirmButton onConfirm={() => removeWatch(w.id)} />
                 </div>
-
-                {/* Thêm bằng cách gõ tên rồi phím cách; bấm tên chip để tạm ngừng, bấm × để xóa hẳn. */}
-                <div style={{ marginTop: 8 }}>
-                  <SymbolBox items={symbols} suggestions={suggestions} hideDone={hideDone}
-                    onAdd={(names) => addWatchSymbols(w, names)}
-                    onRemove={(x) => removeWatchSymbol(w, x)}
-                    onToggle={(x) => toggleSymbol(w, x.id)} />
-                </div>
+                <SymbolBox items={symbols} suggestions={suggestions} hideDone={hideDone}
+                  onAdd={(names) => addWatchSymbols(w, names)}
+                  onRemove={(x) => removeWatchSymbol(w, x)}
+                  onToggle={(x) => toggleSymbol(w, x.id)} />
                 {auto && remaining ? <WatchHoursPreview settings={settings} watch={w} /> : null}
-                {symbols.length === 0 ? (
-                  <p className="field-hint" style={{ marginTop: 6, color: "var(--loss)" }}>
-                    Nhóm chưa có symbol nào — sẽ không gửi thông báo. Thêm vào ô trên, hoặc xóa nhóm nếu không dùng nữa.
-                  </p>
-                ) : (
-                  <div className="watch-group-foot">
-                    <p className="field-hint" style={{ margin: 0 }}>
-                      {remaining === 0 ? "Cả nhóm đã ngừng theo dõi" : `${remaining}/${symbols.length} symbol đang theo dõi`}
-                      {hideDone && symbols.length > remaining ? ` · đang ẩn ${symbols.length - remaining} mã đã ngừng` : ""}
-                    </p>
-                    {symbols.length > remaining ? (
-                      <span className="watch-purge-one">
-                        <DangerConfirmButton onConfirm={() => purgeDone(w.id)}
-                          label={<><Trash2 size={12} /> Xóa {symbols.length - remaining} mã đã ngừng</>}
-                          confirmLabel={<><Trash2 size={12} /> Bấm lần nữa để xóa</>} />
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-
-                <div className="sl-reminder-days">
-                  {WEEKDAY_CODES.map((day) => (
-                    <label key={day} className={`sl-day-chip ${activeDays.includes(day) ? "sl-day-chip-active" : ""}`}>
-                      <input type="checkbox" checked={activeDays.includes(day)} onChange={() => toggleDay(w, day)} />
-                      {day}
-                    </label>
-                  ))}
+                <div className="watch-group-foot">
+                  <input className="input input-inline watch-note" defaultValue={w.note || ""} placeholder="Ghi chú gửi kèm tin (tùy chọn)"
+                    onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
+                  <span className="field-hint" style={{ margin: 0 }}>
+                    {symbols.length === 0 ? "chưa có mã — sẽ không gửi" : `${remaining}/${symbols.length} mã đang theo dõi`}
+                  </span>
+                  {symbols.length > remaining ? (
+                    <span className="watch-purge-one">
+                      <DangerConfirmButton onConfirm={() => purgeDone(w.id)}
+                        label={<><Trash2 size={12} /> Xóa {symbols.length - remaining} mã đã ngừng</>}
+                        confirmLabel={<><Trash2 size={12} /> Bấm lần nữa để xóa</>} />
+                    </span>
+                  ) : null}
                 </div>
               </div>
             );
@@ -885,18 +572,242 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
         </div>
       )}
 
-      <details style={{ marginTop: 18 }}>
-        <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Bật các nút bấm trong tin nhắn Telegram (làm 1 lần)</summary>
-        <ol className="field-hint" style={{ marginTop: 8, paddingLeft: 18, lineHeight: 1.7 }}>
-          <li>Deploy function xử lý nút bấm: <code>supabase functions deploy telegram-webhook --no-verify-jwt</code>.</li>
-          <li>Trỏ Telegram vào function đó bằng cách mở đường dẫn sau trên trình duyệt (thay <code>&lt;BOT_TOKEN&gt;</code> bằng token của bạn):<br />
-            <code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/setWebhook?url=https://&lt;PROJECT_REF&gt;.supabase.co/functions/v1/telegram-webhook</code>
-          </li>
-          <li>Xong — từ giờ mọi nút bấm trong Telegram (Tiếp tục / Ngừng theo dõi, Đã kiểm tra, Đã dời / Kết thúc lệnh) sẽ tự cập nhật vào ứng dụng.</li>
+      <div className="plan-actions">
+        {!adding ? (
+          <button type="button" className="btn btn-ghost" onClick={() => setAdding(true)}><PlusCircle size={14} /> Thêm nhóm</button>
+        ) : null}
+        {doneTotal ? (
+          <button type="button" className="btn btn-ghost" onClick={toggleHideDone}>
+            {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
+          </button>
+        ) : null}
+      </div>
+
+      {adding ? (
+        <div className="acc-card acc-card-new">
+          <div className="grid-3">
+            <Field label="Tên nhóm">
+              <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))}
+                placeholder={draft.timeframe ? `Khung ${draft.timeframe}` : "Ngắn"} />
+            </Field>
+            <Field label="Khung nến">
+              <WatchTfSelect value={draft.timeframe} options={tfOptions} onChange={(tf) => setDraft((p) => ({ ...p, timeframe: tf }))} />
+            </Field>
+            {draft.timeframe ? (
+              <Field label="Giờ nhắc">
+                <input className="input" disabled value={`Theo giờ đóng nến ${draft.timeframe}`} />
+              </Field>
+            ) : (
+              <Field label="Giờ nhắc" hint='Gõ tắt "9 14 20" được'>
+                <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))}
+                  onBlur={(e) => {
+                    const hrs = parseHoursInput(e.target.value);
+                    setDraft((p) => ({ ...p, hours: (hrs.length ? hrs : SYMBOL_WATCH_DEFAULT_HOURS).join(", ") }));
+                  }} placeholder="9 14 20" />
+              </Field>
+            )}
+          </div>
+          <Field label="Các mã" hint="Gõ tên rồi phím cách hoặc Enter — hoặc bấm gợi ý.">
+            <SymbolBox items={draft.symbols.map((name) => ({ name }))} suggestions={suggestions} autoFocus={watches.length > 0}
+              onAdd={addDraftSymbols}
+              onRemove={(x) => setDraft((p) => ({ ...p, symbols: p.symbols.filter((n) => n !== x.name) }))}
+              onSubmitEmpty={addWatch} />
+          </Field>
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            {watches.length ? <button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>Hủy</button> : null}
+            <button type="button" className="btn btn-primary" onClick={addWatch} disabled={!draft.symbols.length}>
+              <PlusCircle size={14} /> Thêm nhóm
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// ───────────────────────── Tab Lịch nhắc ─────────────────────────
+
+
+export function PlansPanel({
+  settings, onSettingsChange, resources, trades, watches, onWatchesChange, mutedTrades, onMutedTradesChange,
+  checkLog, remindersNode, reminders, onGoSettings,
+}) {
+  const s = settings;
+  const [open, setOpenRaw] = useState(() => readLocalUi("plansOpen", ""));
+  const setOpen = (id) => { setOpenRaw(id); writeLocalUi("plansOpen", id); };
+  const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
+  const accName = (id, fallback) => ((resources.accounts || []).find((a) => a.id === id) || {}).name || fallback || "?";
+
+  const slSummary = (() => {
+    const on = (s.schedules || []).filter((sc) => sc && sc.enabled && !sc.timeframe);
+    if (!on.length) return "Chưa bật tài khoản nào";
+    const open = (trades || []).filter((t) => t && t.entryDate && !t.exitDate && on.some((sc) => accName(sc.accountId, sc.accountName) === t.account)).length;
+    return `${on.map((sc) => `${accName(sc.accountId, sc.accountName)} ${sc.auto ? "theo nến" : hoursText(sc.hours)}`).join(" · ")} — ${open} lệnh mở`;
+  })();
+  const watchSummary = (() => {
+    const on = (watches || []).filter((w) => w.enabled && watchLiveSymbols(w).length);
+    if (!on.length) return watches.length ? "Không nhóm nào đang chạy" : "Chưa có nhóm nào";
+    return on.map((w) => `${w.label || "Nhóm"} ${watchLiveSymbols(w).length} mã ${watchIsAuto(w) ? w.timeframe : hoursText(w.hours)}`).join(" · ");
+  })();
+  const setupSummary = (() => {
+    const on = (s.setupCheckSchedules || []).filter((sc) => sc && sc.enabled);
+    if (!on.length) return "Chưa bật tài khoản nào";
+    const wk = setupCheckStats(checkLog, 7);
+    return `${on.map((sc) => `${accName(sc.accountId, sc.accountName)} ${hoursText(sc.hours)}`).join(" · ")}${wk.percent !== null ? ` — 7 ngày ${wk.percent}%` : ""}`;
+  })();
+  const periodicSummary = (() => {
+    const jobs = [
+      [s.weeklySummary, "Tổng kết tuần"], [s.reconcileReminder, "Đối chiếu sàn"], [s.incompleteReminder, "Điền nốt lệnh"],
+    ].filter(([cfg]) => cfg && cfg.enabled).map(([cfg, name]) => `${name} ${cfg.weekday} ${hoursText([cfg.time])}`);
+    const n = (reminders || []).length;
+    return [...jobs, n ? `${n} nhắc riêng` : ""].filter(Boolean).join(" · ") || "Chưa bật việc nào";
+  })();
+
+  return (
+    <div className="plans">
+      {!telegramReady ? (
+        <div className="plan-warn">
+          Chưa có Bot Token / Chat ID — tin nhắc chưa gửi được.
+          <button type="button" className="btn btn-ghost btn-xs" onClick={onGoSettings}><Settings2 size={12} /> Mở Cài đặt</button>
+        </div>
+      ) : null}
+      <div className="plan-mode">
+        <Clock size={13} /> Giờ đóng nến: {candleModeText(s)}
+        <button type="button" className="plan-link" onClick={onGoSettings}>đổi</button>
+      </div>
+
+      <PlanSection id="sl" icon={ArrowUpDown} title="Dời SL" summary={slSummary}
+        on={!!s.enabled} onToggle={(v) => onSettingsChange({ ...s, enabled: v })} open={open === "sl"} onOpen={setOpen}>
+        <SlBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades}
+          mutedTrades={mutedTrades} onMutedTradesChange={onMutedTradesChange} />
+      </PlanSection>
+      <PlanSection id="watch" icon={Eye} title="Symbol theo dõi" summary={watchSummary}
+        on={!!s.symbolWatchEnabled} onToggle={(v) => onSettingsChange({ ...s, symbolWatchEnabled: v })} open={open === "watch"} onOpen={setOpen}>
+        <WatchBody settings={s} watches={watches} resources={resources} trades={trades} onWatchesChange={onWatchesChange} />
+      </PlanSection>
+      <PlanSection id="setup" icon={Search} title="Kiểm tra setup" summary={setupSummary}
+        on={!!s.setupCheckEnabled} onToggle={(v) => onSettingsChange({ ...s, setupCheckEnabled: v })} open={open === "setup"} onOpen={setOpen}>
+        <SetupBody settings={s} onChange={onSettingsChange} resources={resources} checkLog={checkLog} />
+      </PlanSection>
+      <PlanSection id="periodic" icon={CalendarDays} title="Việc định kỳ" summary={periodicSummary}
+        open={open === "periodic"} onOpen={setOpen}>
+        <PeriodicBody settings={s} onChange={onSettingsChange} remindersNode={remindersNode} />
+      </PlanSection>
+    </div>
+  );
+}
+
+// ───────────────────────── Tab Cài đặt ─────────────────────────
+
+function TopicInput({ value, onSave, onTest }) {
+  return (
+    <span className="topic-cell">
+      <input className="input input-inline mono" key={value || ""} defaultValue={value || ""} placeholder="chat chính"
+        onBlur={(e) => { const v = e.target.value.trim(); if (v !== (value || "")) onSave(v); }} />
+      <button type="button" className="row-btn" title="Gửi thử vào topic này" onClick={() => onTest(value)}><Send size={12} /></button>
+    </span>
+  );
+}
+
+export function NotifySettingsPanel({ settings, onChange, resources, trades, watches, reminders }) {
+  const s = settings;
+  const set = (k) => (v) => onChange({ ...s, [k]: v });
+  const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — tin nhắc sẽ gửi vào đây.");
+
+  const baseOf = (list, accId) => (list || []).find((sc) => sc.accountId === accId && !sc.timeframe);
+  const setThread = (key, acc, threadId) => {
+    const list = s[key] || [];
+    const next = baseOf(list, acc.id)
+      ? list.map((sc) => (sc.accountId === acc.id && !sc.timeframe ? { ...sc, threadId } : sc))
+      : [...list, { ...emptyReminderSchedule(acc.id, acc.name), threadId }];
+    onChange({ ...s, [key]: next });
+  };
+  const jobs = [
+    ["weeklySummary", "Tổng kết tuần", emptyWeeklySummary],
+    ["reconcileReminder", "Đối chiếu file sàn", emptyReconcileReminder],
+    ["incompleteReminder", "Điền nốt lệnh chưa xong", emptyIncompleteReminder],
+    ["mutedFillReminder", "Nhắc điền lệnh đã bấm Kết thúc", emptyMutedFillReminder],
+  ];
+
+  // Mã cần gán phiên: của tài khoản dời SL theo nến và của nhóm theo dõi theo nến.
+  const autoAccounts = useMemo(() => {
+    const ids = new Set((s.schedules || []).filter((sc) => sc && sc.auto).map((sc) => sc.accountId));
+    return (resources.accounts || []).filter((a) => ids.has(a.id)).map((a) => a.name);
+  }, [s.schedules, resources.accounts]);
+  const autoWatchSymbols = useMemo(
+    () => [...new Set((watches || []).filter(watchIsAuto).flatMap((w) => watchLiveSymbols(w).map((x) => x.name)))],
+    [watches]
+  );
+
+  return (
+    <div className="notify-settings">
+      <h3 className="block-title" style={{ marginTop: 0 }}>Telegram</h3>
+      <div className="account-form">
+        <div className="grid-2">
+          <Field label="Bot Token" hint="Lấy từ @BotFather">
+            <input className="input mono" value={s.telegramBotToken} onChange={(e) => set("telegramBotToken")(e.target.value.trim())} placeholder="123456789:AA...xyz" />
+          </Field>
+          <Field label="Chat ID" hint="Nhóm nhận tin (Supergroup nếu dùng Topics)">
+            <input className="input mono" value={s.telegramChatId} onChange={(e) => set("telegramChatId")(e.target.value.trim())} placeholder="-100123456789" />
+          </Field>
+        </div>
+        <div className="test-line">
+          <button type="button" className="btn btn-ghost" onClick={() => sendTest()} disabled={testState === "sending"}>
+            <Send size={13} /> {testState === "sending" ? "Đang gửi..." : "Gửi thử"}
+          </button>
+          <TestState state={testState} />
+        </div>
+      </div>
+
+      <h3 className="block-title">Gửi vào topic nào</h3>
+      <p className="field-hint" style={{ marginBottom: 8 }}>Điền Thread ID nếu nhóm có chia Topics; để trống là gửi vào chat chính. Nút ✈ gửi thử đúng chỗ đó.</p>
+      <div className="table-wrap">
+        <table className="table topic-table">
+          <thead><tr><th>Tài khoản</th><th>Dời SL</th><th>Kiểm tra setup</th></tr></thead>
+          <tbody>
+            {(resources.accounts || []).map((acc) => (
+              <tr key={acc.id}>
+                <td><b>{acc.name}</b></td>
+                <td><TopicInput value={(baseOf(s.schedules, acc.id) || {}).threadId} onSave={(v) => setThread("schedules", acc, v)} onTest={sendTest} /></td>
+                <td><TopicInput value={(baseOf(s.setupCheckSchedules, acc.id) || {}).threadId} onSave={(v) => setThread("setupCheckSchedules", acc, v)} onTest={sendTest} /></td>
+              </tr>
+            ))}
+            <tr><td><b>Symbol theo dõi</b></td><td colSpan={2}><TopicInput value={s.symbolWatchThreadId} onSave={set("symbolWatchThreadId")} onTest={sendTest} /></td></tr>
+            {jobs.map(([key, label, empty]) => {
+              const cfg = { ...empty(), ...(s[key] || {}) };
+              return (
+                <tr key={key}>
+                  <td><b>{label}</b></td>
+                  <td colSpan={2}><TopicInput value={cfg.threadId} onSave={(v) => onChange({ ...s, [key]: { ...cfg, threadId: v } })} onTest={sendTest} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="block-title">Giờ đóng nến</h3>
+      <p className="field-hint" style={{ marginBottom: 8 }}>
+        Dùng chung cho dời SL và symbol theo dõi khi chọn "theo nến". Mỗi nguồn dữ liệu TradingView một phiên nên cùng H4 mà giờ đóng khác nhau —
+        đổi giờ mùa tự tính, không phải sửa.
+      </p>
+      <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} watchSymbols={autoWatchSymbols} />
+
+      <h3 className="block-title">Xuất lịch sang Life Hub</h3>
+      <p className="field-hint" style={{ marginBottom: 8 }}>Chỉ gồm tên việc, giờ, số phút, thứ — không kèm token hay dữ liệu lệnh. Mỗi lần xuất là trọn bộ.</p>
+      <LifeHubExport settings={s} watches={watches} reminders={reminders} />
+
+      <details className="notify-guide">
+        <summary>Hướng dẫn cài bot gửi nền (làm 1 lần)</summary>
+        <ol className="field-hint">
+          <li>Deploy function nhắc: <code>supabase functions deploy sl-reminder</code>.</li>
+          <li>Supabase Dashboard → Database → Extensions: bật <code>pg_cron</code> và <code>pg_net</code>.</li>
+          <li>Chạy file <code>supabase-sl-reminder-cron.sql</code> trong SQL Editor để gọi function mỗi 5 phút.</li>
+          <li>Để nút bấm trong tin hoạt động: <code>supabase functions deploy telegram-webhook --no-verify-jwt</code>, rồi mở
+            <code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/setWebhook?url=https://&lt;PROJECT_REF&gt;.supabase.co/functions/v1/telegram-webhook</code>.</li>
+          <li>Điền Token + Chat ID ở trên, bấm Gửi thử.</li>
         </ol>
-        <p className="field-hint" style={{ marginTop: 8 }}>
-          Nếu chưa làm bước này thì tin nhắn vẫn gửi bình thường, chỉ là bấm nút sẽ không có tác dụng — bạn vẫn bật/tắt thủ công được ở danh sách trên.
-        </p>
+        <p className="field-hint">Mọi giờ đều là giờ Việt Nam — bot tự quy đổi từ giờ máy chủ.</p>
       </details>
     </div>
   );

@@ -375,7 +375,7 @@ function PickReminderCard({ settings, onChange }) {
         Đúng giờ đã đặt, nếu còn mảng chưa chọn mức cho tuần sau thì bot gửi một tin kèm mức đang dùng,
         mức sụt vốn, R 1 / 2 / 4 tuần và mức gợi ý của từng mảng. Chọn đủ rồi thì không gửi.
       </p>
-      {!ready ? <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 10 }}>Chưa có Bot Token / Chat ID — điền ở Thông báo → Nhắc dời SL trước.</p> : null}
+      {!ready ? <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 10 }}>Chưa có Bot Token / Chat ID — điền ở Thông báo → Cài đặt trước.</p> : null}
       <button type="button" className={`lesson-toggle-btn ${cfg.enabled ? "lesson-toggle-active lesson-toggle-glow" : ""}`} onClick={() => setCfg({ enabled: !cfg.enabled })}>
         <Send size={14} /> {cfg.enabled ? "🔔 Đang bật nhắc chọn mức" : "Bật nhắc chọn mức"}
       </button>

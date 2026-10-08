@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, Search, Eye, CalendarClock } from "lucide-react";
+import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
-import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, symbolWatchActiveCount, todayStr, uid } from "../lib/helpers.js";
-import { SlReminderPanel, SetupCheckPanel, SymbolWatchPanel } from "./SlReminders.jsx";
-import { TimelinePanel } from "./Timeline.jsx";
+import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
+import { NotifySettingsPanel, PlansPanel } from "./SlReminders.jsx";
+import { TodayPanel, WeekPanel } from "./Timeline.jsx";
 
 export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   const [r, setR] = useState(initial || emptyReminder());
@@ -57,7 +57,7 @@ export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
         </div>
       ) : null}
       {r.notifyTelegram && !telegramReady ? (
-        <p className="field-hint" style={{ color: "var(--loss)" }}>Chưa cấu hình Bot Token / Chat ID ở tab "Nhắc dời SL" — điền trước để tin nhắn gửi được.</p>
+        <p className="field-hint" style={{ color: "var(--loss)" }}>Chưa cấu hình Bot Token / Chat ID ở tab Cài đặt — điền trước để tin nhắn gửi được.</p>
       ) : null}
       {error ? <p className="error-text">{error}</p> : null}
       <div className="form-actions" style={{ marginTop: 4 }}>
@@ -85,15 +85,49 @@ export function ReminderBell({ reminders, onOpen }) {
   );
 }
 
+// Danh sách nhắc nhở riêng (do bạn tự tạo) — dùng ở tab Hôm nay (chỉ việc tới hạn) và trong Việc định kỳ.
+function ReminderList({ list, ts, onDone, onEdit, onRemove, empty }) {
+  if (!list.length) return empty ? <p className="field-hint">{empty}</p> : null;
+  return (
+    <div className="reminder-list">
+      {list.map((r) => {
+        const isDue = reminderDueToday(r, ts);
+        return (
+          <div key={r.id} className={`reminder-item ${isDue ? "reminder-item-due" : ""}`}>
+            <div className="reminder-item-main">
+              <Clock size={14} color="var(--text-dim)" />
+              <div>
+                <div className="reminder-item-title">{r.title}</div>
+                <div className="reminder-item-sub">
+                  {reminderScheduleLabel(r)}{r.active ? "" : " · Tạm tắt"}
+                  {r.notifyTelegram ? <span className="watch-badge" style={{ marginLeft: 6 }}><Send size={10} /> Telegram {r.notifyTime || "08:00"}</span> : null}
+                </div>
+              </div>
+            </div>
+            <div className="reminder-item-actions">
+              {isDue ? <button type="button" className="btn btn-ghost btn-xs" onClick={() => onDone(r)}><Check size={13} /> Đã làm</button> : null}
+              <button type="button" className="row-btn" onClick={() => onEdit(r)}><Pencil size={13} /></button>
+              <ConfirmButton onConfirm={() => onRemove(r.id)} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const TABS = ["today", "plans", "week", "settings"];
+// Tab cũ (trước khi gộp) → tab mới, để lần mở đầu không rơi về chỗ lạ.
+const OLD_TAB = { all: "plans", sl: "plans", setupcheck: "plans", symbolwatch: "plans", timeline: "week" };
+
 export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, onSetupCheckLogChange, slMutedTrades, onSlMutedTradesChange, taskDone, onTaskDoneChange }) {
   const [editing, setEditing] = useState(null);
-  const [tab, setTab] = useStickyTab("remindersTab", "today", ["today", "all", "sl", "setupcheck", "symbolwatch", "timeline"]);
+  const [tabRaw, setTab] = useStickyTab("remindersTab", "today", [...TABS, ...Object.keys(OLD_TAB)]);
+  const tab = OLD_TAB[tabRaw] || tabRaw;
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
-  const list = tab === "today" ? dueList : reminders;
   const telegramReady = !!(slReminderSettings.telegramBotToken && slReminderSettings.telegramChatId);
-  const activeWatchCount = symbolWatchActiveCount(symbolWatches);
-  // Số việc bị chồng giờ trong tuần — hiện luôn trên nhãn tab để không phải mở ra mới biết.
+  // Số việc chồng giờ trong tuần — hiện trên nhãn tab Tuần để không phải mở ra mới biết.
   const openTrades = useMemo(
     () => openTradeCounter({ accounts: resources.accounts, trades, mutedTrades: slMutedTrades }),
     [resources.accounts, trades, slMutedTrades]
@@ -125,83 +159,64 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
     );
   }
 
+  const listProps = { ts, onDone: markDone, onEdit: setEditing, onRemove: removeReminder };
+  const addBtn = (
+    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEditing(emptyReminder())}>
+      <PlusCircle size={13} /> Thêm nhắc nhở
+    </button>
+  );
+  const TabBtn = ({ id, icon: Icon, label, badge, warn }) => (
+    <button className={`subtab ${tab === id ? "subtab-active" : ""}`} onClick={() => setTab(id)}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <Icon size={13} /> {label}
+        {badge ? <span className={`subtab-badge ${warn ? "subtab-badge-warn" : ""}`}>{badge}</span> : null}
+      </span>
+    </button>
+  );
+
   return (
     <div className="reminders-page">
       <div className="reminders-page-head">
         <h2 style={{ fontSize: 19 }}>Thông báo &amp; nhắc nhở</h2>
-        {tab === "today" || tab === "all" ? (
-          <button type="button" className="btn btn-primary" onClick={() => setEditing(emptyReminder())}>
-            <PlusCircle size={15} /> Thêm nhắc nhở
-          </button>
-        ) : null}
       </div>
       <div className="subtabs">
-        <button className={`subtab ${tab === "today" ? "subtab-active" : ""}`} onClick={() => setTab("today")}>
-          Hôm nay {dueList.length ? <span className="subtab-badge">{dueList.length}</span> : null}
-        </button>
-        <button className={`subtab ${tab === "all" ? "subtab-active" : ""}`} onClick={() => setTab("all")}>Tất cả</button>
-        <button className={`subtab ${tab === "sl" ? "subtab-active" : ""}`} onClick={() => setTab("sl")}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Send size={12} /> Nhắc dời SL</span>
-        </button>
-        <button className={`subtab ${tab === "setupcheck" ? "subtab-active" : ""}`} onClick={() => setTab("setupcheck")}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Search size={12} /> Kiểm tra setup</span>
-        </button>
-        <button className={`subtab ${tab === "symbolwatch" ? "subtab-active" : ""}`} onClick={() => setTab("symbolwatch")}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <Eye size={12} /> Symbol theo dõi
-            {activeWatchCount ? <span className="subtab-badge">{activeWatchCount}</span> : null}
-          </span>
-        </button>
-        <button className={`subtab ${tab === "timeline" ? "subtab-active" : ""}`} onClick={() => setTab("timeline")}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <CalendarClock size={12} /> Timeline làm việc
-            {weekConflicts ? <span className="subtab-badge subtab-badge-warn">{weekConflicts}</span> : null}
-          </span>
-        </button>
+        <TabBtn id="today" icon={CalendarCheck} label="Hôm nay" badge={dueList.length} />
+        <TabBtn id="plans" icon={ListTodo} label="Lịch nhắc" />
+        <TabBtn id="week" icon={CalendarClock} label="Tuần" badge={weekConflicts} warn />
+        <TabBtn id="settings" icon={Settings2} label="Cài đặt" badge={telegramReady ? 0 : "!"} warn />
       </div>
-      {tab === "sl" ? (
-        <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange}
-          trades={trades} mutedTrades={slMutedTrades} onMutedTradesChange={onSlMutedTradesChange} watches={symbolWatches} />
-      ) : tab === "setupcheck" ? (
-        <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} checkLog={setupCheckLog} />
-      ) : tab === "symbolwatch" ? (
-        <SymbolWatchPanel settings={slReminderSettings} watches={symbolWatches} resources={resources} trades={trades}
-          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} />
-      ) : tab === "timeline" ? (
-        <TimelinePanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
+      {tab === "today" ? (
+        <TodayPanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
           accounts={resources.accounts} trades={trades} mutedTrades={slMutedTrades}
           taskDone={taskDone} setupCheckLog={setupCheckLog}
-          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange}
-          onTaskDoneChange={onTaskDoneChange} onSetupCheckLogChange={onSetupCheckLogChange} />
+          onTaskDoneChange={onTaskDoneChange} onSetupCheckLogChange={onSetupCheckLogChange}
+          extra={(
+            <>
+              <div className="today-extra-head">
+                <h4 className="plan-sub" style={{ margin: 0 }}>Nhắc riêng hôm nay</h4>
+                {addBtn}
+              </div>
+              <ReminderList list={dueList} {...listProps} empty="Không có nhắc riêng nào tới hạn hôm nay." />
+            </>
+          )} />
+      ) : tab === "plans" ? (
+        <PlansPanel settings={slReminderSettings} onSettingsChange={onSlReminderSettingsChange} resources={resources} trades={trades}
+          watches={symbolWatches} onWatchesChange={onSymbolWatchesChange}
+          mutedTrades={slMutedTrades} onMutedTradesChange={onSlMutedTradesChange}
+          checkLog={setupCheckLog} reminders={reminders} onGoSettings={() => setTab("settings")}
+          remindersNode={(
+            <>
+              <ReminderList list={reminders} {...listProps} empty="Chưa có nhắc nhở riêng nào." />
+              <div style={{ marginTop: 8 }}>{addBtn}</div>
+            </>
+          )} />
+      ) : tab === "week" ? (
+        <WeekPanel settings={slReminderSettings} watches={symbolWatches} reminders={reminders}
+          accounts={resources.accounts} trades={trades} mutedTrades={slMutedTrades}
+          onSettingsChange={onSlReminderSettingsChange} onWatchesChange={onSymbolWatchesChange} onRemindersChange={onChange} />
       ) : (
-      <div className="reminder-list">
-        {list.length === 0 ? (
-          <p className="empty-note" style={{ padding: "16px 0" }}>
-            {tab === "today" ? "Không có việc gì cần làm hôm nay." : "Chưa có nhắc nhở nào — bấm \"Thêm nhắc nhở\" để tạo mới."}
-          </p>
-        ) : list.map((r) => {
-          const isDue = reminderDueToday(r, ts);
-          return (
-            <div key={r.id} className={`reminder-item ${isDue ? "reminder-item-due" : ""}`}>
-              <div className="reminder-item-main">
-                <Clock size={14} color="var(--text-dim)" />
-                <div>
-                  <div className="reminder-item-title">{r.title}</div>
-                  <div className="reminder-item-sub">
-                    {reminderScheduleLabel(r)}{r.active ? "" : " · Tạm tắt"}
-                    {r.notifyTelegram ? <span className="watch-badge" style={{ marginLeft: 6 }}><Send size={10} /> Telegram {r.notifyTime || "08:00"}</span> : null}
-                  </div>
-                </div>
-              </div>
-              <div className="reminder-item-actions">
-                {isDue ? <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => markDone(r)}><Check size={13} /> Đã làm</button> : null}
-                <button type="button" className="row-btn" onClick={() => setEditing(r)}><Pencil size={13} /></button>
-                <ConfirmButton onConfirm={() => removeReminder(r.id)} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        <NotifySettingsPanel settings={slReminderSettings} onChange={onSlReminderSettingsChange} resources={resources}
+          trades={trades} watches={symbolWatches} reminders={reminders} />
       )}
     </div>
   );

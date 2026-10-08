@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient.js";
 import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
-import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours } from "./candles.js";
+import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours, tradeAutoHours } from "./candles.js";
 
 // Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
 // để ở localStorage cho tức thì thay vì chờ ghi lên máy chủ mỗi lần đổi trang.
@@ -1183,7 +1183,7 @@ export function daysOfHour(x, hour) {
   return days.filter((d) => !skip.includes(skipKey(d, hour)));
 }
 
-function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip, fixedTime }) {
+function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip, fixedTime, detail }) {
   const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
   const off = Array.isArray(skip) ? skip : [];
@@ -1198,6 +1198,8 @@ function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, min
       source: { kind, key: sourceId, id, hour: h }, days,
       // Giờ tự tính theo giờ đóng nến — không kéo/sửa giờ được, chỉ đổi thời lượng.
       fixedTime: !!fixedTime,
+      // Mã nào tới lượt ở đúng mốc này — "XAU, XCU" — để tab Hôm nay khỏi phải mở tin Telegram.
+      detail: typeof detail === "function" ? detail(h) : "",
     });
   });
 }
@@ -1215,7 +1217,10 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
   slEffectiveSchedules(st.schedules).forEach((s) => {
     const open = countOpen ? countOpen(s.accountId, s.accountName, s, st.schedules) : null;
     const name = `${s.accountName || ""}${s.timeframe ? ` · khung ${s.timeframe}` : ""}`;
+    const list = countOpen && countOpen.trades ? countOpen.trades(s.accountId, s.accountName, s, st.schedules) : [];
+    const date = dateOfWeekdayThisWeek(day);
     pushHours(out, {
+      detail: (h) => uniqueSymbols(list.filter((t) => !s.auto || (tradeAutoHours(t, st, date) || s.hours || []).includes(h))),
       hours: slScheduleHours(s, st, countOpen, dateOfWeekdayThisWeek(day)), activeDays: s.activeDays, day, kind: "sl",
       title: s.auto ? "Dời SL (giờ đóng nến)" : "Dời SL", fixedTime: !!s.auto,
       sub: open === null ? name : `${name}${name ? " · " : ""}${open ? `${open} lệnh mở` : "không có lệnh mở"}`,
@@ -1237,8 +1242,12 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
   (watches || []).forEach((w) => {
     const live = (w.symbols || []).filter((x) => !x.done).length;
     const auto = watchIsAuto(w);
+    const date = dateOfWeekdayThisWeek(day);
     pushHours(out, {
-      hours: watchScheduleHours(w, st, dateOfWeekdayThisWeek(day)), activeDays: w.activeDays, day, kind: "symbolWatch",
+      detail: (h) => uniqueSymbols(watchLiveSymbols(w)
+        .filter((x) => !auto || (tradeAutoHours({ symbol: x.name, timeframe: w.timeframe }, st, date) || []).includes(h))
+        .map((x) => ({ symbol: x.name }))),
+      hours: watchScheduleHours(w, st, date), activeDays: w.activeDays, day, kind: "symbolWatch",
       title: auto ? "Symbol theo dõi (giờ đóng nến)" : "Symbol theo dõi", fixedTime: auto,
       sub: `${w.label || "Nhóm chưa đặt tên"}${auto ? ` · khung ${w.timeframe}` : ""} · ${live} symbol`,
       minutes: mins("symbolWatch", w.minutes),
@@ -1271,7 +1280,31 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
     });
   });
 
-  return out.sort((a, b) => a.start - b.start || a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title));
+  out.sort((a, b) => a.start - b.start || kindRank(a.kind) - kindRank(b.kind) || a.title.localeCompare(b.title));
+  return queueSameSlot(out);
+}
+
+function uniqueSymbols(list) {
+  return [...new Set((list || []).map((t) => t && t.symbol).filter(Boolean))].join(", ");
+}
+
+const KIND_RANK = { sl: 0, symbolWatch: 1, setupCheck: 2, report: 3, reminder: 4 };
+function kindRank(kind) {
+  return KIND_RANK[kind] ?? 9;
+}
+
+// Nhiều việc chung một mốc (chế độ "chỉ nhắc ở các mốc" cố tình dồn dời SL + theo dõi về 12h)
+// là MỘT LƯỢT làm nối tiếp nhau, không phải trùng giờ: việc sau bắt đầu khi việc trước xong.
+// `slotStart` giữ mốc gốc để gom nhóm và để kéo/sửa giờ vẫn tính theo mốc thật.
+function queueSameSlot(items) {
+  const cursor = new Map();
+  return items.map((x) => {
+    const slotStart = x.start;
+    if (!x.enabled) return { ...x, slotStart };
+    const at = cursor.has(slotStart) ? cursor.get(slotStart) : slotStart;
+    cursor.set(slotStart, at + x.minutes);
+    return { ...x, start: at, slotStart };
+  });
 }
 
 // Hai việc chồng nhau khi khoảng [bắt đầu, bắt đầu + dự kiến) giao nhau.

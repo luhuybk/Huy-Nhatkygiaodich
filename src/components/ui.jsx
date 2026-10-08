@@ -151,6 +151,17 @@ export function ImagePreviewStrip({ items, empty = true }) {
   );
 }
 
+// Công tắc bật/tắt gọn — thay cho nút to "🔔 Đang bật …" ở đầu mỗi mục.
+export function Switch({ checked, onChange, title, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={!!checked} title={title}
+      className={`sw ${checked ? "sw-on" : ""}`}
+      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}>
+      <i />{label ? <span>{label}</span> : null}
+    </button>
+  );
+}
+
 export function ConfirmButton({ onConfirm, icon: Icon = Trash2, className = "row-btn", label }) {
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
