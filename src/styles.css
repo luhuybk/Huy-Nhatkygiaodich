@@ -1777,3 +1777,4 @@ body.printing-trades { overflow: hidden; }
 .sl-session-new { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .sl-session-field { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
 .sl-suggest { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; margin-bottom: 8px; color: var(--accent); }
+.input-invalid { border-color: var(--loss) !important; }

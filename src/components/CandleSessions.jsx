@@ -3,14 +3,12 @@ import { Clock, PlusCircle } from "lucide-react";
 import { ConfirmButton } from "./ui.jsx";
 import { uid } from "../lib/helpers.js";
 import {
-  allSessions, candleClosesVN, DEFAULT_AUTO_QUIET, fmtSessionOpenVN, normSymbol, NY_TZ, sessionFor,
-  tradeAutoHours, VN_TZ, vnTimeToZone, vnToday,
+  allSessions, candleClosesVN, DEFAULT_AUTO_QUIET, DEFAULT_SYMBOL_RULES, LONDON_TZ, normSymbol, NY_TZ,
+  parseSessionSpec, sessionFor, sessionTodayVN, tradeAutoHours, TZ_LABEL, UTC_TZ, VN_TZ, vnToday,
 } from "../lib/candles.js";
 
-// Mã hàng hoá hay gặp — chỉ để GỢI Ý gán phiên kim loại/năng lượng, không tự gán thầm.
-const COMMODITY_RE = /^(X(AU|AG|PT|PD|CU|AL|NG|BR|TI)|US?OIL|UKOIL|WTI|BRENT|NGAS|COPPER|GOLD|SILVER)/;
-
 const TF_SHOW = [["H4", 4], ["H8", 8], ["D", 24]];
+const TZ_OPTIONS = [NY_TZ, LONDON_TZ, UTC_TZ, VN_TZ];
 
 function hm(list) {
   return list.length ? list.join(" · ") : "—";
@@ -49,40 +47,37 @@ export function AutoHoursPreview({ settings, trades }) {
   );
 }
 
+// Phiên tự thêm: dán đúng chuỗi phiên TradingView (bấm tên mã trên chart → Thông tin mã → Phiên).
 function NewSession({ onAdd }) {
   const [name, setName] = useState("");
-  const [open, setOpen] = useState("05:00");
-  const [length, setLength] = useState("23");
-  const [ny, setNy] = useState(true);
-  const [fxWeek, setFxWeek] = useState(true);
+  const [tz, setTz] = useState(NY_TZ);
+  const [spec, setSpec] = useState("");
+  const valid = parseSessionSpec(spec).length > 0;
   const add = () => {
-    if (!/^\d{1,2}:\d{2}$/.test(open)) return;
-    const vnOpen = open.padStart(5, "0");
-    const tz = ny ? NY_TZ : VN_TZ;
-    onAdd({
-      id: uid(), name: name.trim() || `Phiên mở ${vnOpen}`, tz,
-      open: ny ? vnTimeToZone(NY_TZ, vnToday(), vnOpen) : vnOpen,
-      length: Math.min(24, Math.max(1, Number(length) || 24)), week: fxWeek ? "fx" : "all",
-    });
+    if (!valid) return;
+    onAdd({ id: uid(), name: name.trim() || `Phiên ${spec.trim()}`, tz, spec: spec.trim() });
     setName("");
+    setSpec("");
   };
   return (
     <div className="sl-session-new">
-      <input className="input input-inline" style={{ flex: "2 1 160px" }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên phiên, VD Đồng Exness" />
-      <label className="sl-session-field">Nến đầu phiên mở lúc
-        <input className="input input-inline mono" style={{ width: 70 }} value={open} onChange={(e) => setOpen(e.target.value)} placeholder="05:00" />
-      </label>
-      <label className="sl-session-field">phiên dài
-        <input className="input input-inline mono" style={{ width: 50 }} value={length} onChange={(e) => setLength(e.target.value)} /> giờ
-      </label>
-      <label className="sl-session-field"><input type="checkbox" checked={ny} onChange={(e) => setNy(e.target.checked)} /> theo giờ New York (tự đổi mùa)</label>
-      <label className="sl-session-field"><input type="checkbox" checked={fxWeek} onChange={(e) => setFxWeek(e.target.checked)} /> nghỉ cuối tuần</label>
-      <button type="button" className="btn btn-ghost" onClick={add}><PlusCircle size={13} /> Thêm phiên</button>
+      <input className="input input-inline" style={{ flex: "2 1 160px" }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên phiên, VD Bạc Pepperstone" />
+      <input className={`input input-inline mono ${spec && !valid ? "input-invalid" : ""}`} style={{ flex: "2 1 180px" }} value={spec}
+        onChange={(e) => setSpec(e.target.value)} placeholder="Chuỗi phiên, VD 1700-1700" />
+      <select className="input input-inline" value={tz} onChange={(e) => setTz(e.target.value)}>
+        {TZ_OPTIONS.map((z) => <option key={z} value={z}>{TZ_LABEL[z]}</option>)}
+      </select>
+      <button type="button" className="btn btn-ghost" disabled={!valid} onClick={add}><PlusCircle size={13} /> Thêm phiên</button>
     </div>
   );
 }
 
-// Cài đặt chung cho giờ đóng nến tự tính: giờ ngủ, các phiên giao dịch và mã nào thuộc phiên nào.
+function guessedId(sym) {
+  const rule = DEFAULT_SYMBOL_RULES.find(([re]) => re.test(sym));
+  return rule ? rule[1] : "fx";
+}
+
+// Cài đặt chung cho giờ đóng nến tự tính: giờ nghỉ, các phiên giao dịch và mã nào thuộc phiên nào.
 export function CandleSessionsPanel({ settings, onChange, trades, accountNames }) {
   const s = settings;
   const date = vnToday();
@@ -108,25 +103,25 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
     return [...seen.values()].sort((a, b) => b.open - a.open || b.n - a.n || a.symbol.localeCompare(b.symbol));
   }, [trades, accountNames]);
 
+  // Chọn đúng phiên đoán theo tên thì xoá gán tay — để sau này sửa luật đoán là mã tự theo.
   const setMap = (sym, id) => {
     const next = { ...map };
-    if (!id || id === "fx") delete next[sym]; else next[sym] = id;
+    if (!id || id === guessedId(sym)) delete next[sym]; else next[sym] = id;
     onChange({ ...s, symbolSessions: next });
   };
-  const suggest = symbols.filter((x) => COMMODITY_RE.test(x.symbol) && !map[x.symbol]);
   const custom = Array.isArray(s.sessions) ? s.sessions : [];
 
   return (
     <div className="account-form sl-sessions">
       <div className="sl-quiet">
         <Clock size={14} />
-        <span>Không nhắc từ</span>
+        <span>Nghỉ từ</span>
         <input className="input input-inline mono" style={{ width: 70 }} key={`f${quiet.from}`} defaultValue={quiet.from}
           onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, from: e.target.value.trim() } })} />
         <span>đến</span>
         <input className="input input-inline mono" style={{ width: 70 }} key={`t${quiet.to}`} defaultValue={quiet.to}
           onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, to: e.target.value.trim() } })} />
-        <span className="field-hint" style={{ margin: 0 }}>— nến đóng trong khoảng này (vd nến D 4h sáng) dồn nhắc một lần lúc <b>{quiet.to || DEFAULT_AUTO_QUIET.to}</b>.</span>
+        <span className="field-hint" style={{ margin: 0 }}>— nến đóng trong lúc nghỉ không nhắc ngay mà dồn thành một lần lúc <b>{quiet.to || DEFAULT_AUTO_QUIET.to}</b>.</span>
       </div>
 
       <h4 className="rec-title" style={{ marginTop: 12 }}>Phiên giao dịch · giờ đóng nến hôm nay (giờ VN)</h4>
@@ -135,8 +130,9 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
           <div key={x.id} className="sl-session-row">
             <div className="sl-session-name">
               <b>{x.name}</b>
+              {x.note ? <span className="field-hint" style={{ margin: 0 }}>{x.note}</span> : null}
               <span className="field-hint" style={{ margin: 0 }}>
-                {x.note ? `${x.note} · hôm nay mở ${fmtSessionOpenVN(x, date)} giờ VN` : `mở ${fmtSessionOpenVN(x, date)} giờ VN · ${x.length} tiếng${x.tz === NY_TZ ? " · theo giờ New York" : ""}${x.week === "all" ? " · cả tuần" : ""}`}
+                <span className="mono">{x.spec || `${x.open} · ${x.length}h`}</span> {TZ_LABEL[x.tz] || x.tz} · hôm nay {sessionTodayVN(x, date)}
               </span>
             </div>
             <Closes session={x} date={date} />
@@ -151,21 +147,11 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
       </div>
       <NewSession onAdd={(ses) => onChange({ ...s, sessions: [...custom, ses] })} />
       <p className="field-hint">
-        Mở chart TradingView của mã đó, khung H4, xem nến gần nhất đóng lúc mấy giờ — khớp dòng nào thì chọn phiên đó cho mã.
-        Không khớp phiên có sẵn thì thêm phiên tự đặt: gõ giờ nến H4 đầu tiên trong ngày mở (giờ VN hôm nay) và độ dài phiên.
+        Mỗi nguồn dữ liệu trên TradingView (OANDA, FUSIONMARKETS, FOREXCOM…) có phiên riêng nên cùng khung H4 mà giờ đóng nến khác nhau.
+        Dùng nguồn khác các phiên có sẵn thì thêm phiên: trên chart bấm vào tên mã → <b>Thông tin mã</b>, chép dòng <b>Phiên</b> (VD 1700-1700) và múi giờ của nó.
       </p>
 
       <h4 className="rec-title" style={{ marginTop: 12 }}>Mã nào thuộc phiên nào</h4>
-      {suggest.length ? (
-        <div className="sl-suggest">
-          <span>{suggest.map((x) => x.symbol).join(", ")} trông như hàng hoá nhưng đang theo phiên Forex.</span>
-          <button type="button" className="btn btn-ghost" onClick={() => {
-            const next = { ...map };
-            suggest.forEach((x) => { next[x.symbol] = "cme"; });
-            onChange({ ...s, symbolSessions: next });
-          }}>Chuyển sang Kim loại · năng lượng</button>
-        </div>
-      ) : null}
       {symbols.length ? (
         <div className="table-wrap">
           <table className="table">
@@ -175,9 +161,13 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
                 const ses = sessionFor(s, x.symbol);
                 return (
                   <tr key={x.symbol}>
-                    <td><b>{x.symbol}</b>{x.open ? <span className="rec-tag">{x.open} lệnh mở</span> : null}</td>
                     <td>
-                      <select className="input input-inline" value={map[x.symbol] || "fx"} onChange={(e) => setMap(x.symbol, e.target.value)}>
+                      <b>{x.symbol}</b>
+                      {x.open ? <span className="rec-tag">{x.open} lệnh mở</span> : null}
+                      {!map[x.symbol] ? <span className="rec-tag" title="Chưa gán tay — đoán theo tên mã">tự đoán</span> : null}
+                    </td>
+                    <td>
+                      <select className="input input-inline" value={ses.id} onChange={(e) => setMap(x.symbol, e.target.value)}>
                         {sessions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                       </select>
                     </td>

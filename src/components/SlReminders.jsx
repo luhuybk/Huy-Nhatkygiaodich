@@ -244,8 +244,9 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
         <>
           <h3 className="block-title">Giờ đóng nến</h3>
           <p className="field-hint" style={{ marginBottom: 12 }}>
-            Nến H4/H8/D xếp từ giờ <b>mở phiên</b> của từng mã chứ không phải từ 0h: forex mở 17h New York, vàng/bạc/dầu mở 18h New York
-            nên cùng khung H4 mà đóng lệch nhau một tiếng. Giờ New York đổi mùa vào tháng 3 và tháng 11 — mọi mốc tự nhích theo, bạn không phải sửa gì.
+            Nến H4/H8/D xếp từ giờ <b>mở phiên</b> của từng mã, và mỗi nguồn dữ liệu trên TradingView một phiên: vàng/bạc OANDA theo giờ forex
+            (H4 đóng 0-4-8-12-16-20h), đồng/nhôm FUSIONMARKETS theo giờ London (11-15-19-23h), dầu FOREXCOM theo giờ UTC (3-7-11-15-19-23h).
+            New York, London đổi giờ mùa vào tháng 3 và tháng 10–11 — mọi mốc tự nhích theo, bạn không phải sửa gì.
           </p>
           <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} />
         </>

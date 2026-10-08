@@ -75,15 +75,22 @@ function minutesDiff(a: string, b: string) {
 }
 
 // ---- Giờ đóng nến tự tính — BẢN CHÉP của src/lib/candles.js, sửa một bên phải sửa bên kia ----
-// Nến H4/H8/D xếp từ giờ mở phiên của từng mã: forex mở 17h New York, kim loại 18h New York và
-// nghỉ 1 tiếng. Tính bằng múi giờ New York thật nên tự đổi theo giờ mùa hè/mùa đông.
-type CandleSession = { id?: string; tz?: string; open?: string; length?: number; week?: string };
+// Nến H4/H8/D xếp từ giờ mở phiên của từng mã, mỗi nguồn dữ liệu một phiên (chuỗi phiên TradingView
+// + múi giờ). Tính bằng múi giờ thật nên tự đổi theo giờ mùa hè/mùa đông của New York / London.
+type CandleSession = { id?: string; tz?: string; spec?: string; open?: string; length?: number; week?: string };
 const NY_TZ = "America/New_York";
 const SESSION_PRESETS: CandleSession[] = [
-  { id: "fx", tz: NY_TZ, open: "17:00", length: 24, week: "fx" },
-  { id: "cme", tz: NY_TZ, open: "18:00", length: 23, week: "fx" },
+  { id: "fx", tz: NY_TZ, spec: "1700-1700" },
+  { id: "lme", tz: "Europe/London", spec: "0100-1850" },
+  { id: "usoil", tz: "Etc/UTC", spec: "2200-0000:1|0000-0000:2345|0000-2100:6" },
+  { id: "ukoil", tz: "Etc/UTC", spec: "2200-2200:2|0000-2200:3456" },
 ];
-const DEFAULT_AUTO_QUIET = { from: "23:00", to: "07:00" };
+const DEFAULT_SYMBOL_RULES: [RegExp, string][] = [
+  [/^X(CU|AL|NI|PB|ZN)/, "lme"],
+  [/^(US?OIL|WTI|XTI)/, "usoil"],
+  [/^(UKOIL|BRENT|XBR)/, "ukoil"],
+];
+const DEFAULT_AUTO_QUIET = { from: "00:30", to: "08:30" };
 
 function tfHours(tf: unknown) {
   const s = String(tf || "").trim().toUpperCase();
@@ -121,16 +128,51 @@ function wallToMs(tz: string, dateStr: string, hhmm: string) {
 
 const FX_WEEK_START = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
 
-function candleClosesVN(hours: number, session: CandleSession | undefined, vnDate: string) {
-  if (!hours || !session || !/^\d{2}:\d{2}$/.test(String(session.open || ""))) return [] as string[];
-  const length = Math.min(24, Math.max(1, Number(session.length) || 24));
+function parseSessionSpec(spec: unknown) {
+  const str = String(spec || "").trim();
+  if (!str) return [] as { days: string; start: string; end: string }[];
+  if (/^24x7$/i.test(str)) return [{ days: "1234567", start: "0000", end: "0000" }];
+  return str.split("|").map((seg) => {
+    const m = /^(\d{4})-(\d{4})(?::([1-7]+))?$/.exec(seg.trim());
+    return m ? { days: m[3] || "23456", start: m[1], end: m[2] } : null;
+  }).filter(Boolean) as { days: string; start: string; end: string }[];
+}
+
+function sessionRanges(session: CandleSession, vnDate: string) {
   const tz = session.tz || NY_TZ;
-  const out = new Set<string>();
+  const out: [number, number][] = [];
+  const hm = (x: string) => `${x.slice(0, 2)}:${x.slice(2, 4)}`;
+  if (session.spec) {
+    const segs = parseSessionSpec(session.spec);
+    for (let k = -2; k <= 2; k += 1) {
+      const day = shiftDateStr(vnDate, k);
+      const wd = String(new Date(`${day}T00:00:00Z`).getUTCDay() + 1);
+      segs.forEach((g) => {
+        if (!g.days.includes(wd)) return;
+        const startMin = +g.start.slice(0, 2) * 60 + +g.start.slice(2);
+        const endMin = g.end === "0000" ? 1440 : +g.end.slice(0, 2) * 60 + +g.end.slice(2);
+        const overnight = endMin <= startMin;
+        const start = wallToMs(tz, overnight ? shiftDateStr(day, -1) : day, hm(g.start));
+        const end = g.end === "0000" ? wallToMs(tz, shiftDateStr(day, 1), "00:00") : wallToMs(tz, day, hm(g.end));
+        if (end > start) out.push([start, end]);
+      });
+    }
+    return out;
+  }
+  if (!/^\d{2}:\d{2}$/.test(String(session.open || ""))) return out;
+  const length = Math.min(24, Math.max(1, Number(session.length) || 24));
   for (let k = -2; k <= 1; k += 1) {
-    const day = shiftDateStr(vnDate, k);
-    const start = wallToMs(tz, day, session.open!);
+    const start = wallToMs(tz, shiftDateStr(vnDate, k), session.open!);
     if (session.week !== "all" && !FX_WEEK_START.has(partsIn(tz, start).weekday)) continue;
-    const end = start + length * 3600000;
+    out.push([start, start + length * 3600000]);
+  }
+  return out;
+}
+
+function candleClosesVN(hours: number, session: CandleSession | undefined, vnDate: string) {
+  if (!hours || !session) return [] as string[];
+  const out = new Set<string>();
+  sessionRanges(session, vnDate).forEach(([start, end]) => {
     const marks: number[] = [];
     for (let t = start + hours * 3600000; t < end - 60000; t += hours * 3600000) marks.push(t);
     marks.push(end);
@@ -138,7 +180,7 @@ function candleClosesVN(hours: number, session: CandleSession | undefined, vnDat
       const p = partsIn(VN_TZ, t);
       if (p.date === vnDate) out.add(p.time);
     });
-  }
+  });
   return [...out].sort();
 }
 
@@ -153,7 +195,9 @@ function inQuiet(hhmm: string, quiet?: { from?: string; to?: string }) {
 type CandleSettings = { sessions?: CandleSession[]; symbolSessions?: Record<string, string>; defaultSession?: string; autoQuiet?: { from?: string; to?: string } };
 function sessionFor(settings: CandleSettings, symbol: unknown) {
   const list = [...SESSION_PRESETS, ...((settings.sessions || []).filter((x) => x && x.id))];
-  const id = (settings.symbolSessions || {})[String(symbol || "").trim().toUpperCase()] || settings.defaultSession || "fx";
+  const sym = String(symbol || "").trim().toUpperCase();
+  const rule = DEFAULT_SYMBOL_RULES.find(([re]) => re.test(sym));
+  const id = (settings.symbolSessions || {})[sym] || (rule && rule[1]) || settings.defaultSession || "fx";
   return list.find((x) => x.id === id) || list[0];
 }
 

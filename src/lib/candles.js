@@ -1,24 +1,41 @@
 // Giờ đóng nến tự tính, để nhắc dời SL đúng lúc nến của CHÍNH lệnh đó đóng.
 //
-// Nến H4/H8/D trên TradingView xếp từ giờ MỞ PHIÊN của từng mã chứ không xếp từ 0h: forex mở
-// 17h New York nên H4 đóng 4h-8h-12h-16h-20h-0h giờ VN; vàng/kim loại mở 18h New York, nghỉ
-// 1 tiếng trước khi mở phiên sau, nên cùng H4 mà đóng lệch một tiếng và nến cuối ngày bị cụt.
-// New York đổi giờ mùa hè/mùa đông (tháng 3 và tháng 11) nên mọi mốc giờ VN nhích 1 tiếng —
-// tính bằng múi giờ thật thay vì gõ giờ cố định là để khỏi phải nhớ sửa lịch hai lần một năm.
+// Nến H4/H8/D trên TradingView xếp từ giờ MỞ PHIÊN của từng mã chứ không xếp từ 0h, và mỗi NGUỒN
+// dữ liệu một phiên khác nhau — đo thật trên chart (10/2026):
+//   - FX:, OANDA: (vàng, bạc, XPD, XPT), FXTF:XNGUSD — "1700-1700" New York → H4 đóng 0-4-8-12-16-20h VN
+//   - FUSIONMARKETS: đồng/nhôm/niken/chì/kẽm (LME) — "0100-1850" London → 11-15-19-23h, nến cuối đóng 0h50
+//   - FOREXCOM:USOIL — theo UTC, liền từ tối CN tới tối T6 → 3-7-11-15-19-23h, KHÔNG đổi giờ mùa
+//   - FOREXCOM:UKOIL — theo UTC, nghỉ 22h–24h UTC mỗi đêm → 11-15-19-23-3h, nến cuối đóng 5h
+// Nên lưu đúng CHUỖI PHIÊN TradingView + múi giờ, và tính bằng múi giờ thật: New York đổi giờ
+// tháng 3/11, London đổi sớm hơn một tuần (cuối tháng 3/10), UTC thì không đổi.
 //
 // BẢN CHÉP Y HỆT nằm ở supabase/functions/sl-reminder/index.ts (bot) — sửa một bên phải sửa bên kia.
 
 export const VN_TZ = "Asia/Ho_Chi_Minh";
 export const NY_TZ = "America/New_York";
+export const LONDON_TZ = "Europe/London";
+export const UTC_TZ = "Etc/UTC";
 
-// week: "fx" = phiên mở từ Chủ nhật đến thứ 5 (giờ của múi phiên), thứ 6/thứ 7 không mở phiên mới —
-// đúng lịch forex/kim loại. "all" = ngày nào cũng có phiên (crypto, hoặc tự đặt).
+// `spec` là chuỗi phiên đúng như TradingView (Symbol info → Session): "HHMM-HHMM[:thứ]" nối bằng "|".
+// Thứ đánh số 1 = Chủ nhật … 7 = Thứ 7; bỏ trống = thứ 2–thứ 6. Giờ kết thúc ≤ giờ bắt đầu nghĩa là
+// phiên qua đêm, bắt đầu từ hôm trước ("1700-1700" của thứ 2 mở từ 17h Chủ nhật). "0000" ở cuối = 24h.
 export const SESSION_PRESETS = [
-  { id: "fx", name: "Forex", note: "mở 17h New York, chạy liền 24 tiếng", tz: NY_TZ, open: "17:00", length: 24, week: "fx", preset: true },
-  { id: "cme", name: "Kim loại · năng lượng", note: "mở 18h New York, 23 tiếng, nghỉ 1 tiếng cuối ngày", tz: NY_TZ, open: "18:00", length: 23, week: "fx", preset: true },
+  { id: "fx", name: "Forex · OANDA kim loại · FXTF", note: "FX:, OANDA: vàng/bạc/XPD/XPT, FXTF:XNGUSD", tz: NY_TZ, spec: "1700-1700", preset: true },
+  { id: "lme", name: "Kim loại LME · FUSIONMARKETS", note: "đồng XCU, nhôm XAL, niken XNI, chì XPB, kẽm XZN", tz: LONDON_TZ, spec: "0100-1850", preset: true },
+  { id: "usoil", name: "Dầu WTI · FOREXCOM:USOIL", note: "theo giờ UTC, không đổi giờ mùa", tz: UTC_TZ, spec: "2200-0000:1|0000-0000:2345|0000-2100:6", preset: true },
+  { id: "ukoil", name: "Dầu Brent · FOREXCOM:UKOIL", note: "theo giờ UTC, nghỉ 2 tiếng mỗi đêm", tz: UTC_TZ, spec: "2200-2200:2|0000-2200:3456", preset: true },
 ];
 
-export const DEFAULT_AUTO_QUIET = { from: "23:00", to: "07:00" };
+// Mã chưa tự gán phiên thì đoán theo tên — đúng với các nguồn đang dùng trên chart, sửa được ở
+// bảng "Mã nào thuộc phiên nào".
+export const DEFAULT_SYMBOL_RULES = [
+  [/^X(CU|AL|NI|PB|ZN)/, "lme"],
+  [/^(US?OIL|WTI|XTI)/, "usoil"],
+  [/^(UKOIL|BRENT|XBR)/, "ukoil"],
+];
+
+// Giờ nghỉ: sau lần dời cuối lúc 0h tới 8h30 mới ngồi lại máy — nến đóng trong khoảng này dồn về 8h30.
+export const DEFAULT_AUTO_QUIET = { from: "00:30", to: "08:30" };
 
 // "H4" "4H" "h4" → 4; "D" "D1" "1D" → 24; "H1" → 1. Khung tuần/tháng hay phút lẻ thì null —
 // không tự tính, lệnh đó rơi về giờ gõ tay của lịch.
@@ -66,18 +83,64 @@ function shiftDay(dateStr, days) {
 
 const FX_WEEK_START = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
 
-// Mọi mốc nến khung `hours` đóng trong ngày `vnDate` (giờ VN), theo phiên `session`. Nến cuối
-// phiên đóng ở giờ hết phiên dù chưa đủ độ dài — đó là chỗ kim loại khác forex.
-export function candleClosesVN(hours, session, vnDate) {
-  if (!hours || !session || !/^\d{2}:\d{2}$/.test(String(session.open || ""))) return [];
-  const length = Math.min(24, Math.max(1, Number(session.length) || 24));
+function hhmmOf(x) {
+  return `${x.slice(0, 2)}:${x.slice(2, 4)}`;
+}
+
+// "1700-1700" → [{ days, start, end }] — `days` theo kiểu TradingView (1 = CN … 7 = T7).
+export function parseSessionSpec(spec) {
+  const str = String(spec || "").trim();
+  if (!str) return [];
+  if (/^24x7$/i.test(str)) return [{ days: "1234567", start: "0000", end: "0000" }];
+  return str.split("|").map((seg) => {
+    const m = /^(\d{4})-(\d{4})(?::([1-7]+))?$/.exec(seg.trim());
+    return m ? { days: m[3] || "23456", start: m[1], end: m[2] } : null;
+  }).filter(Boolean);
+}
+
+// Thứ của một ngày lịch theo đánh số TradingView: 1 = Chủ nhật … 7 = Thứ 7.
+function tvWeekday(dateStr) {
+  return new Date(`${dateStr}T00:00:00Z`).getUTCDay() + 1;
+}
+
+// Các khoảng phiên [bắt đầu, kết thúc] (ms) có thể chạm ngày `vnDate`.
+function sessionRanges(session, vnDate) {
   const tz = session.tz || NY_TZ;
-  const out = new Set();
+  const out = [];
+  if (session.spec) {
+    const segs = parseSessionSpec(session.spec);
+    for (let k = -2; k <= 2; k += 1) {
+      const day = shiftDay(vnDate, k);
+      const wd = String(tvWeekday(day));
+      segs.forEach((g) => {
+        if (!g.days.includes(wd)) return;
+        const startMin = +g.start.slice(0, 2) * 60 + +g.start.slice(2);
+        const endMin = g.end === "0000" ? 1440 : +g.end.slice(0, 2) * 60 + +g.end.slice(2);
+        const overnight = endMin <= startMin;
+        const start = wallToMs(tz, overnight ? shiftDay(day, -1) : day, hhmmOf(g.start));
+        const end = g.end === "0000" ? wallToMs(tz, shiftDay(day, 1), "00:00") : wallToMs(tz, day, hhmmOf(g.end));
+        if (end > start) out.push([start, end]);
+      });
+    }
+    return out;
+  }
+  // Phiên tự đặt kiểu cũ: giờ mở + độ dài (giờ) + nghỉ cuối tuần hay không.
+  if (!/^\d{2}:\d{2}$/.test(String(session.open || ""))) return out;
+  const length = Math.min(24, Math.max(1, Number(session.length) || 24));
   for (let k = -2; k <= 1; k += 1) {
-    const day = shiftDay(vnDate, k);
-    const start = wallToMs(tz, day, session.open);
+    const start = wallToMs(tz, shiftDay(vnDate, k), session.open);
     if (session.week !== "all" && !FX_WEEK_START.has(partsIn(tz, start).weekday)) continue;
-    const end = start + length * 3600000;
+    out.push([start, start + length * 3600000]);
+  }
+  return out;
+}
+
+// Mọi mốc nến khung `hours` đóng trong ngày `vnDate` (giờ VN), theo phiên `session`. Nến xếp từ
+// đầu mỗi phiên; nến cuối phiên đóng ở giờ hết phiên dù chưa đủ độ dài (đồng đóng 0h50, Brent 5h).
+export function candleClosesVN(hours, session, vnDate) {
+  if (!hours || !session) return [];
+  const out = new Set();
+  sessionRanges(session, vnDate).forEach(([start, end]) => {
     const marks = [];
     for (let t = start + hours * 3600000; t < end - 60000; t += hours * 3600000) marks.push(t);
     marks.push(end);
@@ -85,7 +148,7 @@ export function candleClosesVN(hours, session, vnDate) {
       const p = partsIn(VN_TZ, t);
       if (p.date === vnDate) out.add(p.time);
     });
-  }
+  });
   return [...out].sort();
 }
 
@@ -110,7 +173,9 @@ export function allSessions(settings) {
 export function sessionFor(settings, symbol) {
   const list = allSessions(settings);
   const map = (settings && settings.symbolSessions) || {};
-  const id = map[normSymbol(symbol)] || (settings && settings.defaultSession) || "fx";
+  const sym = normSymbol(symbol);
+  const rule = DEFAULT_SYMBOL_RULES.find(([re]) => re.test(sym));
+  const id = map[sym] || (rule && rule[1]) || (settings && settings.defaultSession) || "fx";
   return list.find((x) => x.id === id) || list[0];
 }
 
@@ -165,8 +230,16 @@ export function autoScheduleHours(sched, settings, trades, vnDate) {
   return [...set].sort();
 }
 
-export function fmtSessionOpenVN(session, vnDate) {
+// Phiên hôm nay mở/đóng lúc mấy giờ VN — để đọc nhanh, không cần hiểu chuỗi phiên.
+export function sessionTodayVN(session, vnDate) {
   if (!session) return "";
-  return session.tz === VN_TZ ? session.open : zoneTimeToVn(session.tz, vnDate, session.open);
+  // Chỉ phiên MỞ trong hôm nay — phiên qua đêm từ hôm qua đã nằm ở dòng của hôm qua.
+  const ranges = sessionRanges(session, vnDate)
+    .map(([a, b]) => [partsIn(VN_TZ, a), partsIn(VN_TZ, b)])
+    .filter(([a]) => a.date === vnDate)
+    .map(([a, b]) => `mở ${a.time} → đóng ${b.time}${b.date === vnDate ? "" : " hôm sau"}`);
+  return ranges.length ? [...new Set(ranges)].join(", ") : "hôm nay không mở phiên mới";
 }
+
+export const TZ_LABEL = { [NY_TZ]: "giờ New York", [LONDON_TZ]: "giờ London", [UTC_TZ]: "giờ UTC", [VN_TZ]: "giờ VN" };
 
