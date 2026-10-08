@@ -577,9 +577,14 @@ function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
           <button type="button" className="btn btn-ghost" onClick={() => setAdding(true)}><PlusCircle size={14} /> Thêm nhóm</button>
         ) : null}
         {doneTotal ? (
-          <button type="button" className="btn btn-ghost" onClick={toggleHideDone}>
-            {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
-          </button>
+          <>
+            <button type="button" className="btn btn-ghost" onClick={toggleHideDone}>
+              {hideDone ? <><Eye size={13} /> Hiện {doneTotal} mã đã ngừng</> : <><EyeOff size={13} /> Ẩn mã đã ngừng</>}
+            </button>
+            <DangerConfirmButton onConfirm={() => purgeDone()}
+              label={<><Trash2 size={13} /> Xóa {doneTotal} mã đã ngừng</>}
+              confirmLabel={<><Trash2 size={13} /> Bấm lần nữa để xóa hẳn {doneTotal} mã</>} />
+          </>
         ) : null}
       </div>
 
