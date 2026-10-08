@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard } from "./ui.jsx";
-import { AutoHoursPreview, CandleSessionsPanel } from "./CandleSessions.jsx";
+import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
   looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
+  watchIsAuto, watchLiveSymbols, watchScheduleHours,
 } from "../lib/helpers.js";
+import { DEFAULT_AUTO_SLOTS, tfHours, vnToday } from "../lib/candles.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
@@ -160,7 +162,7 @@ function useTelegramTest(settings, defaultText) {
   return { testState, sendTest };
 }
 
-export function SlReminderPanel({ settings, resources, onChange, trades, mutedTrades, onMutedTradesChange }) {
+export function SlReminderPanel({ settings, resources, onChange, trades, mutedTrades, onMutedTradesChange, watches }) {
   const s = settings;
   const set = (k) => (v) => onChange({ ...s, [k]: v });
   const { testState, sendTest } = useTelegramTest(s, "✅ Kết nối Telegram thành công — nhắc dời SL sẽ gửi vào đây.");
@@ -185,6 +187,11 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
     const ids = new Set((s.schedules || []).filter((sc) => sc && sc.auto).map((sc) => sc.accountId));
     return (resources.accounts || []).filter((a) => ids.has(a.id)).map((a) => a.name);
   }, [s.schedules, resources.accounts]);
+  // Nhóm symbol theo dõi có khung nến dùng chung phiên + chế độ nhắc ở đây.
+  const autoWatchSymbols = useMemo(
+    () => [...new Set((watches || []).filter(watchIsAuto).flatMap((w) => watchLiveSymbols(w).map((x) => x.name)))],
+    [watches]
+  );
 
   const muted = mutedTrades || [];
   const fill = s.mutedFillReminder || emptyMutedFillReminder();
@@ -240,7 +247,7 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
       </p>
       <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} trades={trades} onTf={onTf} settings={s} />
 
-      {autoAccounts.length ? (
+      {autoAccounts.length || autoWatchSymbols.length ? (
         <>
           <h3 className="block-title">Giờ đóng nến</h3>
           <p className="field-hint" style={{ marginBottom: 12 }}>
@@ -248,7 +255,7 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
             (H4 đóng 0-4-8-12-16-20h), đồng/nhôm FUSIONMARKETS theo giờ London (11-15-19-23h), dầu FOREXCOM theo giờ UTC (3-7-11-15-19-23h).
             New York, London đổi giờ mùa vào tháng 3 và tháng 10–11 — mọi mốc tự nhích theo, bạn không phải sửa gì.
           </p>
-          <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} />
+          <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} watchSymbols={autoWatchSymbols} />
         </>
       ) : null}
 
@@ -613,8 +620,28 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
   );
 }
 
+// Khung nến của nhóm theo dõi: để trống là giờ gõ tay như cũ; chọn H4/H8/D là giờ tự tính theo nến.
+function WatchTfSelect({ value, options, onChange, inline }) {
+  return (
+    <select className="input input-inline" style={inline ? { width: "auto", flex: "0 0 auto" } : undefined} value={value || ""} onChange={(e) => onChange(e.target.value)}
+      title="Chọn khung nến để giờ nhắc tự tính theo giờ đóng nến của từng mã, giống nhắc dời SL">
+      <option value="">Giờ gõ tay</option>
+      {options.map((tf) => <option key={tf} value={tf}>Nến {tf}</option>)}
+    </select>
+  );
+}
+
 export function SymbolWatchPanel({ settings, watches, resources, trades, onSettingsChange, onWatchesChange }) {
-  const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+  const [draft, setDraft] = useState({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", "), timeframe: "" });
+  // Khung tự tính được: H4/H8/D luôn có, cộng các khung khác trong Tài nguyên (H1, H3, H12…), xếp theo độ dài nến.
+  const tfOptions = useMemo(() => {
+    const list = [...new Set(["H4", "H8", "D", ...((resources && resources.timeframes) || []).filter((tf) => tfHours(tf))])];
+    return list.sort((a, b) => tfHours(a) - tfHours(b));
+  }, [resources]);
+  const slotMode = !!(settings.autoSlots || DEFAULT_AUTO_SLOTS).enabled;
+  const autoModeText = slotMode
+    ? `chỉ nhắc ở các mốc ${((settings.autoSlots || DEFAULT_AUTO_SLOTS).hours || []).join(" · ")}`
+    : "nhắc ngay khi nến đóng (trừ giờ nghỉ)";
   // Ẩn mã đã ngừng (gạch ngang) — nhớ trên máy này, áp cho mọi nhóm.
   const [hideDone, setHideDone] = useState(() => readLocalUi("watchHideDone", "0") === "1");
   const toggleHideDone = () => { const next = !hideDone; setHideDone(next); writeLocalUi("watchHideDone", next ? "1" : "0"); };
@@ -639,12 +666,13 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
     const hours = parseHoursInput(draft.hours);
     onWatchesChange([...watches, {
       ...emptySymbolWatch(),
-      label: draft.label.trim(),
+      label: draft.label.trim() || (draft.timeframe ? `Khung ${draft.timeframe}` : ""),
       note: draft.note.trim(),
       symbols,
       hours: hours.length ? hours : [...SYMBOL_WATCH_DEFAULT_HOURS],
+      timeframe: draft.timeframe,
     }]);
-    setDraft({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", ") });
+    setDraft({ label: "", symbols: [], note: "", hours: SYMBOL_WATCH_DEFAULT_HOURS.join(", "), timeframe: draft.timeframe });
   };
   const draftItems = draft.symbols.map((name) => ({ name }));
   const addDraftSymbols = (names) =>
@@ -685,6 +713,11 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
         <b> một tin Telegram dạng bảng</b>, mỗi symbol một dòng kèm 2 nút: <b>Theo dõi</b> (nhắc lại ở khung giờ kế tiếp) và
         <b> Ngừng</b> (chỉ tắt riêng symbol đó, các symbol còn lại vẫn nhắc bình thường).
       </p>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Chọn <b>khung nến</b> cho nhóm (VD nhóm Ngắn → H4, Trung → H8, Dài → D) thì khỏi gõ giờ: mỗi mã được nhắc theo
+        giờ đóng nến của chính nó, <b>cùng chế độ với nhắc dời SL</b> — hiện đang {autoModeText}. Đổi chế độ hoặc phiên của
+        từng mã ở tab <b>Nhắc dời SL → Giờ đóng nến</b>.
+      </p>
       {!telegramReady ? (
         <p className="field-hint" style={{ color: "var(--loss)", marginBottom: 12 }}>
           Chưa cấu hình Bot Token / Chat ID — điền ở tab "Nhắc dời SL" trước (dùng chung cho mọi loại nhắc nhở Telegram).
@@ -715,18 +748,28 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
 
       <h3 className="block-title">Thêm nhóm theo dõi</h3>
       <div className="account-form">
-        <div className="grid-2">
-          <Field label="Tên nhóm" hint="VD: H4, Khung ngày, Watchlist sáng">
-            <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))} placeholder="H4" />
+        <div className="grid-3">
+          <Field label="Tên nhóm" hint="VD: Ngắn, Trung, Dài, Watchlist sáng">
+            <input className="input" value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))}
+              placeholder={draft.timeframe ? `Khung ${draft.timeframe}` : "Ngắn"} />
           </Field>
-          <Field label="Khung giờ nhắc" hint="Giờ Việt Nam. Viết tắt được: gõ &quot;9 14 20&quot; ra 09:00, 14:00, 20:00">
-            <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))}
-              onBlur={(e) => {
-                const hrs = parseHoursInput(e.target.value);
-                setDraft((p) => ({ ...p, hours: (hrs.length ? hrs : SYMBOL_WATCH_DEFAULT_HOURS).join(", ") }));
-              }}
-              placeholder="9 14 20" />
+          <Field label="Khung nến" hint="Chọn khung thì giờ nhắc tự tính theo giờ đóng nến">
+            <WatchTfSelect value={draft.timeframe} options={tfOptions} onChange={(tf) => setDraft((p) => ({ ...p, timeframe: tf }))} />
           </Field>
+          {draft.timeframe ? (
+            <Field label="Khung giờ nhắc" hint={`Tự tính: ${autoModeText}`}>
+              <input className="input" disabled value={`Theo giờ đóng nến ${draft.timeframe}`} />
+            </Field>
+          ) : (
+            <Field label="Khung giờ nhắc" hint="Giờ Việt Nam. Viết tắt được: gõ &quot;9 14 20&quot; ra 09:00, 14:00, 20:00">
+              <input className="input" value={draft.hours} onChange={(e) => setDraft((p) => ({ ...p, hours: e.target.value }))}
+                onBlur={(e) => {
+                  const hrs = parseHoursInput(e.target.value);
+                  setDraft((p) => ({ ...p, hours: (hrs.length ? hrs : SYMBOL_WATCH_DEFAULT_HOURS).join(", ") }));
+                }}
+                placeholder="9 14 20" />
+            </Field>
+          )}
         </div>
         <Field label="Các symbol" hint="Gõ tên rồi nhấn phím cách hoặc Enter là xong một symbol — hoặc bấm thẳng vào gợi ý bên dưới. Tới giờ, cả nhóm gửi thành một tin, mỗi symbol một dòng.">
           <SymbolBox items={draftItems} suggestions={suggestions}
@@ -766,6 +809,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
             const activeDays = w.activeDays && w.activeDays.length ? w.activeDays : [...WEEKDAY_CODES];
             const symbols = w.symbols || [];
             const remaining = symbols.filter((x) => !x.done).length;
+            const auto = watchIsAuto(w);
             return (
               <div key={w.id} className={`account-form sl-reminder-card ${remaining === 0 ? "symbol-watch-done" : ""}`}>
                 <div className="sl-reminder-row">
@@ -778,6 +822,12 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
                     onBlur={(e) => updateWatch(w.id, { label: e.target.value.trim() })} />
                   <input className="input input-inline" style={{ flex: 1, minWidth: 140 }} defaultValue={w.note || ""} placeholder="Ghi chú"
                     onBlur={(e) => updateWatch(w.id, { note: e.target.value })} />
+                  <WatchTfSelect inline value={auto ? w.timeframe : ""} options={tfOptions} onChange={(tf) => updateWatch(w.id, { timeframe: tf })} />
+                  {auto ? (
+                    <span className="field-hint mono" style={{ flex: 1, minWidth: 150, margin: 0 }} title={`Giờ nhắc hôm nay — ${autoModeText}`}>
+                      {watchScheduleHours(w, settings, vnToday()).join(" · ") || "hôm nay không có nến đóng"}
+                    </span>
+                  ) : (
                   <input className="input input-inline" style={{ flex: 1, minWidth: 150 }}
                     defaultValue={(w.hours && w.hours.length ? w.hours : SYMBOL_WATCH_DEFAULT_HOURS).join(", ")}
                     placeholder="9 14 20" title={'Giờ nhắc — viết tắt được: "9 14 20" ra 09:00, 14:00, 20:00'}
@@ -789,6 +839,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
                       e.target.value = keep.join(", ");
                       updateWatch(w.id, { hours: keep });
                     }} />
+                  )}
                   <ConfirmButton onConfirm={() => removeWatch(w.id)} />
                 </div>
 
@@ -799,6 +850,7 @@ export function SymbolWatchPanel({ settings, watches, resources, trades, onSetti
                     onRemove={(x) => removeWatchSymbol(w, x)}
                     onToggle={(x) => toggleSymbol(w, x.id)} />
                 </div>
+                {auto && remaining ? <WatchHoursPreview settings={settings} watch={w} /> : null}
                 {symbols.length === 0 ? (
                   <p className="field-hint" style={{ marginTop: 6, color: "var(--loss)" }}>
                     Nhóm chưa có symbol nào — sẽ không gửi thông báo. Thêm vào ô trên, hoặc xóa nhóm nếu không dùng nữa.

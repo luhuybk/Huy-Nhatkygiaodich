@@ -161,7 +161,7 @@ export function RemindersPage({ reminders, onChange, resources, slReminderSettin
       </div>
       {tab === "sl" ? (
         <SlReminderPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange}
-          trades={trades} mutedTrades={slMutedTrades} onMutedTradesChange={onSlMutedTradesChange} />
+          trades={trades} mutedTrades={slMutedTrades} onMutedTradesChange={onSlMutedTradesChange} watches={symbolWatches} />
       ) : tab === "setupcheck" ? (
         <SetupCheckPanel settings={slReminderSettings} resources={resources} onChange={onSlReminderSettingsChange} checkLog={setupCheckLog} />
       ) : tab === "symbolwatch" ? (

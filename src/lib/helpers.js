@@ -1131,6 +1131,23 @@ export function slScheduleHours(sched, settings, openTrades, date) {
   return sched.hours || [];
 }
 
+// Nhóm theo dõi có khung nến (H4/H8/D) thì giờ nhắc tự tính như lệnh đang mở: mỗi mã một phiên,
+// cùng chế độ "nhắc ngay khi nến đóng" / "chỉ nhắc ở các mốc" với dời SL — để hai việc rơi cùng giờ.
+export function watchIsAuto(w) {
+  return !!(w && tfHours(w.timeframe));
+}
+
+export function watchLiveSymbols(w) {
+  return ((w && w.symbols) || []).filter((x) => x && x.name && !x.done);
+}
+
+export function watchScheduleHours(w, settings, date) {
+  if (!watchIsAuto(w)) return (w && w.hours) || [];
+  const live = watchLiveSymbols(w);
+  const items = (live.length ? live : [{ name: "" }]).map((x) => ({ symbol: x.name, timeframe: w.timeframe }));
+  return autoScheduleHours(w, settings || {}, items, date);
+}
+
 // Một lịch dùng chung một danh sách giờ cho MỌI ngày đang bật, nhưng đời thật không đều
 // như vậy: 22h thứ 6 khỏi kiểm tra setup vì sáng chủ nhật đã kiểm tra rồi, còn 22h chủ nhật
 // thì thị trường chưa mở lại. `skip` ghi đúng những ô lẻ đó, dạng "T6@22:00".
@@ -1219,9 +1236,11 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
 
   (watches || []).forEach((w) => {
     const live = (w.symbols || []).filter((x) => !x.done).length;
+    const auto = watchIsAuto(w);
     pushHours(out, {
-      hours: w.hours, activeDays: w.activeDays, day, kind: "symbolWatch",
-      title: "Symbol theo dõi", sub: `${w.label || "Nhóm chưa đặt tên"} · ${live} symbol`,
+      hours: watchScheduleHours(w, st, dateOfWeekdayThisWeek(day)), activeDays: w.activeDays, day, kind: "symbolWatch",
+      title: auto ? "Symbol theo dõi (giờ đóng nến)" : "Symbol theo dõi", fixedTime: auto,
+      sub: `${w.label || "Nhóm chưa đặt tên"}${auto ? ` · khung ${w.timeframe}` : ""} · ${live} symbol`,
       minutes: mins("symbolWatch", w.minutes),
       enabled: !!st.symbolWatchEnabled && !!w.enabled && live > 0, sourceId: `w_${w.id}`, id: w.id,
       skip: w.skip,
@@ -1401,7 +1420,7 @@ export function timelineSources({ settings, watches, reminders, durations, openT
   const countOpen = typeof openTrades === "function" ? openTrades : null;
   slEffectiveSchedules(st.schedules).forEach((x) => add("sl", slSchedKey(x), `sl_${slSchedKey(x)}`, `${x.accountName || "—"}${x.timeframe ? ` · khung ${x.timeframe}` : ""}${x.auto ? " · giờ đóng nến" : ""}`, slScheduleHours(x, st, countOpen, todayStr()), x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName, x, st.schedules) > 0), x.minutes, x.skip, x.auto));
   (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes, x.skip));
-  (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip));
+  (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, `${w.label || "Nhóm chưa đặt tên"}${watchIsAuto(w) ? ` · khung ${w.timeframe} · giờ đóng nến` : ""}`, watchScheduleHours(w, st, todayStr()), w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip, watchIsAuto(w)));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
   if (st.weeklySummary) add("report", "weekly", "weekly", "Tổng kết tuần", [st.weeklySummary.time], [st.weeklySummary.weekday], !!st.weeklySummary.enabled, st.weeklySummary.minutes);
   if (st.reconcileReminder) add("report", "reconcile", "reconcile", "Đối chiếu file sàn", [st.reconcileReminder.time], [st.reconcileReminder.weekday], !!st.reconcileReminder.enabled, st.reconcileReminder.minutes);
@@ -1420,7 +1439,8 @@ function replaceHour(hours, oldHour, newHour) {
   return [...new Set(next)].sort();
 }
 
-function patchItem(item, source, patch) {
+// `auto`: giờ tự tính theo nến, khác nhau từng ngày — ô bỏ chỉ lọc theo thứ, không lọc theo giờ gõ tay.
+function patchItem(item, source, patch, auto) {
   const next = { ...item };
   if (patch.hour) {
     next.hours = replaceHour(item.hours, source.hour, patch.hour);
@@ -1431,7 +1451,11 @@ function patchItem(item, source, patch) {
     });
   }
   if ("minutes" in patch) next.minutes = patch.minutes;
-  if ("skip" in patch) next.skip = pruneSkip(patch.skip, next.hours, next.activeDays);
+  if ("skip" in patch) {
+    next.skip = auto
+      ? pruneSkip(patch.skip, patch.skip.map((k) => String(k).split("@")[1]), next.activeDays)
+      : pruneSkip(patch.skip, next.hours, next.activeDays);
+  }
   return next;
 }
 
@@ -1448,14 +1472,16 @@ export function applyTaskPatch({ settings, watches, reminders }, source, patch) 
     // Lịch tự tính giờ: giờ là giờ đóng nến, không phải thứ dời được — chỉ nhận đổi thời lượng/ô bỏ.
     const auto = (st.schedules || []).some((x) => slSchedKey(x) === source.id && x.auto);
     const p = auto && patch.hour ? { ...patch, hour: undefined } : patch;
-    const mapSl = (list) => (list || []).map((x) => (slSchedKey(x) === source.id ? patchItem(x, source, p) : x));
+    const mapSl = (list) => (list || []).map((x) => (slSchedKey(x) === source.id ? patchItem(x, source, p, auto) : x));
     return { settings: { ...st, schedules: mapSl(st.schedules) }, changed: "settings" };
   }
   if (source.kind === "setupCheck") {
     return { settings: { ...st, setupCheckSchedules: mapList(st.setupCheckSchedules, (x) => x.accountId === source.id) }, changed: "settings" };
   }
   if (source.kind === "symbolWatch") {
-    return { watches: mapList(watches, (x) => x.id === source.id), changed: "watches" };
+    const auto = (watches || []).some((x) => x.id === source.id && watchIsAuto(x));
+    const p = auto && patch.hour ? { ...patch, hour: undefined } : patch;
+    return { watches: (watches || []).map((x) => (x.id === source.id ? patchItem(x, source, p, auto) : x)), changed: "watches" };
   }
   if (source.kind === "report") {
     const key = REPORT_KEYS[source.id] || "incompleteReminder";

@@ -244,6 +244,7 @@ type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type WatchGroup = {
   id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
   hours?: string[]; activeDays?: string[]; skip?: string[];
+  timeframe?: string; // có khung nến (H4/H8/D) thì giờ tự tính theo nến của từng mã, như lệnh dời SL
   symbol?: string; done?: boolean; // dạng cũ: mỗi bản ghi một symbol
 };
 
@@ -1034,12 +1035,24 @@ Deno.serve(async () => {
 
         const activeDays = Array.isArray(w.activeDays) ? w.activeDays : null;
         if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
-        const matchedHour = hoursDueNow(w)[0];
+        const auto = !!tfHours(w.timeframe);
+        let live = watchSymbols(w).filter((x) => !x.done);
+        let matchedHour = "";
+        if (auto) {
+          // Nhóm theo khung nến: chỉ những mã mà nến khung vừa đóng (theo phiên của mã) tới mốc này.
+          live = live.filter((x) => {
+            const hrs = tradeAutoHours({ symbol: x.name, timeframe: w.timeframe }, settings, today) || [];
+            const hit = hrs.find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN && !isSkipped(w, h));
+            if (hit && !matchedHour) matchedHour = hit;
+            return !!hit;
+          });
+        } else {
+          matchedHour = hoursDueNow(w)[0];
+        }
         if (!matchedHour) continue;
         if (isTaskDone(`w_${w.id}`, matchedHour)) continue;
 
         const groupName = (w.label || "").trim();
-        const live = watchSymbols(w).filter((x) => !x.done);
         if (!live.length) continue;
         if (watchMessages >= MAX_WATCH_MESSAGES_PER_RUN) break;
         const logKey = `watch_${today}_${w.id}_${matchedHour}_all`;
@@ -1048,7 +1061,9 @@ Deno.serve(async () => {
         const shown = live.slice(0, MAX_TABLE_ROWS);
         const more = live.length > shown.length ? `\n…và ${live.length - shown.length} mã nữa — xem trên web.` : "";
         const body = [shown.map((x) => x.name).join(" · ") + more, w.note || ""].filter(Boolean).join("\n");
-        const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", `${live.length} mã`, groupName || undefined, body);
+        const when = !auto ? "" : slotHours(settings) ? ` · mốc ${matchedHour} · nến ${w.timeframe} đã đóng`
+          : matchedHour === ((settings.autoQuiet || DEFAULT_AUTO_QUIET).to || DEFAULT_AUTO_QUIET.to) ? ` · nến ${w.timeframe} đóng trong đêm` : ` · nến ${w.timeframe} đóng ${matchedHour}`;
+        const text = buildMessage("👀", "SYMBOL THEO DÕI", "⭐", `${live.length} mã${when}`, groupName || undefined, body);
         const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, settings.symbolWatchThreadId, {
           inline_keyboard: shown.map((sym) => [
             noopButton(sym.name),

@@ -47,6 +47,33 @@ export function AutoHoursPreview({ settings, trades }) {
   );
 }
 
+// Nhóm symbol theo dõi có khung nến: gom các mã cùng giờ nhắc thành một dòng cho gọn —
+// ở chế độ mốc, vàng/đồng/dầu H4 thường rơi chung một dãy giờ.
+export function WatchHoursPreview({ settings, watch }) {
+  const date = vnToday();
+  const live = (watch.symbols || []).filter((x) => x && x.name && !x.done);
+  if (!live.length) return null;
+  const groups = new Map();
+  live.forEach((x) => {
+    const hrs = tradeAutoHours({ symbol: x.name, timeframe: watch.timeframe }, settings, date) || [];
+    const k = hm(hrs);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(x.name);
+  });
+  // Mọi mã cùng một dãy giờ thì dòng giờ trên thẻ đã đủ — khỏi lặp lại.
+  if (groups.size < 2) return null;
+  return (
+    <div className="sl-auto-list">
+      {[...groups.entries()].map(([hours, names]) => (
+        <div key={hours} className="sl-auto-row">
+          <b>{names.join(", ")}</b>
+          <span className="mono sl-auto-hours">{hours === "—" ? "hôm nay không có nến đóng" : hours}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Phiên tự thêm: dán đúng chuỗi phiên TradingView (bấm tên mã trên chart → Thông tin mã → Phiên).
 function NewSession({ onAdd }) {
   const [name, setName] = useState("");
@@ -78,7 +105,7 @@ function guessedId(sym) {
 }
 
 // Cài đặt chung cho giờ đóng nến tự tính: giờ nghỉ, các phiên giao dịch và mã nào thuộc phiên nào.
-export function CandleSessionsPanel({ settings, onChange, trades, accountNames }) {
+export function CandleSessionsPanel({ settings, onChange, trades, accountNames, watchSymbols }) {
   const s = settings;
   const date = vnToday();
   const quiet = s.autoQuiet || DEFAULT_AUTO_QUIET;
@@ -101,8 +128,16 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
       if (open) cur.open += 1;
       seen.set(k, cur);
     });
+    // Mã trong nhóm symbol theo dõi có khung nến — chưa vào lệnh nhưng vẫn cần đúng phiên.
+    (watchSymbols || []).forEach((name) => {
+      const k = normSymbol(name);
+      if (!k) return;
+      const cur = seen.get(k) || { symbol: k, open: 0, n: 0 };
+      cur.watch = true;
+      seen.set(k, cur);
+    });
     return [...seen.values()].sort((a, b) => b.open - a.open || b.n - a.n || a.symbol.localeCompare(b.symbol));
-  }, [trades, accountNames]);
+  }, [trades, accountNames, watchSymbols]);
 
   // Chọn đúng phiên đoán theo tên thì xoá gán tay — để sau này sửa luật đoán là mã tự theo.
   const setMap = (sym, id) => {
@@ -178,6 +213,7 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
                     <td>
                       <b>{x.symbol}</b>
                       {x.open ? <span className="rec-tag">{x.open} lệnh mở</span> : null}
+                      {x.watch ? <span className="rec-tag">theo dõi</span> : null}
                       {!map[x.symbol] ? <span className="rec-tag" title="Chưa gán tay — đoán theo tên mã">tự đoán</span> : null}
                     </td>
                     <td>
@@ -192,7 +228,7 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
             </tbody>
           </table>
         </div>
-      ) : <p className="empty-note">Bật "Tự tính theo giờ đóng nến" ở một tài khoản để gán phiên cho các mã của nó.</p>}
+      ) : <p className="empty-note">Bật "Tự tính theo giờ đóng nến" ở một tài khoản (hoặc chọn khung nến cho nhóm symbol theo dõi) để gán phiên cho các mã.</p>}
     </div>
   );
 }
