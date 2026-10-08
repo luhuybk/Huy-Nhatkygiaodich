@@ -1778,3 +1778,10 @@ body.printing-trades { overflow: hidden; }
 .sl-session-field { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
 .sl-suggest { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; margin-bottom: 8px; color: var(--accent); }
 .input-invalid { border-color: var(--loss) !important; }
+.sl-mode { display: flex; flex-direction: column; gap: 8px; }
+.sl-mode-opt { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; line-height: 1.9; cursor: pointer; }
+.sl-mode-opt.is-on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.06); }
+.sl-mode-opt input[type="radio"] { margin-top: 7px; }
+.sl-mode-opt small { color: var(--text-dim); font-size: 12px; }
+@media (max-width: 600px) { .sl-mode-opt .input-inline { width: 100% !important; max-width: 100%; } }

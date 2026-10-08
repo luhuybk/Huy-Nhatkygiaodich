@@ -91,6 +91,14 @@ const DEFAULT_SYMBOL_RULES: [RegExp, string][] = [
   [/^(UKOIL|BRENT|XBR)/, "ukoil"],
 ];
 const DEFAULT_AUTO_QUIET = { from: "00:30", to: "08:30" };
+const DEFAULT_AUTO_SLOTS = { enabled: false, hours: ["00:00", "08:30", "12:00", "16:00", "20:00"] };
+const hhmmToMin = (x: string) => +x.slice(0, 2) * 60 + +x.slice(3, 5);
+function slotHours(settings: CandleSettings) {
+  const sl = settings.autoSlots || DEFAULT_AUTO_SLOTS;
+  if (!sl.enabled) return null;
+  const list = [...new Set((sl.hours || []).filter((h) => /^\d{2}:\d{2}$/.test(h)))].sort();
+  return list.length ? list : null;
+}
 
 function tfHours(tf: unknown) {
   const s = String(tf || "").trim().toUpperCase();
@@ -192,7 +200,7 @@ function inQuiet(hhmm: string, quiet?: { from?: string; to?: string }) {
   return from < to ? hhmm >= from && hhmm < to : hhmm >= from || hhmm < to;
 }
 
-type CandleSettings = { sessions?: CandleSession[]; symbolSessions?: Record<string, string>; defaultSession?: string; autoQuiet?: { from?: string; to?: string } };
+type CandleSettings = { sessions?: CandleSession[]; symbolSessions?: Record<string, string>; defaultSession?: string; autoQuiet?: { from?: string; to?: string }; autoSlots?: { enabled?: boolean; hours?: string[] } };
 function sessionFor(settings: CandleSettings, symbol: unknown) {
   const list = [...SESSION_PRESETS, ...((settings.sessions || []).filter((x) => x && x.id))];
   const sym = String(symbol || "").trim().toUpperCase();
@@ -205,6 +213,19 @@ function sessionFor(settings: CandleSettings, symbol: unknown) {
 function tradeAutoHours(trade: Record<string, unknown>, settings: CandleSettings, vnDate: string) {
   const h = tfHours(trade.timeframe);
   if (!h) return null;
+  const slots = slotHours(settings);
+  if (slots) {
+    const ses = sessionFor(settings, trade.symbol);
+    const closes = [
+      ...candleClosesVN(h, ses, shiftDateStr(vnDate, -1)).map((x) => hhmmToMin(x) - 1440),
+      ...candleClosesVN(h, ses, vnDate).map(hhmmToMin),
+    ];
+    const mins = slots.map(hhmmToMin);
+    return slots.filter((_x, i) => {
+      const lo = i ? mins[i - 1] : mins[mins.length - 1] - 1440;
+      return closes.some((c) => c > lo && c <= mins[i]);
+    });
+  }
   const quiet = settings.autoQuiet || DEFAULT_AUTO_QUIET;
   const wake = quiet.to || DEFAULT_AUTO_QUIET.to;
   const out = new Set<string>();
@@ -528,6 +549,7 @@ Deno.serve(async () => {
       symbolSessions?: Record<string, string>;
       defaultSession?: string;
       autoQuiet?: { from?: string; to?: string };
+      autoSlots?: { enabled?: boolean; hours?: string[] };
       setupCheckEnabled?: boolean;
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
@@ -667,7 +689,7 @@ Deno.serve(async () => {
       };
       const list = shown.map((t) => labelOf(t)).join(" · ");
       const more = openTrades.length > shown.length ? `\n…và ${openTrades.length - shown.length} lệnh nữa — xem trên web.` : "";
-      const text = buildMessage("⏰", "DỜI SL", "🔴", sched.auto ? `${openTrades.length} lệnh · ${matchedHour === ((settings.autoQuiet || DEFAULT_AUTO_QUIET).to || DEFAULT_AUTO_QUIET.to) ? "nến đóng trong đêm" : `nến đóng ${matchedHour}`}` : `${openTrades.length} lệnh đang mở`, sched.timeframe ? `${accountName} · khung ${sched.timeframe}` : accountName, `${list}${more}`);
+      const text = buildMessage("⏰", "DỜI SL", "🔴", sched.auto ? `${openTrades.length} lệnh · ${slotHours(settings) ? `mốc ${matchedHour} · nến đã đóng` : matchedHour === ((settings.autoQuiet || DEFAULT_AUTO_QUIET).to || DEFAULT_AUTO_QUIET.to) ? "nến đóng trong đêm" : `nến đóng ${matchedHour}`}` : `${openTrades.length} lệnh đang mở`, sched.timeframe ? `${accountName} · khung ${sched.timeframe}` : accountName, `${list}${more}`);
       const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
         inline_keyboard: shown.map((t) => [
           noopButton(labelOf(t)),

@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient.js";
 import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
-import { autoScheduleHours, DEFAULT_AUTO_QUIET, tfHours } from "./candles.js";
+import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours } from "./candles.js";
 
 // Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
 // để ở localStorage cho tức thì thay vì chờ ghi lên máy chủ mỗi lần đổi trang.
@@ -561,6 +561,7 @@ export function emptySlReminderSettings() {
     symbolWatchEnabled: false, symbolWatchThreadId: "",
     // Giờ đóng nến tự tính (src/lib/candles.js): phiên tự đặt, mã → phiên, và giờ không nhắc.
     sessions: [], symbolSessions: {}, autoQuiet: { ...DEFAULT_AUTO_QUIET },
+    autoSlots: { ...DEFAULT_AUTO_SLOTS, hours: [...DEFAULT_AUTO_SLOTS.hours] },
   };
 }
 

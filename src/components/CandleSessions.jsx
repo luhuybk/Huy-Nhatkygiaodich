@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { Clock, PlusCircle } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 import { ConfirmButton } from "./ui.jsx";
-import { uid } from "../lib/helpers.js";
+import { parseHoursInput, uid } from "../lib/helpers.js";
 import {
-  allSessions, candleClosesVN, DEFAULT_AUTO_QUIET, DEFAULT_SYMBOL_RULES, LONDON_TZ, normSymbol, NY_TZ,
+  allSessions, candleClosesVN, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, DEFAULT_SYMBOL_RULES, LONDON_TZ, normSymbol, NY_TZ,
   parseSessionSpec, sessionFor, sessionTodayVN, tradeAutoHours, TZ_LABEL, UTC_TZ, VN_TZ, vnToday,
 } from "../lib/candles.js";
 
@@ -82,6 +82,7 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
   const s = settings;
   const date = vnToday();
   const quiet = s.autoQuiet || DEFAULT_AUTO_QUIET;
+  const slots = s.autoSlots || DEFAULT_AUTO_SLOTS;
   const sessions = allSessions(s);
   const map = s.symbolSessions || {};
 
@@ -113,15 +114,28 @@ export function CandleSessionsPanel({ settings, onChange, trades, accountNames }
 
   return (
     <div className="account-form sl-sessions">
-      <div className="sl-quiet">
-        <Clock size={14} />
-        <span>Nghỉ từ</span>
-        <input className="input input-inline mono" style={{ width: 70 }} key={`f${quiet.from}`} defaultValue={quiet.from}
-          onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, from: e.target.value.trim() } })} />
-        <span>đến</span>
-        <input className="input input-inline mono" style={{ width: 70 }} key={`t${quiet.to}`} defaultValue={quiet.to}
-          onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, to: e.target.value.trim() } })} />
-        <span className="field-hint" style={{ margin: 0 }}>— nến đóng trong lúc nghỉ không nhắc ngay mà dồn thành một lần lúc <b>{quiet.to || DEFAULT_AUTO_QUIET.to}</b>.</span>
+      <div className="sl-mode">
+        <label className={`sl-mode-opt ${!slots.enabled ? "is-on" : ""}`}>
+          <input type="radio" checked={!slots.enabled} onChange={() => onChange({ ...s, autoSlots: { ...slots, enabled: false } })} />
+          <span>
+            <b>Nhắc ngay khi nến đóng</b>, trừ lúc nghỉ từ{" "}
+            <input className="input input-inline mono" style={{ width: 64 }} key={`f${quiet.from}`} defaultValue={quiet.from}
+              onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, from: e.target.value.trim() } })} />{" "}đến{" "}
+            <input className="input input-inline mono" style={{ width: 64 }} key={`t${quiet.to}`} defaultValue={quiet.to}
+              onBlur={(e) => onChange({ ...s, autoQuiet: { ...quiet, to: e.target.value.trim() } })} />
+            <small> — nến đóng lúc nghỉ dồn một lần lúc {quiet.to || DEFAULT_AUTO_QUIET.to}. Nhiều mã khác phiên thì nhiều lần nhắc lệch nhau.</small>
+          </span>
+        </label>
+        <label className={`sl-mode-opt ${slots.enabled ? "is-on" : ""}`}>
+          <input type="radio" checked={!!slots.enabled} onChange={() => onChange({ ...s, autoSlots: { ...slots, enabled: true } })} />
+          <span>
+            <b>Chỉ nhắc ở các mốc</b>{" "}
+            <input className="input input-inline mono" style={{ width: 260 }} key={`s${(slots.hours || []).join(",")}`}
+              defaultValue={(slots.hours || []).join(", ")}
+              onBlur={(e) => onChange({ ...s, autoSlots: { ...slots, hours: parseHoursInput(e.target.value) } })} />
+            <small> — mỗi lệnh nhắc ở mốc đầu tiên SAU khi nến của nó đóng. Đồng/dầu đóng 11h thì nhắc cùng vàng lúc 12h; nến đóng lúc ngủ nhắc ở mốc sáng.</small>
+          </span>
+        </label>
       </div>
 
       <h4 className="rec-title" style={{ marginTop: 12 }}>Phiên giao dịch · giờ đóng nến hôm nay (giờ VN)</h4>

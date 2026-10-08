@@ -37,6 +37,22 @@ export const DEFAULT_SYMBOL_RULES = [
 // Giờ nghỉ: sau lần dời cuối lúc 0h tới 8h30 mới ngồi lại máy — nến đóng trong khoảng này dồn về 8h30.
 export const DEFAULT_AUTO_QUIET = { from: "00:30", to: "08:30" };
 
+// Chỉ nhắc ở vài mốc cố định trong ngày: mỗi lệnh được nhắc ở MỐC ĐẦU TIÊN sau khi nến của nó
+// đóng. Đồng/dầu đóng 11h-15h-19h-23h còn vàng/forex 12h-16h-20h-0h — gộp cả hai vào 12-16-20-0
+// thì một ngày chỉ ngồi vào máy 5 lần thay vì 9; dời SL trễ một tiếng sau khi nến đóng vẫn đúng.
+export const DEFAULT_AUTO_SLOTS = { enabled: false, hours: ["00:00", "08:30", "12:00", "16:00", "20:00"] };
+
+function toMin(hhmm) {
+  return +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
+}
+
+export function slotHours(settings) {
+  const sl = (settings && settings.autoSlots) || DEFAULT_AUTO_SLOTS;
+  if (!sl.enabled) return null;
+  const list = [...new Set((sl.hours || []).filter((h) => /^\d{2}:\d{2}$/.test(h)))].sort();
+  return list.length ? list : null;
+}
+
 // "H4" "4H" "h4" → 4; "D" "D1" "1D" → 24; "H1" → 1. Khung tuần/tháng hay phút lẻ thì null —
 // không tự tính, lệnh đó rơi về giờ gõ tay của lịch.
 export function tfHours(tf) {
@@ -186,6 +202,22 @@ export function sessionFor(settings, symbol) {
 export function tradeAutoHours(trade, settings, vnDate) {
   const h = tfHours(trade && trade.timeframe);
   if (!h) return null;
+  const slots = slotHours(settings);
+  if (slots) {
+    // Mốc S nhắc lệnh này nếu có nến đóng trong (mốc liền trước, S] — mốc đầu ngày lấy mốc cuối hôm qua.
+    const ses = sessionFor(settings, trade.symbol);
+    const prev = new Date(`${vnDate}T00:00:00Z`);
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    const closes = [
+      ...candleClosesVN(h, ses, prev.toISOString().slice(0, 10)).map((x) => toMin(x) - 1440),
+      ...candleClosesVN(h, ses, vnDate).map(toMin),
+    ];
+    const mins = slots.map(toMin);
+    return slots.filter((x, i) => {
+      const lo = i ? mins[i - 1] : mins[mins.length - 1] - 1440;
+      return closes.some((c) => c > lo && c <= mins[i]);
+    });
+  }
   const quiet = (settings && settings.autoQuiet) || DEFAULT_AUTO_QUIET;
   const wake = quiet.to || DEFAULT_AUTO_QUIET.to;
   const out = new Set();
