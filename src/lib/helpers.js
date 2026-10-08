@@ -1,5 +1,6 @@
 import { supabase } from "../supabaseClient.js";
 import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
+import { autoScheduleHours, DEFAULT_AUTO_QUIET, tfHours } from "./candles.js";
 
 // Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
 // để ở localStorage cho tức thì thay vì chờ ghi lên máy chủ mỗi lần đổi trang.
@@ -558,6 +559,8 @@ export function emptySlReminderSettings() {
     capitalPickReminder: emptyCapitalPickReminder(),
     taskDurations: emptyTaskDurations(),
     symbolWatchEnabled: false, symbolWatchThreadId: "",
+    // Giờ đóng nến tự tính (src/lib/candles.js): phiên tự đặt, mã → phiên, và giờ không nhắc.
+    sessions: [], symbolSessions: {}, autoQuiet: { ...DEFAULT_AUTO_QUIET },
   };
 }
 
@@ -1096,11 +1099,35 @@ export function openTradeCounter({ accounts, trades, mutedTrades } = {}) {
   // Lịch trỏ tới tài khoản đã xoá thì lấy tên đã lưu trong lịch, giống hàm gửi tin.
   // Truyền thêm lịch (và cả danh sách lịch) thì chỉ đếm lệnh thuộc đúng lịch đó — lịch theo khung
   // chỉ đếm lệnh khung đó, lịch chung thì trừ các khung đã có lịch riêng.
-  return (accountId, fallbackName, sched, list) => {
+  const tradesOf = (accountId, fallbackName, sched, list) => {
     const name = nameById[accountId] || fallbackName || "";
     const open = name ? byName[name] || [] : [];
-    return sched ? open.filter((t) => tradeInSchedule(t, sched, list)).length : open.length;
+    return sched ? open.filter((t) => tradeInSchedule(t, sched, list)) : open;
   };
+  const count = (accountId, fallbackName, sched, list) => tradesOf(accountId, fallbackName, sched, list).length;
+  // Lịch "tự tính giờ" cần chính các lệnh (mã + khung) chứ không chỉ số lượng.
+  count.trades = tradesOf;
+  return count;
+}
+
+// Ngày (YYYY-MM-DD) của một thứ trong TUẦN NÀY — timeline xếp theo thứ, còn giờ đóng nến tự tính
+// thì phụ thuộc ngày cụ thể (cuối tuần, ngày đổi giờ mùa).
+export function dateOfWeekdayThisWeek(day, ref) {
+  const i = WEEKDAY_CODES.indexOf(day);
+  return shiftDate(weekStart(ref || todayStr()), i < 0 ? 0 : i);
+}
+
+// Giờ của một lịch dời SL trong ngày cụ thể. Lịch thường: giờ gõ tay. Lịch tự tính: gộp giờ
+// đóng nến của các lệnh đang mở thuộc lịch. Không có danh sách lệnh (xuất feed Life Hub) thì
+// lịch theo khung vẫn tính được từ khung của lịch với phiên mặc định; lịch chung thì đành dùng giờ gõ tay.
+export function slScheduleHours(sched, settings, openTrades, date) {
+  if (!sched || !sched.auto) return sched ? sched.hours || [] : [];
+  const list = openTrades && typeof openTrades.trades === "function"
+    ? openTrades.trades(sched.accountId, sched.accountName, sched, (settings && settings.schedules) || [])
+    : null;
+  if (list) return autoScheduleHours(sched, settings, list, date);
+  if (sched.timeframe && tfHours(sched.timeframe)) return autoScheduleHours(sched, settings, [{ symbol: "", timeframe: sched.timeframe }], date);
+  return sched.hours || [];
 }
 
 // Một lịch dùng chung một danh sách giờ cho MỌI ngày đang bật, nhưng đời thật không đều
@@ -1138,7 +1165,7 @@ export function daysOfHour(x, hour) {
   return days.filter((d) => !skip.includes(skipKey(d, hour)));
 }
 
-function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip }) {
+function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip, fixedTime }) {
   const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
   const off = Array.isArray(skip) ? skip : [];
@@ -1151,6 +1178,8 @@ function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, min
     out.push({
       id: `${sourceId}_${h}`, kind, title, sub, start, minutes, enabled,
       source: { kind, key: sourceId, id, hour: h }, days,
+      // Giờ tự tính theo giờ đóng nến — không kéo/sửa giờ được, chỉ đổi thời lượng.
+      fixedTime: !!fixedTime,
     });
   });
 }
@@ -1169,8 +1198,8 @@ export function buildDayTimeline(day, { settings, watches, reminders, durations,
     const open = countOpen ? countOpen(s.accountId, s.accountName, s, st.schedules) : null;
     const name = `${s.accountName || ""}${s.timeframe ? ` · khung ${s.timeframe}` : ""}`;
     pushHours(out, {
-      hours: s.hours, activeDays: s.activeDays, day, kind: "sl",
-      title: "Dời SL",
+      hours: slScheduleHours(s, st, countOpen, dateOfWeekdayThisWeek(day)), activeDays: s.activeDays, day, kind: "sl",
+      title: s.auto ? "Dời SL (giờ đóng nến)" : "Dời SL", fixedTime: !!s.auto,
       sub: open === null ? name : `${name}${name ? " · " : ""}${open ? `${open} lệnh mở` : "không có lệnh mở"}`,
       minutes: mins("sl", s.minutes),
       enabled: !!st.enabled && !!s.enabled && open !== 0, sourceId: `sl_${slSchedKey(s)}`, id: slSchedKey(s),
@@ -1355,8 +1384,9 @@ export function mergeSetupCheckLog(server, prev, next) {
 export function timelineSources({ settings, watches, reminders, durations, openTrades }) {
   const st = settings || {};
   const out = [];
-  const add = (kind, id, key, name, hours, activeDays, enabled, override, skip) => {
+  const add = (kind, id, key, name, hours, activeDays, enabled, override, skip, auto) => {
     out.push({
+      auto: !!auto,
       key, kind, id, name, hours: hours || [], activeDays: activeDays || WEEKDAY_CODES,
       enabled, override: override === undefined || override === null ? "" : override,
       minutes: taskMinutes(durations, kind, override),
@@ -1368,7 +1398,7 @@ export function timelineSources({ settings, watches, reminders, durations, openT
   };
 
   const countOpen = typeof openTrades === "function" ? openTrades : null;
-  slEffectiveSchedules(st.schedules).forEach((x) => add("sl", slSchedKey(x), `sl_${slSchedKey(x)}`, `${x.accountName || "—"}${x.timeframe ? ` · khung ${x.timeframe}` : ""}`, x.hours, x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName, x, st.schedules) > 0), x.minutes, x.skip));
+  slEffectiveSchedules(st.schedules).forEach((x) => add("sl", slSchedKey(x), `sl_${slSchedKey(x)}`, `${x.accountName || "—"}${x.timeframe ? ` · khung ${x.timeframe}` : ""}${x.auto ? " · giờ đóng nến" : ""}`, slScheduleHours(x, st, countOpen, todayStr()), x.activeDays, !!st.enabled && !!x.enabled && (!countOpen || countOpen(x.accountId, x.accountName, x, st.schedules) > 0), x.minutes, x.skip, x.auto));
   (st.setupCheckSchedules || []).forEach((x) => add("setupCheck", x.accountId, `sc_${x.accountId}`, x.accountName || "—", x.hours, x.activeDays, !!st.setupCheckEnabled && !!x.enabled, x.minutes, x.skip));
   (watches || []).forEach((w) => add("symbolWatch", w.id, `w_${w.id}`, w.label || "Nhóm chưa đặt tên", w.hours, w.activeDays, !!st.symbolWatchEnabled && !!w.enabled, w.minutes, w.skip));
   if (st.incompleteReminder) add("report", "incomplete", "incomplete", "Nhắc điền nốt lệnh", [st.incompleteReminder.time], [st.incompleteReminder.weekday], !!st.incompleteReminder.enabled, st.incompleteReminder.minutes);
@@ -1414,7 +1444,11 @@ export function applyTaskPatch({ settings, watches, reminders }, source, patch) 
   const mapList = (list, match) => (list || []).map((x) => (match(x) ? patchItem(x, source, patch) : x));
 
   if (source.kind === "sl") {
-    return { settings: { ...st, schedules: mapList(st.schedules, (x) => slSchedKey(x) === source.id) }, changed: "settings" };
+    // Lịch tự tính giờ: giờ là giờ đóng nến, không phải thứ dời được — chỉ nhận đổi thời lượng/ô bỏ.
+    const auto = (st.schedules || []).some((x) => slSchedKey(x) === source.id && x.auto);
+    const p = auto && patch.hour ? { ...patch, hour: undefined } : patch;
+    const mapSl = (list) => (list || []).map((x) => (slSchedKey(x) === source.id ? patchItem(x, source, p) : x));
+    return { settings: { ...st, schedules: mapSl(st.schedules) }, changed: "settings" };
   }
   if (source.kind === "setupCheck") {
     return { settings: { ...st, setupCheckSchedules: mapList(st.setupCheckSchedules, (x) => x.accountId === source.id) }, changed: "settings" };

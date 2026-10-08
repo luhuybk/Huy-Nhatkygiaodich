@@ -74,6 +74,107 @@ function minutesDiff(a: string, b: string) {
   return Math.abs(ah * 60 + am - (bh * 60 + bm));
 }
 
+// ---- Giờ đóng nến tự tính — BẢN CHÉP của src/lib/candles.js, sửa một bên phải sửa bên kia ----
+// Nến H4/H8/D xếp từ giờ mở phiên của từng mã: forex mở 17h New York, kim loại 18h New York và
+// nghỉ 1 tiếng. Tính bằng múi giờ New York thật nên tự đổi theo giờ mùa hè/mùa đông.
+type CandleSession = { id?: string; tz?: string; open?: string; length?: number; week?: string };
+const NY_TZ = "America/New_York";
+const SESSION_PRESETS: CandleSession[] = [
+  { id: "fx", tz: NY_TZ, open: "17:00", length: 24, week: "fx" },
+  { id: "cme", tz: NY_TZ, open: "18:00", length: 23, week: "fx" },
+];
+const DEFAULT_AUTO_QUIET = { from: "23:00", to: "07:00" };
+
+function tfHours(tf: unknown) {
+  const s = String(tf || "").trim().toUpperCase();
+  const m = /^H(\d{1,2})$/.exec(s) || /^(\d{1,2})H$/.exec(s);
+  if (m) { const n = Number(m[1]); return n >= 1 && n <= 24 ? n : null; }
+  if (/^(D|D1|1D)$/.test(s)) return 24;
+  return null;
+}
+
+const candleDtf = new Map<string, Intl.DateTimeFormat>();
+function partsIn(tz: string, ms: number) {
+  if (!candleDtf.has(tz)) {
+    candleDtf.set(tz, new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", weekday: "short",
+    }));
+  }
+  const p = Object.fromEntries(candleDtf.get(tz)!.formatToParts(new Date(ms)).map((x) => [x.type, x.value])) as Record<string, string>;
+  const hour = p.hour === "24" ? "00" : p.hour;
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${hour}:${p.minute}`, weekday: p.weekday };
+}
+
+function offsetMin(tz: string, ms: number) {
+  const p = partsIn(tz, ms);
+  const asUtc = Date.UTC(+p.date.slice(0, 4), +p.date.slice(5, 7) - 1, +p.date.slice(8, 10), +p.time.slice(0, 2), +p.time.slice(3, 5));
+  return Math.round((asUtc - Math.floor(ms / 60000) * 60000) / 60000);
+}
+
+function wallToMs(tz: string, dateStr: string, hhmm: string) {
+  const base = Date.UTC(+dateStr.slice(0, 4), +dateStr.slice(5, 7) - 1, +dateStr.slice(8, 10), +hhmm.slice(0, 2), +hhmm.slice(3, 5));
+  let ms = base - offsetMin(tz, base) * 60000;
+  ms = base - offsetMin(tz, ms) * 60000;
+  return ms;
+}
+
+const FX_WEEK_START = new Set(["Sun", "Mon", "Tue", "Wed", "Thu"]);
+
+function candleClosesVN(hours: number, session: CandleSession | undefined, vnDate: string) {
+  if (!hours || !session || !/^\d{2}:\d{2}$/.test(String(session.open || ""))) return [] as string[];
+  const length = Math.min(24, Math.max(1, Number(session.length) || 24));
+  const tz = session.tz || NY_TZ;
+  const out = new Set<string>();
+  for (let k = -2; k <= 1; k += 1) {
+    const day = shiftDateStr(vnDate, k);
+    const start = wallToMs(tz, day, session.open!);
+    if (session.week !== "all" && !FX_WEEK_START.has(partsIn(tz, start).weekday)) continue;
+    const end = start + length * 3600000;
+    const marks: number[] = [];
+    for (let t = start + hours * 3600000; t < end - 60000; t += hours * 3600000) marks.push(t);
+    marks.push(end);
+    marks.forEach((t) => {
+      const p = partsIn(VN_TZ, t);
+      if (p.date === vnDate) out.add(p.time);
+    });
+  }
+  return [...out].sort();
+}
+
+function inQuiet(hhmm: string, quiet?: { from?: string; to?: string }) {
+  const q = quiet || DEFAULT_AUTO_QUIET;
+  const from = q.from || "";
+  const to = q.to || "";
+  if (!from || !to || from === to) return false;
+  return from < to ? hhmm >= from && hhmm < to : hhmm >= from || hhmm < to;
+}
+
+type CandleSettings = { sessions?: CandleSession[]; symbolSessions?: Record<string, string>; defaultSession?: string; autoQuiet?: { from?: string; to?: string } };
+function sessionFor(settings: CandleSettings, symbol: unknown) {
+  const list = [...SESSION_PRESETS, ...((settings.sessions || []).filter((x) => x && x.id))];
+  const id = (settings.symbolSessions || {})[String(symbol || "").trim().toUpperCase()] || settings.defaultSession || "fx";
+  return list.find((x) => x.id === id) || list[0];
+}
+
+// Nến đóng trong giờ ngủ dồn về giờ thức dậy (cuối khoảng ngủ), kể cả nến đóng sau giờ đi ngủ hôm qua.
+function tradeAutoHours(trade: Record<string, unknown>, settings: CandleSettings, vnDate: string) {
+  const h = tfHours(trade.timeframe);
+  if (!h) return null;
+  const quiet = settings.autoQuiet || DEFAULT_AUTO_QUIET;
+  const wake = quiet.to || DEFAULT_AUTO_QUIET.to;
+  const out = new Set<string>();
+  candleClosesVN(h, sessionFor(settings, trade.symbol), vnDate).forEach((x) => {
+    if (!inQuiet(x, quiet)) { out.add(x); return; }
+    if (x < wake) out.add(wake);
+  });
+  if ((quiet.from || "") > wake) {
+    const y = shiftDateStr(vnDate, -1);
+    if (candleClosesVN(h, sessionFor(settings, trade.symbol), y).some((x) => x >= (quiet.from || ""))) out.add(wake);
+  }
+  return [...out].sort();
+}
+
 type WatchSymbol = { id?: string; name?: string; done?: boolean };
 type WatchGroup = {
   id?: string; label?: string; note?: string; enabled?: boolean; symbols?: WatchSymbol[];
@@ -378,7 +479,11 @@ Deno.serve(async () => {
       enabled?: boolean;
       telegramBotToken?: string;
       telegramChatId?: string;
-      schedules?: { accountId: string; accountName?: string; timeframe?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
+      schedules?: { accountId: string; accountName?: string; timeframe?: string; enabled?: boolean; auto?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
+      sessions?: CandleSession[];
+      symbolSessions?: Record<string, string>;
+      defaultSession?: string;
+      autoQuiet?: { from?: string; to?: string };
       setupCheckEnabled?: boolean;
       setupCheckSchedules?: { accountId: string; accountName?: string; enabled?: boolean; hours?: string[]; threadId?: string; activeDays?: string[]; skip?: string[] }[];
       incompleteReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
@@ -406,7 +511,8 @@ Deno.serve(async () => {
       if (s.timeframe) return tf === s.timeframe;
       return !allSchedules.some((x) => x && x.timeframe && x.accountId === s.accountId && x.timeframe === tf);
     };
-    const schedules = settings.enabled ? effective.filter((s) => s && s.enabled && (s.hours || []).length) : [];
+    // Lịch tự tính giờ (auto) không cần giờ gõ tay — giờ là giờ đóng nến của từng lệnh.
+    const schedules = settings.enabled ? effective.filter((s) => s && s.enabled && ((s.hours || []).length || s.auto)) : [];
     const setupCheckSchedules = settings.setupCheckEnabled ? (settings.setupCheckSchedules || []).filter((s) => s.enabled && (s.hours || []).length) : [];
 
     // Bỏ qua tài khoản có activeDays nhưng hôm nay không nằm trong đó (VD: Forex nghỉ T7/CN).
@@ -421,7 +527,8 @@ Deno.serve(async () => {
       return (s.hours || []).filter((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN && !isSkipped(s, h));
     };
     const isDueNow = (s: { activeDays?: string[]; hours?: string[]; skip?: string[] }) => hoursDueNow(s).length > 0;
-    const dueSchedules = schedules.filter(isDueNow);
+    // Lịch tự tính thì chưa biết có đến giờ hay không cho tới khi xem từng lệnh (mã + khung).
+    const dueSchedules = schedules.filter((s) => s.auto || isDueNow(s));
     const dueSetupChecks = setupCheckSchedules.filter(isDueNow);
 
     const [{ data: resourcesRow }, { data: tradesRow }, { data: logRow }, { data: remindersRow }, { data: watchesRow }, { data: mutedRow }, { data: checkLogRow }, { data: doneRow }] = await Promise.all([
@@ -474,10 +581,26 @@ Deno.serve(async () => {
       const accountName = account ? account.name : sched.accountName;
       if (!accountName) continue;
 
-      const openTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id) && inSchedule(t, sched));
-      if (!openTrades.length) continue;
+      const scheduleTrades = trades.filter((t) => t.account === accountName && t.entryDate && !t.exitDate && t.id && !mutedIds.has(t.id) && inSchedule(t, sched));
+      if (!scheduleTrades.length) continue;
 
-      const matchedHour = hoursDueNow(sched)[0];
+      // Lịch thường: cả lịch đến giờ thì nhắc mọi lệnh. Lịch tự tính: chỉ những lệnh mà nến khung
+      // của nó vừa đóng (theo phiên của mã) — H4 vàng và H4 EURUSD có thể lệch nhau một tiếng.
+      let matchedHour = "";
+      let openTrades = scheduleTrades;
+      if (sched.auto) {
+        const activeDays = Array.isArray(sched.activeDays) ? sched.activeDays : null;
+        if (activeDays && !activeDays.includes(todayWeekdayCode)) continue;
+        openTrades = scheduleTrades.filter((t) => {
+          const hrs = tradeAutoHours(t, settings, today) || sched.hours || [];
+          const hit = hrs.find((h) => minutesDiff(h, currentHHMM) <= MATCH_TOLERANCE_MIN && !isSkipped(sched, h));
+          if (hit && !matchedHour) matchedHour = hit;
+          return !!hit;
+        });
+        if (!openTrades.length || !matchedHour) continue;
+      } else {
+        matchedHour = hoursDueNow(sched)[0];
+      }
       if (isTaskDone(`sl_${schedKey(sched)}`, matchedHour)) continue;
 
       // Một tin cho cả tài khoản, dạng bảng: mỗi lệnh một dòng [mã] [Đã dời] [Kết thúc]. Nút mang id
@@ -500,7 +623,7 @@ Deno.serve(async () => {
       };
       const list = shown.map((t) => labelOf(t)).join(" · ");
       const more = openTrades.length > shown.length ? `\n…và ${openTrades.length - shown.length} lệnh nữa — xem trên web.` : "";
-      const text = buildMessage("⏰", "DỜI SL", "🔴", `${openTrades.length} lệnh đang mở`, sched.timeframe ? `${accountName} · khung ${sched.timeframe}` : accountName, `${list}${more}`);
+      const text = buildMessage("⏰", "DỜI SL", "🔴", sched.auto ? `${openTrades.length} lệnh · ${matchedHour === ((settings.autoQuiet || DEFAULT_AUTO_QUIET).to || DEFAULT_AUTO_QUIET.to) ? "nến đóng trong đêm" : `nến đóng ${matchedHour}`}` : `${openTrades.length} lệnh đang mở`, sched.timeframe ? `${accountName} · khung ${sched.timeframe}` : accountName, `${list}${more}`);
       const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
         inline_keyboard: shown.map((t) => [
           noopButton(labelOf(t)),

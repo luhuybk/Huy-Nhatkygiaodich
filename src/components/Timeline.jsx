@@ -117,8 +117,8 @@ function DayTrack({ items, conflicts, onMove }) {
                   background: x.enabled ? `${k.color}33` : "transparent",
                   borderColor: x.enabled ? k.color : "var(--border)",
                 }}
-                onPointerDown={(e) => startDrag(e, x)}
-                title={`Kéo ngang để dời giờ — đổi cho cả ${(x.days || []).join(", ")}`}>
+                onPointerDown={(e) => { if (!x.fixedTime) startDrag(e, x); }}
+                title={x.fixedTime ? "Giờ đóng nến tự tính — đổi ở Nhắc dời SL" : `Kéo ngang để dời giờ — đổi cho cả ${(x.days || []).join(", ")}`}>
                 <GripHorizontal size={11} className="tl-block-grip" />
                 <span className="tl-block-label">
                   {minutesToHhmm(start)} · {x.title}{x.sub ? ` · ${x.sub}` : ""}
@@ -485,8 +485,8 @@ export function TimelinePanel({
               const clash = conflicts.has(x.id);
               return (
                 <div key={x.id} className={`tl-item ${x.enabled ? "" : "tl-item-off"}`}>
-                  <input type="time" className="input tl-item-time" value={x.source.hour}
-                    title={`Đổi giờ — áp dụng cho ${(x.days || []).join(", ")}`}
+                  <input type="time" className="input tl-item-time" value={x.source.hour} disabled={x.fixedTime}
+                    title={x.fixedTime ? "Giờ đóng nến tự tính theo khung và phiên của mã — không sửa tay" : `Đổi giờ — áp dụng cho ${(x.days || []).join(", ")}`}
                     onChange={(e) => moveTask(x, e.target.value)} />
                   <span className="tl-item-dot" style={{ background: x.enabled ? k.color : "var(--border)" }} />
                   <span className="tl-item-title">{x.title}</span>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard } from "./ui.jsx";
+import { AutoHoursPreview, CandleSessionsPanel } from "./CandleSessions.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
@@ -13,7 +14,7 @@ const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "T
 
 // Giờ riêng theo khung (chỉ lịch dời SL dùng). Chỉ gợi ý những khung tài khoản này đã từng
 // trade, theo thứ tự khung ở tab Tài nguyên — tài khoản chỉ đánh một khung thì khỏi bận tâm.
-function TimeframeSchedules({ account, base, schedules, resources, trades, onTf }) {
+function TimeframeSchedules({ account, base, schedules, resources, trades, onTf, settings }) {
   const own = schedules.filter((sc) => sc.timeframe && sc.accountId === account.id);
   const order = resources.timeframes || [];
   const used = [...new Set((trades || []).filter((t) => t && t.account === account.name && t.timeframe).map((t) => t.timeframe))]
@@ -32,9 +33,16 @@ function TimeframeSchedules({ account, base, schedules, resources, trades, onTf 
               <span>Khung <b>{ts.timeframe}</b></span>
               <small className="sl-tf-open">{n ? `${n} lệnh mở` : "không có lệnh mở"}</small>
             </label>
-            <input className="input input-inline" style={{ flex: 1 }} key={(ts.hours || []).join(",")}
-              defaultValue={(ts.hours || []).join(", ")} placeholder="Giờ dời SL cho khung này, VD 7, 15, 23"
-              onBlur={(e) => onTf.update(account, ts.timeframe, { hours: parseHoursInput(e.target.value) })} />
+            <label className="sl-auto-toggle" title="Giờ nhắc = giờ đóng nến của khung này theo phiên của từng mã">
+              <input type="checkbox" checked={!!ts.auto} onChange={(e) => onTf.update(account, ts.timeframe, { auto: e.target.checked })} /> Tự tính
+            </label>
+            {ts.auto ? (
+              <span className="field-hint sl-tf-auto">theo giờ đóng nến {ts.timeframe} của từng mã</span>
+            ) : (
+              <input className="input input-inline" style={{ flex: 1 }} key={(ts.hours || []).join(",")}
+                defaultValue={(ts.hours || []).join(", ")} placeholder="Giờ dời SL cho khung này, VD 7, 15, 23"
+                onBlur={(e) => onTf.update(account, ts.timeframe, { hours: parseHoursInput(e.target.value) })} />
+            )}
             <ConfirmButton onConfirm={() => onTf.remove(account, ts.timeframe)} />
           </div>
         );
@@ -59,7 +67,7 @@ function TimeframeSchedules({ account, base, schedules, resources, trades, onTf 
   );
 }
 
-function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trades, onTf }) {
+function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trades, onTf, settings }) {
   const scheduleFor = (accountId) => schedules.find((sc) => sc.accountId === accountId && !sc.timeframe);
   const toggleDay = (account, sched, day) => {
     const days = sched.activeDays && sched.activeDays.length ? sched.activeDays : [...WEEKDAY_CODES];
@@ -87,7 +95,8 @@ function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trad
                 className="input input-inline"
                 style={{ flex: 1 }}
                 defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
-                placeholder="09:00, 12:00, 15:00, 18:00, 21:00"
+                placeholder={sched.auto ? "Giờ cho lệnh khung W / chưa ghi khung" : "09:00, 12:00, 15:00, 18:00, 21:00"}
+                title={sched.auto ? "Chỉ dùng cho lệnh mà khung không tự tính được (W, M15, chưa ghi khung)" : undefined}
                 onBlur={(e) => onUpdate(acc, { hours: parseHoursInput(e.target.value) })}
               />
               <input
@@ -109,7 +118,16 @@ function AccountScheduleCards({ schedules, resources, onUpdate, onSendTest, trad
                 </label>
               ))}
             </div>
-            {onTf ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} /> : null}
+            {onTf ? (
+              <label className={`sl-auto-switch ${sched.auto ? "is-on" : ""}`}>
+                <input type="checkbox" checked={!!sched.auto} onChange={(e) => onUpdate(acc, { auto: e.target.checked })} />
+                <span><b>Tự tính theo giờ đóng nến</b> — mỗi lệnh nhắc đúng lúc nến khung của nó (H4, H8, D…) đóng, theo phiên của mã. Ô giờ bên trên chỉ còn dùng cho lệnh khung W hoặc chưa ghi khung.</span>
+              </label>
+            ) : null}
+            {onTf && sched.auto ? (
+              <AutoHoursPreview settings={settings} trades={(trades || []).filter((t) => t && t.account === acc.name && t.entryDate && !t.exitDate && tradeInSchedule(t, sched, schedules))} />
+            ) : null}
+            {onTf ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} settings={settings} /> : null}
           </div>
         );
       })}
@@ -161,6 +179,12 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
     update: (account, tf, patch) => onChange({ ...s, schedules: s.schedules.map((sc) => (isTf(sc, account, tf) ? { ...sc, ...patch } : sc)) }),
     remove: (account, tf) => onChange({ ...s, schedules: s.schedules.filter((sc) => !isTf(sc, account, tf)) }),
   };
+
+  // Tài khoản có lịch tự tính (chung hoặc theo khung) — chỉ mã của chúng cần gán phiên.
+  const autoAccounts = useMemo(() => {
+    const ids = new Set((s.schedules || []).filter((sc) => sc && sc.auto).map((sc) => sc.accountId));
+    return (resources.accounts || []).filter((a) => ids.has(a.id)).map((a) => a.name);
+  }, [s.schedules, resources.accounts]);
 
   const muted = mutedTrades || [];
   const fill = s.mutedFillReminder || emptyMutedFillReminder();
@@ -214,7 +238,18 @@ export function SlReminderPanel({ settings, resources, onChange, trades, mutedTr
         Tài khoản trade nhiều khung (VD hàng hóa đánh cả D, H8, H3) thì bấm <b>+ khung</b> trong thẻ tài khoản để đặt giờ dời SL riêng cho khung đó —
         mỗi giờ nhắc chỉ hiện đúng các lệnh tới lúc cần dời.
       </p>
-      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} trades={trades} onTf={onTf} />
+      <AccountScheduleCards schedules={s.schedules} resources={resources} onUpdate={updateSchedule} onSendTest={(threadId) => sendTest(threadId)} trades={trades} onTf={onTf} settings={s} />
+
+      {autoAccounts.length ? (
+        <>
+          <h3 className="block-title">Giờ đóng nến</h3>
+          <p className="field-hint" style={{ marginBottom: 12 }}>
+            Nến H4/H8/D xếp từ giờ <b>mở phiên</b> của từng mã chứ không phải từ 0h: forex mở 17h New York, vàng/bạc/dầu mở 18h New York
+            nên cùng khung H4 mà đóng lệch nhau một tiếng. Giờ New York đổi mùa vào tháng 3 và tháng 11 — mọi mốc tự nhích theo, bạn không phải sửa gì.
+          </p>
+          <CandleSessionsPanel settings={s} onChange={onChange} trades={trades} accountNames={autoAccounts} />
+        </>
+      ) : null}
 
       <h3 className="block-title">Lệnh đang tắt nhắc</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
