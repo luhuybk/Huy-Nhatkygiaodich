@@ -1169,7 +1169,7 @@ export function toggleSkip(list, day, hour, off) {
 // Giờ hoặc thứ bị bỏ ở nơi khác thì ô lẻ trỏ tới nó thành rác — dọn để nó không âm thầm
 // sống lại khi bạn thêm lại đúng mốc giờ đó.
 export function pruneSkip(list, hours, activeDays) {
-  const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
+  const days = Array.isArray(activeDays) ? activeDays : WEEKDAY_CODES;
   return (Array.isArray(list) ? list : []).filter((k) => {
     const [d, h] = String(k).split("@");
     return days.includes(d) && (hours || []).includes(h);
@@ -1178,13 +1178,13 @@ export function pruneSkip(list, hours, activeDays) {
 
 // Những thứ mà một mốc giờ thật sự chạy — đã trừ các ô lẻ đã bỏ.
 export function daysOfHour(x, hour) {
-  const days = Array.isArray(x && x.activeDays) && x.activeDays.length ? x.activeDays : WEEKDAY_CODES;
+  const days = Array.isArray(x && x.activeDays) ? x.activeDays : WEEKDAY_CODES;
   const skip = skipListOf(x);
   return days.filter((d) => !skip.includes(skipKey(d, hour)));
 }
 
 function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, minutes, sourceId, id, skip, fixedTime, detail }) {
-  const days = Array.isArray(activeDays) && activeDays.length ? activeDays : WEEKDAY_CODES;
+  const days = Array.isArray(activeDays) ? activeDays : WEEKDAY_CODES;
   if (!days.includes(day)) return;
   const off = Array.isArray(skip) ? skip : [];
   (hours || []).forEach((h) => {
@@ -1204,6 +1204,7 @@ function pushHours(out, { hours, activeDays, day, kind, title, sub, enabled, min
   });
 }
 
+// activeDays: thiếu hẳn (dữ liệu cũ) = mọi ngày; mảng rỗng = bỏ hết thứ, đúng như bot hiểu.
 // Trả về mọi việc của một thứ trong tuần, kể cả việc đang tắt (để hiện mờ) —
 // bên dùng tự lọc theo `enabled` khi cần cộng tổng.
 export function buildDayTimeline(day, { settings, watches, reminders, durations, openTrades }) {

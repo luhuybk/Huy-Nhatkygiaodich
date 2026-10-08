@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Pencil, Check, Clock, Settings2,
+  CalendarDays, Clock, Settings2,
 } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
@@ -28,8 +28,10 @@ function candleModeText(settings) {
     : "nhắc ngay khi nến đóng (trừ giờ nghỉ)";
 }
 
+// Thiếu hẳn activeDays (dữ liệu cũ) = mọi ngày. Bỏ tick hết thì là KHÔNG ngày nào — bot cũng hiểu vậy,
+// nên phải hiện đúng là tắt hết chứ không được hiện lại thành bật hết.
 function DayChips({ days, onToggle }) {
-  const active = days && days.length ? days : WEEKDAY_CODES;
+  const active = Array.isArray(days) ? days : WEEKDAY_CODES;
   return (
     <div className="day-chips">
       {WEEKDAY_CODES.map((d) => (
@@ -40,7 +42,7 @@ function DayChips({ days, onToggle }) {
 }
 
 const toggleIn = (list, day) => {
-  const days = list && list.length ? list : [...WEEKDAY_CODES];
+  const days = Array.isArray(list) ? list : [...WEEKDAY_CODES];
   return days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
 };
 
@@ -123,7 +125,7 @@ function AccountScheduleCards({ schedules, resources, onUpdate, trades, onTf, se
             {auto && sched.enabled ? (
               <AutoHoursPreview settings={settings} trades={(trades || []).filter((t) => t && t.account === acc.name && t.entryDate && !t.exitDate && tradeInSchedule(t, sched, schedules))} />
             ) : null}
-            {onTf && sched.enabled ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} /> : null}
+            {onTf ? <TimeframeSchedules account={acc} base={sched} schedules={schedules} resources={resources} trades={trades} onTf={onTf} /> : null}
           </div>
         );
       })}
@@ -705,11 +707,13 @@ export function PlansPanel({
 // ───────────────────────── Tab Cài đặt ─────────────────────────
 
 function TopicInput({ value, onSave, onTest }) {
+  const ref = useRef(null);
   return (
     <span className="topic-cell">
-      <input className="input input-inline mono" key={value || ""} defaultValue={value || ""} placeholder="chat chính"
+      <input ref={ref} className="input input-inline mono" key={value || ""} defaultValue={value || ""} placeholder="chat chính"
         onBlur={(e) => { const v = e.target.value.trim(); if (v !== (value || "")) onSave(v); }} />
-      <button type="button" className="row-btn" title="Gửi thử vào topic này" onClick={() => onTest(value)}><Send size={12} /></button>
+      {/* Đọc thẳng ô nhập: vừa gõ xong bấm gửi thử thì giá trị mới chưa kịp lưu vào props. */}
+      <button type="button" className="row-btn" title="Gửi thử vào topic này" onClick={() => onTest(ref.current ? ref.current.value.trim() : value)}><Send size={12} /></button>
     </span>
   );
 }

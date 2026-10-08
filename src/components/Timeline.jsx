@@ -5,7 +5,7 @@ import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
   buildDayTimeline, buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes, openTradeCounter,
   weekdayCodeFromNumber, todayChecklist, setTaskDone, markSetupCheckDone, todayStr,
-  skipKey, toggleSkip, daysOfHour, WEEKDAY_CODES,
+  skipKey, toggleSkip, daysOfHour,
 } from "../lib/helpers.js";
 
 // Trục ngang luôn dừng ở mốc giờ tròn, và luôn rộng ít nhất 4 tiếng để một ngày
@@ -278,7 +278,7 @@ const WEEKDAY_FULL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5
 // Bảng giờ × thứ của một lịch. Bỏ một ô là bỏ đúng một mốc của đúng một thứ — chứ không
 // phải tắt cả mốc giờ đó ở mọi ngày, cũng không phải tắt cả ngày hôm đó.
 function SkipGrid({ src, onChange }) {
-  const days = src.activeDays.length ? src.activeDays : WEEKDAY_CODES;
+  const days = src.activeDays;
   return (
     <div className="tl-skip">
       <div className="tl-skip-row">
@@ -317,7 +317,7 @@ function SourceRow({ src, onMinutes, onSkip }) {
       <div className={`tl-src ${src.enabled ? "" : "tl-src-off"}`}>
         <span className="tl-src-name">{src.name}</span>
         <span className="field-hint tl-src-meta" style={{ margin: 0 }}>
-          {src.hours.length ? src.hours.join(", ") : "chưa đặt giờ"} · {src.activeDays.join(" ")}
+          {src.hours.length ? src.hours.join(", ") : "chưa đặt giờ"} · {src.activeDays.length ? src.activeDays.join(" ") : "không ngày nào"}
           {skipped ? <b className="tl-src-skip"> · bỏ {skipped} ô</b> : null}
         </span>
         {src.canSkip && src.hours.length ? (
