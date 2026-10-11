@@ -3,7 +3,7 @@ import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Im
 import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
-import { parseItem } from "../lib/listContinue.js";
+import { isRuleLine, parseItem } from "../lib/listContinue.js";
 
 // State sống qua lúc component bị gỡ (rời trang sang form sửa lệnh rồi quay lại) nhưng mất khi
 // tải lại trang. Dùng cho file đối chiếu đã nạp: không lưu đi đâu, chỉ khỏi phải nạp lại giữa chừng.
@@ -587,11 +587,17 @@ export function ChartLegend({ items }) {
 
 // `prose` cho các ô bạn gõ thành đoạn: nhận xét, lý do vào lệnh, cảm nghĩ. Kiểu một dòng
 // Ghi chú có danh sách "1." / "•" / "-": mỗi mục một hàng, dòng dài tự canh thẳng dưới chữ (không chạy
-// về sát mép), mục con lùi đúng cấp. Không có danh sách thì trả nguyên chữ — chỗ đang hiện gì vẫn y vậy.
-export function NoteText({ text }) {
+// về sát mép), mục con lùi đúng cấp; "---" thành đường kẻ. Không có gì như vậy thì trả nguyên chữ —
+// chỗ đang hiện gì vẫn y vậy. Có `onChange` thì ô tích ☐/☑ bấm được và lưu luôn.
+export function NoteText({ text, onChange }) {
   const s = text === null || text === undefined ? "" : String(text);
   const lines = s.split("\n");
-  if (!lines.some((l) => parseItem(l))) return s;
+  if (!lines.some((l) => parseItem(l) || isRuleLine(l))) return s;
+  const toggle = (k, it) => {
+    const next = [...lines];
+    next[k] = next[k].replace(/[☐☑]/, it.mark === "☑" ? "☐" : "☑");
+    onChange(next.join("\n"));
+  };
   const out = [];
   let stack = [];
   let level = -1; // cấp của mục gần nhất; -1 = đang ngoài danh sách
@@ -603,13 +609,22 @@ export function NoteText({ text }) {
       while (stack.length && stack[stack.length - 1] > d) stack.pop();
       if (!stack.length || stack[stack.length - 1] < d) stack.push(d);
       level = stack.length - 1;
+      const check = it.mark === "☐" || it.mark === "☑";
       const mark = it.num !== null ? `${it.num}${it.sep}` : it.mark === "*" ? "•" : it.mark;
       out.push(
-        <span key={k} className="nt-li" style={{ "--lvl": level }}>
-          <span className={`nt-mark ${it.num === null ? "nt-dot" : ""}`}>{mark}</span>
+        <span key={k} className={`nt-li ${it.mark === "☑" ? "nt-done" : ""}`} style={{ "--lvl": level }}>
+          {check && onChange ? (
+            <button type="button" className="nt-mark nt-check" title={it.mark === "☑" ? "Bỏ tích" : "Tích xong"}
+              onClick={(e) => { e.stopPropagation(); toggle(k, it); }}>{mark}</button>
+          ) : (
+            <span className={`nt-mark ${it.num === null ? "nt-dot" : ""} ${check ? "nt-check" : ""}`}>{mark}</span>
+          )}
           <span className="nt-body">{it.text}</span>
         </span>
       );
+    } else if (isRuleLine(line)) {
+      level = -1;
+      out.push(<span key={k} className="nt-hr" role="separator" />);
     } else if (level >= 0 && /^\s+\S/.test(line)) {
       out.push(<span key={k} className="nt-cont" style={{ "--lvl": level }}>{line.trim()}</span>);
     } else {
@@ -622,13 +637,13 @@ export function NoteText({ text }) {
 
 // canh phải + font mono là dành cho SỐ — với văn xuôi nó nuốt luôn dấu xuống dòng, ép chữ
 // vào nửa bề rộng và đọc như bảng tính. Ô trống vẫn về kiểu một dòng cho gọn.
-export function DetailRow({ label, value, tone, prose }) {
+export function DetailRow({ label, value, tone, prose, onChange }) {
   const empty = value === "" || value === null || value === undefined;
   if (prose && !empty) {
     return (
       <div className="detail-row detail-row-prose">
         <span>{label}</span>
-        <span className={`detail-prose ${tone || ""}`}>{typeof value === "string" ? <NoteText text={value} /> : value}</span>
+        <span className={`detail-prose ${tone || ""}`}>{typeof value === "string" ? <NoteText text={value} onChange={onChange} /> : value}</span>
       </div>
     );
   }

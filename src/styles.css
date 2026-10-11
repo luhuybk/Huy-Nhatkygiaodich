@@ -1921,3 +1921,15 @@ body.printing-trades { overflow: hidden; }
 /* .detail-row span:first-child / :last-child (canh phải, chữ mờ) là cho nhãn–giá trị, đừng để lan vào danh sách. */
 .detail-row span.nt-line, .detail-row span.nt-cont, .detail-row .nt-li span.nt-body { text-align: left; color: inherit; flex-shrink: 1; }
 .detail-row .nt-li span.nt-mark { text-align: right; }
+
+/* Ô tích trong ghi chú và đường kẻ chia đoạn */
+.nt-check { font-size: 1.05em; line-height: 1; color: var(--accent); }
+button.nt-check { background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: var(--accent); }
+button.nt-check:hover { filter: brightness(1.25); }
+.nt-done .nt-body { text-decoration: line-through; opacity: .6; }
+.nt-hr { display: block; height: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+.detail-row .nt-li button.nt-mark { text-align: right; }
+.list-fix-sample { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.list-fix-sample pre { margin: 0; padding: 8px; font-size: 11.5px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 6px; max-height: 160px; overflow: auto; }
+.list-fix-sample pre:last-child { border: 1px solid rgba(var(--accent-rgb), .4); }
+@media (max-width: 600px) { .list-fix-sample { grid-template-columns: 1fr; } }

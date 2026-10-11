@@ -1,11 +1,28 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Download, Upload, Save } from "lucide-react";
 import { ACCENT_PRESETS } from "../lib/constants.js";
 import { BACKUP_KEEP } from "../lib/helpers.js";
 import { DangerConfirmButton, Field, StatCard } from "./ui.jsx";
+import { normalizeListsDeep } from "../lib/listContinue.js";
 
 export function SettingsSection({ trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, tradingPlans, capitalPlan, skills, journalFilterPresets, principles, setupLibrary, setupErrors, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, uiSettings, onUiSettingsChange, slReminderSettings, symbolWatches, setupCheckLog, backups, onRestoreBackup, onBackupNow, inlineImageCount, imageMigration, onMigrateImages, onImportAll, onReset }) {
   const [msg, setMsg] = useState("");
+  const [fixMsg, setFixMsg] = useState("");
+
+  // Ghi chú cũ gõ "*" sát lề → đổi sang "•" và lùi vào như kiểu gõ mới. Tính sẵn để xem trước.
+  const listFix = useMemo(() => {
+    const acc = { lines: 0, fields: 0, samples: [] };
+    const data = { trades, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, tradingPlans, skills, setupLibrary, missedSetups, skippedSetups, setupVariants };
+    const changed = {};
+    Object.entries(data).forEach(([k, v]) => { const next = normalizeListsDeep(v, acc); if (next !== v) changed[k] = next; });
+    return { ...acc, changed };
+  }, [trades, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, tradingPlans, skills, setupLibrary, missedSetups, skippedSetups, setupVariants]);
+  const runListFix = async () => {
+    const { lines, fields } = listFix;
+    await onBackupNow(); // chụp lại trước để còn đường lùi
+    onImportAll(listFix.changed);
+    setFixMsg(`Đã đổi ${lines} dòng trong ${fields} ghi chú. Có bản sao lưu ngay trước khi đổi ở mục Sao lưu tự động.`);
+  };
 
   const doExport = () => {
     const payload = { trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, tradingPlans, capitalPlan, skills, journalFilterPresets, principles, setupLibrary, setupErrors, uiSettings, missedSetups, skippedSetups, setupVariants, reminders, capitalAccounts, capitalEntries, capitalFlows, slReminderSettings, symbolWatches, setupCheckLog, exportedAt: new Date().toISOString() };
@@ -118,6 +135,28 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
           ))}
         </div>
       )}
+
+      <h3 className="block-title">Danh sách trong ghi chú cũ</h3>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Đổi các dòng <b>*</b> thành <b>•</b> và lùi các danh sách đang sát lề vào 2 dấu cách — giống kiểu gõ mới. Chữ thường,
+        tên mã, tiêu đề một dòng không bị đụng tới. Tự sao lưu ngay trước khi đổi.
+      </p>
+      {listFix.lines ? (
+        <div className="account-form" style={{ paddingBottom: 12 }}>
+          <p style={{ margin: "0 0 8px", fontSize: 13 }}>Tìm thấy <b>{listFix.lines} dòng</b> trong <b>{listFix.fields} ghi chú</b> cần đổi.</p>
+          <details style={{ marginBottom: 10 }}>
+            <summary className="field-hint" style={{ cursor: "pointer", color: "var(--accent)" }}>Xem vài ví dụ trước / sau</summary>
+            {listFix.samples.map((x, i) => (
+              <div key={i} className="list-fix-sample">
+                <pre>{x.before}</pre>
+                <pre>{x.after}</pre>
+              </div>
+            ))}
+          </details>
+          <DangerConfirmButton label="Đổi ngay" confirmLabel="Bấm lần nữa — sao lưu rồi đổi" onConfirm={runListFix} />
+        </div>
+      ) : <p className="empty-note">Không còn ghi chú nào cần đổi.</p>}
+      {fixMsg ? <p className="field-hint" style={{ color: "var(--win)" }}>{fixMsg}</p> : null}
 
       <h3 className="block-title">Vùng nguy hiểm</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>Xóa toàn bộ giao dịch, tài nguyên, sổ vốn, ghi chú và setup mẫu. Không thể hoàn tác.</p>

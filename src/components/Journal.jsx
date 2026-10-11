@@ -265,9 +265,11 @@ function tradeImageShots(t) {
   return shots;
 }
 
-export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete }) {
+export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete, onUpdate }) {
   if (!trade) return null;
   const t = trade;
+  // Bấm ô ☐/☑ trong ghi chú là lưu thẳng vào lệnh, khỏi phải mở form sửa.
+  const editNote = (field) => (onUpdate ? (text) => onUpdate({ ...t, [field]: text }) : undefined);
   const { rr, outcome, status, profit } = computeResult(t);
   const partial = partialExitStats(t);
   const partialRows = partialExitsOf(t);
@@ -309,7 +311,7 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
               <DetailRow label="Phiên" value={t.session} />
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
-              <DetailRow prose label="Nhận xét Setup" value={t.setupNote} />
+              <DetailRow prose label="Nhận xét Setup" value={t.setupNote} onChange={editNote("setupNote")} />
               <DetailRow label="Lỗi setup"
                 tone={errorState === "clean" ? "win" : errorState === "errors" ? "loss" : ""}
                 value={errorState === "clean" ? "Không lỗi" : errorNames.length ? errorNames.join(", ") : "Chưa soi"} />
@@ -320,7 +322,7 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
               <DetailRow label="Rủi ro (%)" value={t.riskPercent ? `${t.riskPercent}%` : "—"} />
               <DetailRow label="Rủi ro (số tiền)" value={t.riskAmount ? fmt(Number(t.riskAmount)) : "—"} />
               <DetailRow label="Quản trị vốn" value={t.riskAction} />
-              <DetailRow prose label="Lý do quản trị vốn" value={t.riskActionReason} />
+              <DetailRow prose label="Lý do quản trị vốn" value={t.riskActionReason} onChange={editNote("riskActionReason")} />
               <DetailRow label="Ngày exit" value={t.exitDate} />
               <DetailRow label="Giờ exit" value={t.exitTime} />
               <DetailRow label="TG giữ lệnh" value={fmtHold(holdHours(t))} />
@@ -347,13 +349,13 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
               <DetailRow label="Vào lệnh" value={t.entrySkill} />
               <DetailRow label="Trong lệnh" value={t.inTradeSkill} />
               <DetailRow label="Thoát lệnh" value={t.exitSkill} />
-              <DetailRow prose label="Cảm nhận kỹ năng" value={t.skillNote} />
+              <DetailRow prose label="Cảm nhận kỹ năng" value={t.skillNote} onChange={editNote("skillNote")} />
               <DetailRow label="Tâm lý" value={t.psychology} />
-              <DetailRow prose label="Cảm nghĩ tâm lý" value={t.psychologyNote} />
+              <DetailRow prose label="Cảm nghĩ tâm lý" value={t.psychologyNote} onChange={editNote("psychologyNote")} />
             </DetailGroup>
             <DetailGroup title="Đánh giá giao dịch">
               <DetailRow label="Nhãn đánh giá" value={grade ? `${grade.tone === "win" ? "👍" : "☠️"} ${grade.label}` : "—"} />
-              <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} />
+              <DetailRow prose label="Nhận xét / Review" value={t.reviewNote} onChange={editNote("reviewNote")} />
               {logs.length ? (
                 <>
                   <DetailRow label="Log hành trình" value={<button type="button" className="link-btn" onClick={onOpenLog}>{logs.length} log đã gắn · mở tab Log</button>} />
@@ -378,11 +380,11 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
                 <>
                   <DetailRow label="Lỗi trong lệnh" tone={t.hasMistake ? "text-loss" : ""}
                     value={t.hasMistake ? "⚠ Có lỗi" : "Đã ghi nhưng chưa đánh dấu"} />
-                  <DetailRow prose label="Lỗi đã ghi" value={t.mistakeNote} />
+                  <DetailRow prose label="Lỗi đã ghi" value={t.mistakeNote} onChange={editNote("mistakeNote")} />
                 </>
               ) : null}
-              <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} />
-              <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} />
+              <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} onChange={editNote("entryReason")} />
+              <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} onChange={editNote("inTradeNote")} />
             </DetailGroup>
           </div>
 
@@ -436,7 +438,7 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
           {t.hasLesson ? (
             <DetailGroup title="📌 Bài học cần ghi nhớ" className="detail-group-lesson">
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                {t.lessonNote ? <NoteText text={t.lessonNote} /> : <span className="field-hint">Chưa ghi nội dung bài học.</span>}
+                {t.lessonNote ? <NoteText text={t.lessonNote} onChange={editNote("lessonNote")} /> : <span className="field-hint">Chưa ghi nội dung bài học.</span>}
               </p>
             </DetailGroup>
           ) : null}

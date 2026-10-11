@@ -157,7 +157,7 @@ function TagManager({ tags, entries, onChange, onClose }) {
   );
 }
 
-function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLesson }) {
+function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLesson, onPatch }) {
   const { from, to } = logRange(e);
   const mood = moodMeta(e.mood);
   const linked = (trades || []).filter((t) => (e.tradeIds || []).includes(t.id));
@@ -177,8 +177,8 @@ function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLess
           <ConfirmButton onConfirm={() => onDelete(e.id)} />
         </span>
       </div>
-      <p className="jl-entry-text"><NoteText text={e.text} /></p>
-      {e.cause ? <p className="jl-entry-cause"><span>Nguyên nhân</span><NoteText text={e.cause} /></p> : null}
+      <p className="jl-entry-text"><NoteText text={e.text} onChange={onPatch ? (text) => onPatch(e.id, { text }) : undefined} /></p>
+      {e.cause ? <p className="jl-entry-cause"><span>Nguyên nhân</span><NoteText text={e.cause} onChange={onPatch ? (cause) => onPatch(e.id, { cause }) : undefined} /></p> : null}
       <div className="jl-entry-foot">
         <TradeResult trades={trades} from={from} to={to} onOpenTrade={onOpenTrade} />
         {linked.length ? (
@@ -356,7 +356,8 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
     return out;
   }, [filtered]);
   const thisMonth = useMemo(() => { const now = new Date(); const r = monthRange(now.getFullYear(), now.getMonth()); return entriesInRange(entries, r.from, r.to); }, [entries]);
-  const renderEntry = (e) => <EntryCard key={e.id} e={e} tagById={tagById} trades={trades} onOpenTrade={onOpenTrade} onEdit={edit} onDelete={remove} onToLesson={toLesson} />;
+  const renderEntry = (e) => <EntryCard key={e.id} e={e} tagById={tagById} trades={trades} onOpenTrade={onOpenTrade} onEdit={edit} onDelete={remove} onToLesson={toLesson}
+    onPatch={(id, patch) => onChange({ ...data, entries: entries.map((x) => (x.id === id ? { ...x, ...patch } : x)) })} />;
 
   useEffect(() => { if (view !== "calendar") setSelected(""); }, [view]);
 

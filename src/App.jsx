@@ -864,6 +864,7 @@ function AppShell({ onSignOut, userEmail }) {
             onClose={() => setViewingTrade(null)}
             onEdit={(t) => { setViewingTrade(null); openEditForm(t); }}
             onDelete={handleDelete}
+            onUpdate={(t) => { handleUpdateTrades([t]); setViewingTrade(t); }}
           />
         </Suspense>
       ) : null}

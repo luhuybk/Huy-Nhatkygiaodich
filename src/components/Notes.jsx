@@ -60,7 +60,7 @@ export function NotesSection({ notes, onChange }) {
                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     {isOpen ? "Thu gọn" : `Xem tiếp ${rest.split("\n").filter((x) => x.trim()).length} dòng`}
                   </button>
-                  {isOpen ? <p className="note-content"><NoteText text={rest} /></p> : null}
+                  {isOpen ? <p className="note-content"><NoteText text={rest} onChange={(next) => onChange(notes.map((x) => (x.id === n.id ? { ...x, content: x.content.replace(rest, next) } : x)))} /></p> : null}
                 </>
               ) : null}
             </div>

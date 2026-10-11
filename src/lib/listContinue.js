@@ -3,6 +3,8 @@
 //   Enter → mục tiếp theo cùng cấp ("2. ", "• "); Enter ở mục trống → lùi ra một cấp, hết cấp thì thoát
 //   Tab / Shift+Tab ở một mục → thụt vào / đưa ra một cấp (mục con đánh số lại từ 1)
 //   Shift+Enter trong mục → xuống dòng, chữ canh thẳng dưới chữ của mục
+//   "[]" / "[ ]" / "[x]" + dấu cách → ô tích "☐" / "☑" (lúc xem lại bấm vào để tích)
+//   "---" + dấu cách → đường kẻ chia đoạn
 // Số thứ tự trong cụm danh sách đang sửa luôn được đánh lại cho liền mạch.
 //
 // Gắn MỘT lần cho cả trang thay vì sửa từng ô: mọi <textarea> hiện có và sau này đều tự có. Ô nào
@@ -10,7 +12,13 @@
 // trước — React chạy handler ở gốc ứng dụng, trước listener ở document — nên ở đây bỏ qua.
 
 export const LIST_INDENT = "  "; // mục cấp ngoài cùng lùi vào 2 dấu cách
-const ITEM = /^(\s*)(?:(\d{1,3})([.)])|([•\-+*]))(\s+)(.*)$/;
+const ITEM = /^(\s*)(?:(\d{1,3})([.)])|([•\-+*☐☑]))(\s+)(.*)$/;
+export const HR_LINE = "────────────────────────";
+// Dòng chỉ có "---" (hoặc đường kẻ đã đổi) là đường chia đoạn.
+export const isRuleLine = (line) => /^\s*(-{3,}|─{3,})\s*$/.test(line);
+const CHECK_OF = { "[]": "☐", "[ ]": "☐", "[x]": "☑", "[X]": "☑" };
+// Mục kế tiếp của "☑ đã xong" là ô trống, của "*" cũ là "•".
+const nextMark = (mark) => (mark === "*" ? "•" : mark === "☑" ? "☐" : mark);
 
 // Một dòng là mục danh sách? Trả về các phần của nó, hoặc null.
 export function parseItem(line) {
@@ -91,12 +99,18 @@ export function applyListKey(value, caret, key, shift) {
 
   if (key === "space") {
     if (shift) return null;
-    const m = /^(\s*)(\d{1,3}[.)]|\*|-)$/.exec(lines[i].slice(0, col));
+    const head = lines[i].slice(0, col);
+    if (/^\s*-{3,}$/.test(head) && !lines[i].slice(col).trim()) {
+      // "---" → đường kẻ, con trỏ xuống dòng dưới để gõ đoạn mới.
+      lines.splice(i, 1, HR_LINE, "");
+      return done(i + 1, 0);
+    }
+    const m = /^(\s*)(\d{1,3}[.)]|\*|-|\[ ?\]|\[[xX]\])$/.exec(head);
     if (!m) return null;
-    // Đã tự thụt lề rồi thì chỉ đổi "*" thành "•"; còn lại để dấu cách gõ như thường.
-    if (m[1] && m[2] !== "*") return null;
+    const marker = m[2] === "*" ? "•" : CHECK_OF[m[2]] || m[2];
+    // Đã tự thụt lề rồi thì chỉ đổi dấu ("*" → "•", "[]" → "☐"); còn lại để dấu cách gõ như thường.
+    if (m[1] && marker === m[2]) return null;
     const indent = m[1] || LIST_INDENT;
-    const marker = m[2] === "*" ? "•" : m[2];
     lines[i] = `${indent}${marker} ${lines[i].slice(col)}`;
     return finish(i, () => indent.length + marker.length + 1);
   }
@@ -125,7 +139,7 @@ export function applyListKey(value, caret, key, shift) {
     if (!owner || lines[i].match(/^\s*/)[0].length < owner.textCol) return null;
     const head = lines[i].slice(0, col);
     const tail = lines[i].slice(col).replace(/^\s+/, "");
-    const next = itemLine(owner.indent, { ...owner, mark: owner.mark === "*" ? "•" : owner.mark, gap: " ", text: tail },
+    const next = itemLine(owner.indent, { ...owner, mark: nextMark(owner.mark), gap: " ", text: tail },
       owner.num === null ? null : owner.num + 1);
     lines.splice(i, 1, head, next);
     return finish(i + 1, () => parseItem(lines[i + 1]).textCol);
@@ -167,12 +181,60 @@ export function applyListKey(value, caret, key, shift) {
     }
     const head = lines[i].slice(0, col);
     const tail = lines[i].slice(col).replace(/^\s+/, "");
-    const next = itemLine(it.indent, { ...it, mark: it.mark === "*" ? "•" : it.mark, gap: it.gap.length > 1 ? it.gap : " ", text: tail },
+    const next = itemLine(it.indent, { ...it, mark: nextMark(it.mark), gap: it.gap.length > 1 ? it.gap : " ", text: tail },
       it.num === null ? null : it.num + 1);
     lines.splice(i, 1, head, next);
     return finish(i + 1, () => parseItem(lines[i + 1]).textCol);
   }
   return null;
+}
+
+// Đổi danh sách trong ghi chú CŨ sang kiểu mới: "*" → "•", cụm danh sách đang sát lề lùi vào 2 dấu cách
+// (cả cụm cùng lùi, để mục con vẫn là con). Trả về chữ mới và số dòng đã đổi.
+export function normalizeListText(text) {
+  const lines = String(text).split("\n");
+  let changed = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!parseItem(lines[i])) continue;
+    const [a, b] = blockRange(lines, i);
+    const items = [];
+    for (let k = a; k <= b; k += 1) { const it = parseItem(lines[k]); if (it) items.push(it); }
+    const flush = Math.min(...items.map((it) => it.indent.length)) === 0;
+    for (let k = a; k <= b; k += 1) {
+      const it = parseItem(lines[k]);
+      let line = it && it.mark === "*" ? itemLine(it.indent, { ...it, mark: "•" }) : lines[k];
+      if (flush && line.trim()) line = LIST_INDENT + line;
+      if (line !== lines[k]) { lines[k] = line; changed += 1; }
+    }
+    i = b;
+  }
+  return { text: lines.join("\n"), changed };
+}
+
+// Chạy normalizeListText qua cả một kho dữ liệu (mảng lệnh, bài học…). Chỉ đụng chữ NHIỀU dòng —
+// tên mã, tiêu đề một dòng, đường dẫn ảnh không bao giờ bị đổi. Kèm vài ví dụ trước/sau để xem trước.
+export function normalizeListsDeep(value, acc = { lines: 0, fields: 0, samples: [] }) {
+  if (typeof value === "string") {
+    if (!value.includes("\n")) return value;
+    const r = normalizeListText(value);
+    if (!r.changed) return value;
+    acc.lines += r.changed;
+    acc.fields += 1;
+    if (acc.samples.length < 3) acc.samples.push({ before: value, after: r.text });
+    return r.text;
+  }
+  if (Array.isArray(value)) {
+    let diff = false;
+    const out = value.map((x) => { const y = normalizeListsDeep(x, acc); if (y !== x) diff = true; return y; });
+    return diff ? out : value;
+  }
+  if (value && typeof value === "object") {
+    let diff = false;
+    const out = {};
+    Object.keys(value).forEach((k) => { const y = normalizeListsDeep(value[k], acc); if (y !== value[k]) diff = true; out[k] = y; });
+    return diff ? out : value;
+  }
+  return value;
 }
 
 // Chèn chữ qua execCommand để Cmd+Z vẫn hoàn tác được và React nhận sự kiện input như gõ tay.
