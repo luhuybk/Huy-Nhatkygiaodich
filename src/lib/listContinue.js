@@ -1,6 +1,6 @@
 // Gõ danh sách trong ô ghi chú như trong khung chat: dòng đang là "1. …" thì Enter ra "2. ",
-// dòng "* …" / "- …" / "• …" thì Enter ra đúng dấu đó. Enter ở một mục còn trống là thoát danh sách
-// (xoá dấu, không xuống dòng). Shift+Enter vẫn là xuống dòng thường.
+// dòng "• …" / "- …" thì Enter ra đúng dấu đó; "* " gõ ở đầu dòng tự thành "• ". Enter ở một mục
+// còn trống là thoát danh sách (xoá dấu, không xuống dòng). Shift+Enter vẫn là xuống dòng thường.
 //
 // Gắn MỘT lần cho cả trang thay vì sửa từng ô: mọi <textarea> hiện có và sau này đều tự có. Ô nào
 // không muốn thì thêm data-no-list. Ô đã tự xử lý Enter (Cmd+Enter để lưu…) gọi preventDefault
@@ -19,7 +19,9 @@ export function listContinuation(line) {
   m = BULLET.exec(line);
   if (m) {
     const [, indent, mark, gap, rest] = m;
-    return { empty: !rest.trim(), indent, next: `${indent}${mark}${gap.length > 1 ? gap : " "}` };
+    // "*" của ghi chú cũ nối tiếp bằng "•" — gõ mới thì "* " đã tự thành "• " rồi.
+    const dot = mark === "*" ? "•" : mark;
+    return { empty: !rest.trim(), indent, next: `${indent}${dot}${gap.length > 1 ? gap : " "}` };
   }
   return null;
 }
@@ -39,15 +41,34 @@ function insertText(el, text, from, to) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function targetBox(e) {
+  const el = e.target;
+  if (!el || el.tagName !== "TEXTAREA" || el.readOnly || el.disabled || el.hasAttribute("data-no-list")) return null;
+  return el.selectionStart === el.selectionEnd ? el : null;
+}
+
+// Gõ "*" rồi dấu cách ở đầu dòng → "• ". Lỡ muốn giữ "*" thì Cmd+Z là trả lại.
+function onSpace(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+  const el = targetBox(e);
+  if (!el) return;
+  const start = el.selectionStart;
+  const lineStart = el.value.lastIndexOf("\n", start - 1) + 1;
+  if (!/^\s*\*$/.test(el.value.slice(lineStart, start))) return;
+  e.preventDefault();
+  insertText(el, "• ", start - 1, start);
+}
+
 function onKeyDown(e) {
-  if (e.key !== "Enter" || e.defaultPrevented) return;
+  if (e.defaultPrevented) return;
+  if (e.key === " ") { onSpace(e); return; }
+  if (e.key !== "Enter") return;
   if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
   // Bộ gõ tiếng Việt đang ghép chữ thì Enter là để chốt chữ, không phải xuống dòng.
   if (e.isComposing || e.keyCode === 229) return;
-  const el = e.target;
-  if (!el || el.tagName !== "TEXTAREA" || el.readOnly || el.disabled || el.hasAttribute("data-no-list")) return;
-  const { selectionStart: start, selectionEnd: end, value } = el;
-  if (start !== end) return;
+  const el = targetBox(e);
+  if (!el) return;
+  const { selectionStart: start, value } = el;
   const lineStart = value.lastIndexOf("\n", start - 1) + 1;
   const item = listContinuation(value.slice(lineStart, start));
   if (!item) return;
