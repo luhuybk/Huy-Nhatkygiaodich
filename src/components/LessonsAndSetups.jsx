@@ -1,6 +1,6 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab } from "./ui.jsx";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab, NoteText } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
 
@@ -146,9 +146,9 @@ function MissSkipCards({ groups, dateField, mode, onEdit, onRemove }) {
                       </button>
                       {open.has(n.id) ? (
                         <div onClick={(e) => e.stopPropagation()}>
-                          {n.note ? <p className="var-card-note ms-card-note">{n.note}</p> : null}
+                          {n.note ? <p className="var-card-note ms-card-note"><NoteText text={n.note} /></p> : null}
                           {n.reviewNote ? (
-                            <p className="var-card-note ms-card-note ms-card-review"><b>Review:</b> {n.reviewNote}</p>
+                            <p className="var-card-note ms-card-note ms-card-review"><b>Review:</b> <NoteText text={n.reviewNote} /></p>
                           ) : null}
                         </div>
                       ) : null}
@@ -788,7 +788,7 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
                               Nội dung
                             </button>
                             {isOpen ? (
-                              <p className="var-card-note" onClick={(e) => e.stopPropagation()}>{n.content}</p>
+                              <p className="var-card-note" onClick={(e) => e.stopPropagation()}><NoteText text={n.content} /></p>
                             ) : null}
                           </>
                         ) : null}
@@ -926,7 +926,7 @@ export function ProblemLogSection({ items, onChange }) {
                 ) : null}
               </div>
               {isOpen ? (
-                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}><strong>Hướng xử lý:</strong> {n.solution || "—"}</p>
+                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}><strong>Hướng xử lý:</strong> <NoteText text={n.solution || "—"} /></p>
               ) : null}
             </div>
           );
@@ -1038,7 +1038,7 @@ export function SetupLibrarySection({ items, onChange }) {
             ) : (
               <div className="setup-img setup-img-empty" style={{ width: 96, height: 96, borderRadius: 8, flexShrink: 0 }}><Layers size={22} color="var(--text-dim)" /></div>
             )}
-            <p className="note-content" style={{ color: "var(--text-dim)", margin: 0 }}>{viewing.note || "Chưa có ghi chú."}</p>
+            <p className="note-content" style={{ color: "var(--text-dim)", margin: 0 }}><NoteText text={viewing.note || "Chưa có ghi chú."} /></p>
           </div>
           {(viewing.checklist || []).length ? (
             <div style={{ marginBottom: 14 }}>
@@ -1088,7 +1088,7 @@ export function SetupLibrarySection({ items, onChange }) {
               {thumb ? <img src={thumb} alt={it.name} className="setup-img" /> : <div className="setup-img setup-img-empty"><Layers size={20} color="var(--text-dim)" /></div>}
               <div className="setup-card-body">
                 <strong>{it.name}</strong>
-                {it.note ? <p className="setup-note">{it.note}</p> : null}
+                {it.note ? <p className="setup-note"><NoteText text={it.note} /></p> : null}
                 <div className="setup-card-meta">
                   {(it.checklist || []).length ? <span className="note-type">{it.checklist.length} checklist</span> : null}
                   {(it.variants || []).length ? <span className="note-type">{it.variants.length} biến thể</span> : null}
@@ -1209,7 +1209,7 @@ export function NewsLogSection({ items, onChange }) {
                 ) : null}
               </div>
               {isOpen ? (
-                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}>{n.content || "—"}</p>
+                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}><NoteText text={n.content || "—"} /></p>
               ) : null}
             </div>
           );

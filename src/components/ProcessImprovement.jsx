@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { Plus } from "lucide-react";
-import { ChartCard, ConfirmButton, DangerConfirmButton, Field, FormModal, MultiChipSelect } from "./ui.jsx";
+import { ChartCard, ConfirmButton, DangerConfirmButton, Field, FormModal, MultiChipSelect, NoteText } from "./ui.jsx";
 import { CATEGORY_COLORS, GRID, MUTED, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { emptyProcessImprovement, uid } from "../lib/helpers.js";
 
@@ -111,9 +111,9 @@ export function ProcessImprovementSection({ items, avoidPrinciples, onChange }) 
               ) : null}
               <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
             </div>
-            {n.doneWell ? <p className="note-content"><strong>Làm tốt:</strong> {n.doneWell}</p> : null}
-            {n.mistakes ? <p className="note-content"><strong>Mắc lỗi:</strong> {n.mistakes}</p> : null}
-            {n.improveNext ? <p className="note-content"><strong>Cải thiện:</strong> {n.improveNext}</p> : null}
+            {n.doneWell ? <p className="note-content"><strong>Làm tốt:</strong> <NoteText text={n.doneWell} /></p> : null}
+            {n.mistakes ? <p className="note-content"><strong>Mắc lỗi:</strong> <NoteText text={n.mistakes} /></p> : null}
+            {n.improveNext ? <p className="note-content"><strong>Cải thiện:</strong> <NoteText text={n.improveNext} /></p> : null}
             {(n.violatedPrinciples || []).length ? (
               <p className="note-content" style={{ color: "var(--loss)" }}><strong>Vi phạm:</strong> {n.violatedPrinciples.join(", ")}</p>
             ) : null}

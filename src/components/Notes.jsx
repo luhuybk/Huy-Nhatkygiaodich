@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { ConfirmButton, Field, ResourceSelect } from "./ui.jsx";
+import { ConfirmButton, Field, ResourceSelect, NoteText } from "./ui.jsx";
 import { NOTE_TYPES } from "../lib/constants.js";
 import { emptyNote, firstLine, restLines } from "../lib/helpers.js";
 
@@ -60,7 +60,7 @@ export function NotesSection({ notes, onChange }) {
                     {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     {isOpen ? "Thu gọn" : `Xem tiếp ${rest.split("\n").filter((x) => x.trim()).length} dòng`}
                   </button>
-                  {isOpen ? <p className="note-content">{rest}</p> : null}
+                  {isOpen ? <p className="note-content"><NoteText text={rest} /></p> : null}
                 </>
               ) : null}
             </div>

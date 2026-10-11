@@ -3,6 +3,7 @@ import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Im
 import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
+import { parseItem } from "../lib/listContinue.js";
 
 // State sống qua lúc component bị gỡ (rời trang sang form sửa lệnh rồi quay lại) nhưng mất khi
 // tải lại trang. Dùng cho file đối chiếu đã nạp: không lưu đi đâu, chỉ khỏi phải nạp lại giữa chừng.
@@ -585,6 +586,40 @@ export function ChartLegend({ items }) {
 }
 
 // `prose` cho các ô bạn gõ thành đoạn: nhận xét, lý do vào lệnh, cảm nghĩ. Kiểu một dòng
+// Ghi chú có danh sách "1." / "•" / "-": mỗi mục một hàng, dòng dài tự canh thẳng dưới chữ (không chạy
+// về sát mép), mục con lùi đúng cấp. Không có danh sách thì trả nguyên chữ — chỗ đang hiện gì vẫn y vậy.
+export function NoteText({ text }) {
+  const s = text === null || text === undefined ? "" : String(text);
+  const lines = s.split("\n");
+  if (!lines.some((l) => parseItem(l))) return s;
+  const out = [];
+  let stack = [];
+  let level = -1; // cấp của mục gần nhất; -1 = đang ngoài danh sách
+  lines.forEach((line, k) => {
+    const it = parseItem(line);
+    if (it) {
+      const d = it.indent.length;
+      if (level < 0) stack = [];
+      while (stack.length && stack[stack.length - 1] > d) stack.pop();
+      if (!stack.length || stack[stack.length - 1] < d) stack.push(d);
+      level = stack.length - 1;
+      const mark = it.num !== null ? `${it.num}${it.sep}` : it.mark === "*" ? "•" : it.mark;
+      out.push(
+        <span key={k} className="nt-li" style={{ "--lvl": level }}>
+          <span className={`nt-mark ${it.num === null ? "nt-dot" : ""}`}>{mark}</span>
+          <span className="nt-body">{it.text}</span>
+        </span>
+      );
+    } else if (level >= 0 && /^\s+\S/.test(line)) {
+      out.push(<span key={k} className="nt-cont" style={{ "--lvl": level }}>{line.trim()}</span>);
+    } else {
+      if (!line.trim() || !/^\s/.test(line)) level = -1;
+      out.push(<span key={k} className="nt-line">{line || "\u200b"}</span>);
+    }
+  });
+  return <>{out}</>;
+}
+
 // canh phải + font mono là dành cho SỐ — với văn xuôi nó nuốt luôn dấu xuống dòng, ép chữ
 // vào nửa bề rộng và đọc như bảng tính. Ô trống vẫn về kiểu một dòng cho gọn.
 export function DetailRow({ label, value, tone, prose }) {
@@ -593,7 +628,7 @@ export function DetailRow({ label, value, tone, prose }) {
     return (
       <div className="detail-row detail-row-prose">
         <span>{label}</span>
-        <span className={`detail-prose ${tone || ""}`}>{value}</span>
+        <span className={`detail-prose ${tone || ""}`}>{typeof value === "string" ? <NoteText text={value} /> : value}</span>
       </div>
     );
   }

@@ -5,6 +5,7 @@ import { computeResult, fmtMoney, fmtR, mistakeImages, periodAccountReport, revi
 import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
 import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
+import { NoteText } from "./ui.jsx";
 
 const ACTION_LABEL = { up: "▲ tăng", down: "▼ hạ", same: "= giữ", none: "—" };
 
@@ -301,8 +302,8 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
                         {mood ? <span>{mood.icon} {mood.label}</span> : null}
                         {tags.length ? <span className="print-dim">{tags.join(" · ")}</span> : null}
                       </div>
-                      {e.text ? <p>{e.text}</p> : null}
-                      {e.cause ? <p><b>Nguyên nhân:</b> {e.cause}</p> : null}
+                      {e.text ? <p><NoteText text={e.text} /></p> : null}
+                      {e.cause ? <p><b>Nguyên nhân:</b> <NoteText text={e.cause} /></p> : null}
                     </div>
                   );
                 })}

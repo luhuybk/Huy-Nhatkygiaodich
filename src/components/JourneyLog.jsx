@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
-import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
+import { ConfirmButton, Field, useStickyTab, NoteText } from "./ui.jsx";
 import { dateKey, emptyLesson, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
@@ -177,8 +177,8 @@ function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLess
           <ConfirmButton onConfirm={() => onDelete(e.id)} />
         </span>
       </div>
-      <p className="jl-entry-text">{e.text}</p>
-      {e.cause ? <p className="jl-entry-cause"><span>Nguyên nhân</span>{e.cause}</p> : null}
+      <p className="jl-entry-text"><NoteText text={e.text} /></p>
+      {e.cause ? <p className="jl-entry-cause"><span>Nguyên nhân</span><NoteText text={e.cause} /></p> : null}
       <div className="jl-entry-foot">
         <TradeResult trades={trades} from={from} to={to} onOpenTrade={onOpenTrade} />
         {linked.length ? (

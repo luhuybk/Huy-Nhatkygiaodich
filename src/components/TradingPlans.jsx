@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, Map as MapIcon, Pencil, Plus } from "lucide-react";
-import { ConfirmButton, DangerConfirmButton, Field, FormModal } from "./ui.jsx";
+import { ConfirmButton, DangerConfirmButton, Field, FormModal, NoteText } from "./ui.jsx";
 import { emptyPlan, emptyPlanItem, groupByPlanLevel, lessonLevel, moveWithinLevel, planItemLevelMeta, planItemLine, planLevelMeta, PLAN_ITEM_LEVELS, PLAN_LEVELS, uid } from "../lib/helpers.js";
 
 // Kế hoạch là thứ ĐỌC TRƯỚC khi vào lệnh, không phải nhật ký ghi lại sau. Nên ở đây không có
@@ -89,7 +89,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
         </span>
       </div>
       {plan.scope ? <p className="field-hint" style={{ marginTop: 0 }}>{plan.scope}</p> : null}
-      {plan.note ? <p className="plan-detail-note">{plan.note}</p> : null}
+      {plan.note ? <p className="plan-detail-note"><NoteText text={plan.note} /></p> : null}
 
       {form ? (
         <PlanItemForm form={form} setForm={setForm} onSave={save} onRemove={() => remove(form.id)} onClose={close} error={error} />
@@ -116,14 +116,14 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
                     <article key={it.id} className={`plan-item ${levelClass(g.level)}`}>
                       <div className="plan-item-body">
                         {String(it.when || "").trim() ? (
-                          <p className="plan-item-when"><span className="plan-item-kw">Nếu</span>{it.when}</p>
+                          <p className="plan-item-when"><span className="plan-item-kw">Nếu</span><NoteText text={it.when} /></p>
                         ) : null}
                         {/* white-space:pre-wrap giữ nguyên MỌI khoảng trắng, nên dấu cách thừa
                             trước chữ sẽ hiện ra thật — khoảng cách để margin của nhãn lo. */}
                         <p className="plan-item-then">
-                          {String(it.when || "").trim() ? <span className="plan-item-kw">Thì</span> : null}{it.then}
+                          {String(it.when || "").trim() ? <span className="plan-item-kw">Thì</span> : null}<NoteText text={it.then} />
                         </p>
-                        {it.note ? <p className="plan-item-note">{it.note}</p> : null}
+                        {it.note ? <p className="plan-item-note"><NoteText text={it.note} /></p> : null}
                       </div>
                       <div className="plan-item-tools">
                         <div className="lsn-pick lsn-pick-mini">

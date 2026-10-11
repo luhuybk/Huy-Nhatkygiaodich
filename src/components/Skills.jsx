@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Gauge, Pencil, Plus } from "lucide-react";
-import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard } from "./ui.jsx";
+import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard, NoteText } from "./ui.jsx";
 import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
@@ -170,7 +170,7 @@ export function SkillsSection({ items, resources, onChange }) {
               </div>
               {isOpen ? (
                 <div onClick={(e) => e.stopPropagation()} style={{ cursor: "default" }}>
-                  {s.summary ? <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 6 }}>{s.summary}</p> : null}
+                  {s.summary ? <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 6 }}><NoteText text={s.summary} /></p> : null}
                   {steps.length ? (
                     <>
                       <h4 className="rec-title" style={{ marginTop: 10 }}>Cách thực thi</h4>
@@ -182,7 +182,7 @@ export function SkillsSection({ items, resources, onChange }) {
                   {s.watchOut ? (
                     <div className="skill-watch">
                       <span className="skill-watch-label">Dễ sai</span>
-                      <span>{s.watchOut}</span>
+                      <span><NoteText text={s.watchOut} /></span>
                     </div>
                   ) : null}
                 </div>

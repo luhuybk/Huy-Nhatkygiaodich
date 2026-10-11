@@ -1908,3 +1908,16 @@ body.printing-trades { overflow: hidden; }
   .acc-name-input { flex: 1; }
   .slot-meta { margin-left: 0; }
 }
+
+/* Ghi chú có danh sách: mỗi mục một hàng, dòng dài canh thẳng dưới chữ, mục con lùi một cấp.
+   Bước lùi = bề rộng dấu + khoảng cách, để dấu của mục con nằm thẳng dưới chữ của mục cha. */
+.nt-line, .nt-li, .nt-cont { display: block; }
+.nt-li { display: flex; align-items: baseline; margin-left: calc(var(--lvl, 0) * 1.75em + 0.4em); }
+.nt-mark { flex: 0 0 auto; min-width: 1.3em; margin-right: 0.45em; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.nt-dot { color: var(--accent); }
+.nt-body { flex: 1; min-width: 0; }
+.nt-cont { margin-left: calc(var(--lvl, 0) * 1.75em + 0.4em + 1.75em); }
+.print-root .nt-mark { color: #555; }
+/* .detail-row span:first-child / :last-child (canh phải, chữ mờ) là cho nhãn–giá trị, đừng để lan vào danh sách. */
+.detail-row span.nt-line, .detail-row span.nt-cont, .detail-row .nt-li span.nt-body { text-align: left; color: inherit; flex-shrink: 1; }
+.detail-row .nt-li span.nt-mark { text-align: right; }

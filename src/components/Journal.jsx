@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
-import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating } from "./ui.jsx";
+import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
@@ -436,7 +436,7 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
           {t.hasLesson ? (
             <DetailGroup title="📌 Bài học cần ghi nhớ" className="detail-group-lesson">
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                {t.lessonNote ? t.lessonNote : <span className="field-hint">Chưa ghi nội dung bài học.</span>}
+                {t.lessonNote ? <NoteText text={t.lessonNote} /> : <span className="field-hint">Chưa ghi nội dung bài học.</span>}
               </p>
             </DetailGroup>
           ) : null}
