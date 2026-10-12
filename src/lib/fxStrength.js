@@ -150,15 +150,81 @@ export function fxStats(trades, resources, opts = {}) {
 
   return {
     buckets: buckets.map((b) => ({ ...finish(b), id: b.id, label: b.label })),
-    phases: FX_PHASE_ORDER.map((id) => {
-      const p = phases.get(id);
-      const meta = fxPhase(...{ with: [1, 1], pullback: [1, -1], ctOnly: [1, 0], nhOnly: [0, 1], flat: [0, 0], nhAgainst: [0, -1], counter: [-1, 1], against: [-1, -1] }[id]);
-      return { ...finish(p), id, icon: meta.icon, label: meta.label };
-    }),
+    phases: FX_PHASE_ORDER.map((id) => ({ ...finish(phases.get(id)), id, ...phaseMeta(id) })),
     grid: Object.fromEntries(Object.entries(grid).map(([k, v]) => [k, finish(v)])),
     strong: finish(strong),
     rest: finish(rest),
     missingTrades,
     partial,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phân tích hai bước: Base trước, Quote sau. Mọi giá trị quy về hướng lệnh:
+//   Base: Buy cần Base tăng → +1 = ủng hộ lệnh; Sell thì đảo dấu.
+//   Quote: Buy cần Quote GIẢM → Quote giảm = ủng hộ (+1), Quote tăng = cản (−1); Sell đảo lại.
+export function fxSides(t) {
+  const fc = fxCondOf(t);
+  if (!fc || coinScore(fc.b) === null || coinScore(fc.q) === null) return null;
+  const s = t.direction === "sell" ? -1 : 1;
+  return { base: { ct: s * fc.b.ct, nh: s * fc.b.nh }, quote: { ct: -s * fc.q.ct, nh: -s * fc.q.nh } };
+}
+
+export const FX_BASE_GROUPS = [
+  { id: "with", label: "Base thuận chiều lệnh", hint: "Điểm Base theo lệnh > 0", test: (b) => b.ct * 2 + b.nh > 0 },
+  { id: "flat", label: "Base trung tính", hint: "Điểm Base = 0", test: (b) => b.ct * 2 + b.nh === 0 },
+  { id: "against", label: "Base ngược chiều lệnh", hint: "Điểm Base theo lệnh < 0", test: (b) => b.ct * 2 + b.nh < 0 },
+];
+
+// Lọc Base cho bước 2: "g:<nhóm>" hoặc "p:<nhịp>".
+export function fxBaseMatch(filter, b) {
+  if (!filter) return true;
+  const [kind, id] = filter.split(":");
+  if (kind === "g") { const g = FX_BASE_GROUPS.find((x) => x.id === id); return g ? g.test(b) : true; }
+  if (kind === "p") return fxPhase(b.ct, b.nh).id === id;
+  return true;
+}
+
+export function fxBaseQuoteStats(trades, resources, opts = {}) {
+  const groups = FX_BASE_GROUPS.map((g) => ({ id: g.id, label: g.label, hint: g.hint, test: g.test, ...emptyBucket() }));
+  const phases = new Map(FX_PHASE_ORDER.map((id) => [id, { id, ...emptyBucket() }]));
+  const grid = {};
+  const rowTot = {};
+  const colTot = {};
+  const picked = emptyBucket();
+  let recorded = 0;
+
+  closedOfUSD(trades || [], resources).forEach(({ t, r }) => {
+    if (!fxPairOf(t.symbol)) return;
+    if (opts.direction && t.direction !== opts.direction) return;
+    const sd = fxSides(t);
+    if (!sd) return;
+    recorded += 1;
+    const g = groups.find((x) => x.test(sd.base));
+    addTo(g, r);
+    addTo(phases.get(fxPhase(sd.base.ct, sd.base.nh).id), r);
+    if (!fxBaseMatch(opts.baseFilter, sd.base)) return;
+    addTo(picked, r);
+    const { ct, nh } = sd.quote;
+    const key = `${ct}|${nh}`;
+    if (!grid[key]) grid[key] = emptyBucket();
+    if (!rowTot[ct]) rowTot[ct] = emptyBucket();
+    if (!colTot[nh]) colTot[nh] = emptyBucket();
+    addTo(grid[key], r); addTo(rowTot[ct], r); addTo(colTot[nh], r);
+  });
+
+  const fin = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, finish(v)]));
+  return {
+    recorded,
+    groups: groups.map((g) => ({ ...finish(g), id: g.id, label: g.label, hint: g.hint })),
+    phases: FX_PHASE_ORDER.map((id) => ({ ...finish(phases.get(id)), id, ...phaseMeta(id) })),
+    grid: fin(grid), rowTot: fin(rowTot), colTot: fin(colTot),
+    picked: finish(picked),
+  };
+}
+
+const PHASE_SAMPLE = { with: [1, 1], pullback: [1, -1], ctOnly: [1, 0], nhOnly: [0, 1], flat: [0, 0], nhAgainst: [0, -1], counter: [-1, 1], against: [-1, -1] };
+function phaseMeta(id) {
+  const m = fxPhase(...PHASE_SAMPLE[id]);
+  return { icon: m.icon, label: m.label };
 }

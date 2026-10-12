@@ -2018,3 +2018,13 @@ button.nt-check:hover { filter: brightness(1.25); }
   .fx-seg::before { content: attr(data-label); align-self: center; width: 26px; flex: none; font-size: 10.5px; color: var(--text-dim); padding-left: 4px; }
 }
 .fx-seg .seg-active { background: rgba(141,145,152,0.24); color: var(--text); }
+
+.fx-pick-row { cursor: pointer; }
+.fx-pick-row:hover td { background: rgba(var(--accent-rgb), 0.05); }
+.fx-pick-on td { background: rgba(var(--accent-rgb), 0.12) !important; }
+.fx-pick-on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.fx-hint-inline { color: var(--text-dim); font-size: 11px; margin-left: 4px; }
+.fx-sub-head td { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; padding-top: 12px; }
+.fx-heat-r { font-size: 11px; margin-top: 2px; }
+.fx-heat-total { background: var(--surface-2) !important; }
+.fx-pair-details { margin-top: 22px; }

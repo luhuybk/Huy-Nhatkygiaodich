@@ -1,9 +1,9 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Globe2 } from "lucide-react";
 import { dateKey, fmtR } from "../lib/helpers.js";
 import { REGIME_MIN_SAMPLE } from "../lib/marketRegime.js";
 import {
-  coinScore, FX_TRENDS, fxCondOf, fxPairOf, fxPhase, fxRecentCoin, fxScore, fxStats, signed, trendLabel,
+  coinScore, FX_TRENDS, fxBaseQuoteStats, fxCondOf, fxPairOf, fxPhase, fxRecentCoin, fxScore, fxStats, signed, trendLabel,
 } from "../lib/fxStrength.js";
 
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v.toFixed(1)}%`);
@@ -122,21 +122,82 @@ function StatCells({ s }) {
   );
 }
 
+
 const LEVELS = [2, 1, 0, -1, -2];
+const SIDE_LEVELS = [[1, "Ủng hộ"], [0, "Ngang"], [-1, "Cản"]];
+const heat = (wr) => (wr === null ? "transparent" : wr >= 50 ? `rgba(var(--win-rgb, 76,175,125), ${0.1 + (wr - 50) / 80})` : `rgba(var(--loss-rgb, 224,97,90), ${0.1 + (50 - wr) / 80})`);
+
+function HeatCell({ c, title, total }) {
+  return (
+    <td className={total ? "fx-heat-total" : ""} style={{ background: c && !total ? heat(c.winRate) : "transparent" }} title={title}>
+      {c && c.count ? (
+        <>
+          <b className="mono">{c.count}</b> <span className="mono">{fmtPct(c.winRate)}</span>
+          <div className={`mono fx-heat-r ${toneR(c.avgR)}`}>{fmtR(c.avgR)}</div>
+        </>
+      ) : <span className="fx-heat-empty">·</span>}
+    </td>
+  );
+}
+
+// Bảng điểm cặp kiểu chỉ báo (Base − Quote) — giữ lại để đối chiếu, gấp vào mặc định.
+function PairScoreDetails({ st }) {
+  return (
+    <details className="regime-missing fx-pair-details">
+      <summary>Theo điểm cặp Base − Quote (cách chấm của chỉ báo Xu Hướng Tuần)</summary>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Điểm cặp theo lệnh</th><th>Số lệnh</th><th>Winrate</th><th>R TB</th><th>Tổng R</th></tr></thead>
+          <tbody>
+            {st.buckets.map((b) => <tr key={b.id} className={b.count ? "" : "regime-row-dim"}><td>{b.label}</td><StatCells s={b} /></tr>)}
+          </tbody>
+        </table>
+      </div>
+      <p className="field-hint" style={{ margin: "12px 0 8px" }}>Lưới CT × NH của cặp (CT, NH = Base − Quote, theo hướng lệnh). Mỗi ô: số lệnh · winrate · R TB.</p>
+      <div className="table-wrap">
+        <table className="table fx-heat">
+          <thead><tr><th>CT ↓ · NH →</th>{LEVELS.map((n) => <th key={n} className="mono">{signed(n)}</th>)}</tr></thead>
+          <tbody>
+            {LEVELS.map((ct) => (
+              <tr key={ct}>
+                <th className="mono">{signed(ct)}</th>
+                {LEVELS.map((nh) => <HeatCell key={nh} c={st.grid[`${ct}|${nh}`]} title={`CT ${signed(ct)} · NH ${signed(nh)} · điểm cặp ${signed(2 * ct + nh)}`} />)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
 
 export function FxStatsPanel({ trades, resources, direction, onOpenTrade }) {
+  const [baseFilter, setBaseFilter] = useState("g:with");
+  const bq = useMemo(() => fxBaseQuoteStats(trades, resources, { direction, baseFilter }), [trades, resources, direction, baseFilter]);
   const st = useMemo(() => fxStats(trades, resources, { direction }), [trades, resources, direction]);
-  const recorded = st.buckets.reduce((n, b) => n + b.count, 0);
-  const gap = st.strong.winRate !== null && st.rest.winRate !== null ? st.strong.winRate - st.rest.winRate : null;
-  const small = st.strong.count < REGIME_MIN_SAMPLE || st.rest.count < REGIME_MIN_SAMPLE;
-  const heat = (wr) => (wr === null ? "transparent" : wr >= 50 ? `rgba(var(--win-rgb, 76,175,125), ${0.1 + (wr - 50) / 80})` : `rgba(var(--loss-rgb, 224,97,90), ${0.1 + (50 - wr) / 80})`);
+  const good = bq.groups[0];
+  const bad = bq.groups[2];
+  const gap = good.winRate !== null && bad.winRate !== null ? good.winRate - bad.winRate : null;
+  const small = good.count < REGIME_MIN_SAMPLE || bad.count < REGIME_MIN_SAMPLE;
+  const pickedLabel = (() => {
+    const [kind, id] = baseFilter.split(":");
+    if (kind === "g") return (bq.groups.find((g) => g.id === id) || {}).label || "";
+    const p = bq.phases.find((x) => x.id === id);
+    return p ? `Base ${p.icon} ${p.label.toLowerCase()}` : "";
+  })();
+  const pickRow = (key) => ({
+    className: `fx-pick-row ${baseFilter === key ? "fx-pick-on" : ""}`,
+    onClick: () => setBaseFilter(key),
+    title: "Bấm để xem Quote ảnh hưởng thế nào trong nhóm này",
+  });
 
   return (
     <div>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Tính theo hướng lệnh: lệnh Sell đảo dấu, nên <b>+</b> luôn là thị trường ủng hộ lệnh. Điểm cặp = 2 × CT + NH, với CT / NH = Base − Quote.
+        Mọi thứ quy về hướng lệnh. <b>Base ủng hộ</b> = Base đi cùng chiều lệnh (Buy cần Base tăng).
+        <b> Quote ủng hộ</b> = Quote đi ngược Base (Buy EURUSD cần USD giảm); Quote <b>cản</b> = đi cùng chiều Base.
       </p>
-      {recorded === 0 ? (
+      {bq.recorded === 0 ? (
         <div className="empty-state">
           <Globe2 size={28} color="var(--text-dim)" />
           <p>Chưa có lệnh FX đã đóng nào điền đủ Cấu trúc / Ngắn hạn cho hai đồng. Mở form lệnh cặp FX, ở mục 1 bấm Tăng / Ngang / Giảm.</p>
@@ -144,72 +205,70 @@ export function FxStatsPanel({ trades, resources, direction, onOpenTrade }) {
       ) : (
         <>
           <div className={`mc-hero ${gap !== null && gap > 0 ? "mc-hero-ok" : "mc-hero-cost"}`}>
-            {st.strong.count && st.rest.count ? (
+            {good.count && bad.count ? (
               <>
-                <span className="mc-hero-label">Điểm cặp theo lệnh từ +4 so với phần còn lại</span>
-                <span className={`mc-hero-value ${gap > 0 ? "mc-hero-value-ok" : ""}`}>{fmtPct(st.strong.winRate)} <small>so với</small> {fmtPct(st.rest.winRate)}</span>
+                <span className="mc-hero-label">Vào đúng chiều đồng Base so với ngược chiều</span>
+                <span className={`mc-hero-value ${gap > 0 ? "mc-hero-value-ok" : ""}`}>{fmtPct(good.winRate)} <small>so với</small> {fmtPct(bad.winRate)}</span>
                 <p className="mc-hero-why">
-                  Winrate {st.strong.count} lệnh vào lúc hai đồng lệch nhau rõ theo hướng lệnh, so với {st.rest.count} lệnh còn lại.
-                  R trung bình <b>{fmtR(st.strong.avgR)}</b> so với <b>{fmtR(st.rest.avgR)}</b>.
+                  {good.count} lệnh Base thuận chiều lệnh, {bad.count} lệnh Base ngược chiều. R trung bình <b>{fmtR(good.avgR)}</b> so với <b>{fmtR(bad.avgR)}</b>.
                 </p>
               </>
             ) : (
               <>
                 <span className="mc-hero-label">Chưa đủ hai phía để so</span>
-                <p className="mc-hero-why">Cần cả lệnh có điểm cặp theo lệnh từ +4 lẫn lệnh dưới +4.</p>
+                <p className="mc-hero-why">Cần cả lệnh Base thuận chiều lẫn lệnh Base ngược chiều.</p>
               </>
             )}
-            {small && st.strong.count && st.rest.count ? (
-              <p className="mc-hero-warn">Mẫu còn nhỏ ({st.strong.count} và {st.rest.count} lệnh — nên có ít nhất {REGIME_MIN_SAMPLE} mỗi bên). Để tham khảo, chưa đủ kết luận.</p>
+            {small && good.count && bad.count ? (
+              <p className="mc-hero-warn">Mẫu còn nhỏ ({good.count} và {bad.count} lệnh — nên có ít nhất {REGIME_MIN_SAMPLE} mỗi bên). Để tham khảo, chưa đủ kết luận.</p>
             ) : null}
           </div>
 
-          <h3 className="block-title">Theo điểm cặp (theo hướng lệnh)</h3>
+          <h3 className="block-title">Bước 1 · Đồng Base so với chiều lệnh</h3>
+          <p className="field-hint" style={{ marginTop: 4, marginBottom: 10 }}>Bấm một dòng để xem bước 2 cho đúng nhóm đó.</p>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Điểm cặp</th><th>Số lệnh</th><th>Winrate</th><th>R TB</th><th>Tổng R</th></tr></thead>
+              <thead><tr><th>Base</th><th>Số lệnh</th><th>Winrate</th><th>R TB</th><th>Tổng R</th></tr></thead>
               <tbody>
-                {st.buckets.map((b) => <tr key={b.id} className={b.count ? "" : "regime-row-dim"}><td>{b.label}</td><StatCells s={b} /></tr>)}
-              </tbody>
-            </table>
-          </div>
-
-          <h3 className="block-title" style={{ marginTop: 22 }}>Theo nhịp Cấu trúc / Ngắn hạn</h3>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Nhịp</th><th>Số lệnh</th><th>Winrate</th><th>R TB</th><th>Tổng R</th></tr></thead>
-              <tbody>
-                {st.phases.filter((p) => p.count).map((p) => <tr key={p.id}><td>{p.icon} {p.label}</td><StatCells s={p} /></tr>)}
-              </tbody>
-            </table>
-          </div>
-
-          <h3 className="block-title" style={{ marginTop: 22 }}>Lưới CT × NH</h3>
-          <p className="field-hint" style={{ marginTop: 4, marginBottom: 10 }}>
-            Mỗi ô: số lệnh · winrate. VD Base cấu trúc tăng / ngắn hạn giảm, Quote cấu trúc giảm / ngắn hạn tăng, lệnh Buy → CT +2, NH −2.
-          </p>
-          <div className="table-wrap">
-            <table className="table fx-heat">
-              <thead>
-                <tr><th>CT ↓ · NH →</th>{LEVELS.map((n) => <th key={n} className="mono">{signed(n)}</th>)}</tr>
-              </thead>
-              <tbody>
-                {LEVELS.map((ct) => (
-                  <tr key={ct}>
-                    <th className="mono">{signed(ct)}</th>
-                    {LEVELS.map((nh) => {
-                      const c = st.grid[`${ct}|${nh}`];
-                      return (
-                        <td key={nh} style={{ background: c ? heat(c.winRate) : "transparent" }} title={c ? `CT ${signed(ct)} · NH ${signed(nh)} · điểm cặp ${signed(2 * ct + nh)}\n${c.count} lệnh · winrate ${fmtPct(c.winRate)} · R TB ${fmtR(c.avgR)}` : `Điểm cặp ${signed(2 * ct + nh)} — chưa có lệnh`}>
-                          {c ? <><b className="mono">{c.count}</b> <span className="mono">{fmtPct(c.winRate)}</span></> : <span className="fx-heat-empty">·</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                {bq.groups.map((g) => (
+                  <tr key={g.id} {...pickRow(`g:${g.id}`)}><td><b>{g.label}</b> <small className="fx-hint-inline">{g.hint}</small></td><StatCells s={g} /></tr>
+                ))}
+                <tr className="fx-sub-head"><td colSpan={5}>Chi tiết Cấu trúc / Ngắn hạn của Base</td></tr>
+                {bq.phases.filter((x) => x.count).map((x) => (
+                  <tr key={x.id} {...pickRow(`p:${x.id}`)}><td>{x.icon} {x.label}</td><StatCells s={x} /></tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          <h3 className="block-title" style={{ marginTop: 22 }}>Bước 2 · Quote ảnh hưởng thế nào — khi {pickedLabel.charAt(0).toLowerCase() + pickedLabel.slice(1)}</h3>
+          <p className="field-hint" style={{ marginTop: 4, marginBottom: 10 }}>
+            {bq.picked.count} lệnh. Mỗi ô: số lệnh · winrate · R TB. Hàng = Cấu trúc của Quote, cột = Ngắn hạn của Quote.
+          </p>
+          {bq.picked.count ? (
+            <div className="table-wrap">
+              <table className="table fx-heat">
+                <thead>
+                  <tr><th>Quote CT ↓ · NH →</th>{SIDE_LEVELS.map(([v, l]) => <th key={v}>{l}</th>)}<th>Cả hàng</th></tr>
+                </thead>
+                <tbody>
+                  {SIDE_LEVELS.map(([ct, cl]) => (
+                    <tr key={ct}>
+                      <th>{cl}</th>
+                      {SIDE_LEVELS.map(([nh, nl]) => <HeatCell key={nh} c={bq.grid[`${ct}|${nh}`]} title={`Quote: cấu trúc ${cl.toLowerCase()} · ngắn hạn ${nl.toLowerCase()}`} />)}
+                      <HeatCell total c={bq.rowTot[ct]} title={`Quote cấu trúc ${cl.toLowerCase()} — mọi ngắn hạn`} />
+                    </tr>
+                  ))}
+                  <tr>
+                    <th>Cả cột</th>
+                    {SIDE_LEVELS.map(([nh, nl]) => <HeatCell total key={nh} c={bq.colTot[nh]} title={`Quote ngắn hạn ${nl.toLowerCase()} — mọi cấu trúc`} />)}
+                    <HeatCell total c={bq.picked} title="Toàn bộ nhóm đang chọn" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="empty-note">Chưa có lệnh nào trong nhóm này.</p>}
+          <PairScoreDetails st={st} />
         </>
       )}
 
