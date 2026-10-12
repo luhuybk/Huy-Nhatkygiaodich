@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
-import { activeConditions, condScoreText, marketRegimesOf, tradeRegime } from "../lib/marketRegime.js";
+import { marketRegimesOf, toneLabel, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
@@ -292,8 +292,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
     .map((id) => skillLabel((skills || []).find((x) => x.id === id)))
     .filter(Boolean);
   const regime = resources ? tradeRegime(t, marketRegimesOf(resources), resources.accounts) : null;
-  const regimeText = regime ? (condScoreText(t, regime) || "Chưa ghi") : "";
-  const regimeChecks = regime && t.marketCond && t.marketCond.regimeId === regime.id ? t.marketCond.checks || {} : {};
+  const regimeState = regime ? tradeState(t, regime) : null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -314,14 +313,9 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
               <DetailRow label="Khung thời gian" value={t.timeframe} />
               <DetailRow label="Phiên" value={t.session} />
               {regime ? (
-                <DetailRow prose label={`Thị trường chung (${regime.name})`} value={(
-                  <div className="regime-detail">
-                    <b>{regimeText}</b>
-                    {activeConditions(regime).filter((c) => c.id in regimeChecks).map((c) => (
-                      <div key={c.id} className={regimeChecks[c.id] ? "text-win" : "text-loss"}>{regimeChecks[c.id] ? "✓" : "✗"} {c.label}</div>
-                    ))}
-                  </div>
-                )} />
+                <DetailRow label={`Thị trường chung (${regime.name})`}
+                  value={regimeState ? `${regimeState.label} — ${toneLabel(regimeState.tone)}` : "Chưa ghi"}
+                  tone={regimeState ? (regimeState.tone === "good" ? "text-win" : regimeState.tone === "bad" ? "text-loss" : "") : ""} />
               ) : null}
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />

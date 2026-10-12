@@ -3,50 +3,64 @@
 // nhiều hơn lúc chỉ số yếu — nhưng phải ghi lại từng lệnh thì mới biết "thường" là bao nhiêu.
 // Hàng hoá, forex... không có chỉ số chung thì để tài khoản đó không gắn chỉ số nào.
 //
-// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, conditions: [{ id, label }] }].
-// Lệnh ghi ở trade.marketCond = { regimeId, checks: { [conditionId]: true | false } };
-// regimeId = "none" nghĩa là bạn đã chọn "không áp dụng" cho lệnh đó.
-// Điều kiện khoá theo id, không theo chữ: đổi "Trên EMA9" thành "Giá > EMA9" không mất dữ liệu cũ.
+// Mỗi chỉ số có một danh sách TRẠNG THÁI loại trừ nhau ("Trên EMA9, EMA9 trên EMA21, dốc lên",
+// "Trên EMA9 nhưng dưới EMA21"...). Mỗi lệnh tick đúng một trạng thái. Không chấm điểm từng
+// điều kiện rời: "trên EMA9 dưới EMA21" và "dưới EMA9 trên EMA21" cùng là 2/3 nhưng là hai
+// thị trường khác hẳn nhau.
+//
+// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone }] }].
+// Lệnh ghi ở trade.marketCond = { regimeId, stateId }; regimeId = "none" là "không áp dụng".
+// Trạng thái khoá theo id, không theo chữ: sửa chữ không mất dữ liệu cũ.
 import { closedOfUSD, uid } from "./helpers.js";
 
 export const REGIME_NONE = "none";
 // Dưới mức này thì mỗi nhóm chỉ là vài lệnh — winrate nhảy 30% chỉ vì thêm một lệnh thắng.
 export const REGIME_MIN_SAMPLE = 10;
 
-const defaultConditions = (prefix) => [
-  { id: `${prefix}-ema9`, label: "Chỉ số trên EMA9" },
-  { id: `${prefix}-ema21`, label: "Chỉ số trên EMA21" },
-  { id: `${prefix}-slope`, label: "EMA9 & EMA21 dốc lên" },
+export const REGIME_TONES = [
+  { id: "good", label: "Thuận" },
+  { id: "neutral", label: "Trung tính" },
+  { id: "bad", label: "Nghịch" },
 ];
+export const toneLabel = (id) => (REGIME_TONES.find((x) => x.id === id) || REGIME_TONES[1]).label;
 
 // Id cố định để bộ mặc định (chưa lưu lần nào) vẫn khớp với những lệnh đã ghi theo nó.
+const defaultStates = (prefix) => [
+  { id: `${prefix}-up`, label: "Trên EMA9 · EMA9 trên EMA21 · dốc lên", tone: "good" },
+  { id: `${prefix}-pullback`, label: "Dưới EMA9 · vẫn trên EMA21 (điều chỉnh)", tone: "neutral" },
+  { id: `${prefix}-recover`, label: "Trên EMA9 · nhưng dưới EMA21 (hồi phục)", tone: "neutral" },
+  { id: `${prefix}-side`, label: "Đi ngang · EMA9 và EMA21 đan xen", tone: "neutral" },
+  { id: `${prefix}-down`, label: "Dưới EMA9 · EMA9 dưới EMA21 · dốc xuống", tone: "bad" },
+];
+
 // Gắn sẵn tài khoản theo tên: "US Stock" → S&P 500, "VN Stock" → VN-Index.
 export function defaultRegimes(accounts) {
   const list = (accounts || []).filter((a) => a && a.id && a.name);
   const match = (re) => list.filter((a) => re.test(a.name)).map((a) => a.id);
   return [
-    { id: "sp500", name: "S&P 500", accountIds: match(/\bUS\b|Mỹ/i), conditions: defaultConditions("sp500") },
-    { id: "vnindex", name: "VN-Index", accountIds: match(/\bVN\b|Việt/i), conditions: defaultConditions("vnindex") },
+    { id: "sp500", name: "S&P 500", accountIds: match(/\bUS\b|Mỹ/i), states: defaultStates("sp500") },
+    { id: "vnindex", name: "VN-Index", accountIds: match(/\bVN\b|Việt/i), states: defaultStates("vnindex") },
   ];
 }
 
 export function marketRegimesOf(resources) {
   const saved = resources && resources.marketRegimes;
-  return Array.isArray(saved) ? saved.filter((r) => r && r.id) : defaultRegimes(resources && resources.accounts);
+  if (!Array.isArray(saved)) return defaultRegimes(resources && resources.accounts);
+  // Bản lưu từ phiên bản chấm điểm từng điều kiện chưa có `states` — cấp bộ mặc định.
+  return saved.filter((r) => r && r.id).map((r) => (Array.isArray(r.states) ? r : { ...r, states: defaultStates(r.id) }));
+}
+
+export function emptyState() {
+  return { id: uid(), label: "", tone: "neutral" };
 }
 
 export function emptyRegime() {
-  return { id: uid(), name: "", accountIds: [], conditions: [{ id: uid(), label: "" }] };
+  return { id: uid(), name: "", accountIds: [], states: [emptyState()] };
 }
 
-export function emptyCondition() {
-  return { id: uid(), label: "" };
-}
-
-// Điều kiện vừa bấm "Thêm" mà chưa đặt tên thì coi như chưa có — không thì mọi lệnh cũ lập tức
-// thành "ghi thiếu" chỉ vì một ô trống.
-export function activeConditions(regime) {
-  return ((regime && regime.conditions) || []).filter((c) => c && c.id && String(c.label || "").trim());
+// Trạng thái vừa bấm "Thêm" mà chưa đặt tên thì coi như chưa có.
+export function activeStates(regime) {
+  return ((regime && regime.states) || []).filter((s) => s && s.id && String(s.label || "").trim());
 }
 
 // Tài khoản con chưa gắn riêng thì đi theo nhóm cha: gắn "US Stock" là mọi tài khoản trong
@@ -75,30 +89,18 @@ export function tradeRegime(t, regimes, accounts) {
   return regimeForAccount(regimes, t && t.account, accounts);
 }
 
-// { met, answered, total } — chỉ đếm khi lệnh ghi đúng theo chỉ số này.
-export function condScore(t, regime) {
-  const conds = activeConditions(regime);
+// Trạng thái đã tick (chỉ khi lệnh ghi đúng theo chỉ số này và trạng thái đó còn tồn tại).
+export function tradeState(t, regime) {
   const mc = t && t.marketCond;
-  const checks = mc && mc.regimeId === regime.id && mc.checks ? mc.checks : {};
-  let met = 0;
-  let answered = 0;
-  conds.forEach((c) => {
-    if (checks[c.id] === true) { met += 1; answered += 1; } else if (checks[c.id] === false) answered += 1;
-  });
-  return { met, answered, total: conds.length };
+  if (!regime || !mc || mc.regimeId !== regime.id || !mc.stateId) return null;
+  return activeStates(regime).find((s) => s.id === mc.stateId) || null;
 }
 
-export function condScoreText(t, regime) {
-  const s = condScore(t, regime);
-  if (!s.answered) return "";
-  return s.answered < s.total ? `Đạt ${s.met}/${s.answered} (ghi ${s.answered}/${s.total} điều kiện)` : `Đạt ${s.met}/${s.total}`;
-}
-
-// Lệnh khác cùng ngày vào, cùng chỉ số, đã ghi điều kiện — để bấm một cái là chép sang.
-export function sameDayCond(trades, t, regime) {
+// Lệnh khác cùng ngày vào, cùng chỉ số, đã tick trạng thái — để bấm một cái là chép sang.
+export function sameDayState(trades, t, regime) {
   if (!t || !t.entryDate || !regime) return null;
-  return (trades || []).find((x) => x && x.id !== t.id && x.entryDate === t.entryDate
-    && x.marketCond && x.marketCond.regimeId === regime.id && condScore(x, regime).answered > 0) || null;
+  const hit = (trades || []).find((x) => x && x.id !== t.id && x.entryDate === t.entryDate && tradeState(x, regime));
+  return hit ? { trade: hit, state: tradeState(hit, regime) } : null;
 }
 
 function emptyBucket() {
@@ -114,48 +116,36 @@ function finish(b) {
   return { ...b, winRate: b.count ? (b.wins / b.count) * 100 : null, avgR: b.rCount ? b.totalR / b.rCount : null };
 }
 
-// Thống kê lệnh ĐÃ ĐÓNG của một chỉ số:
-//   levels: nhóm theo số điều kiện đạt (chỉ lệnh đã ghi đủ mọi điều kiện) — N/N trước, 0/N cuối.
-//   partial: ghi thiếu vài điều kiện; missing: chưa ghi gì.
-//   byCondition: từng điều kiện riêng lẻ, đạt vs không đạt.
-//   full / rest: đạt đủ mọi điều kiện so với phần còn lại (trong số lệnh đã ghi đủ).
+// Thống kê lệnh ĐÃ ĐÓNG của một chỉ số: theo từng trạng thái, theo nhóm Thuận/Trung tính/Nghịch,
+// Thuận so với phần còn lại, và những lệnh chưa tick.
 export function regimeStats(trades, regime, resources, opts = {}) {
   const regimes = marketRegimesOf(resources);
   const accounts = (resources && resources.accounts) || [];
-  const conds = activeConditions(regime);
-  const total = conds.length;
-  const levels = Array.from({ length: total + 1 }, (_, i) => ({ met: total - i, ...emptyBucket() }));
-  const partial = emptyBucket();
-  const missing = emptyBucket();
-  const full = emptyBucket();
+  const states = activeStates(regime).map((s) => ({ id: s.id, label: s.label, tone: s.tone || "neutral", ...emptyBucket() }));
+  const tones = REGIME_TONES.map((x) => ({ id: x.id, label: x.label, ...emptyBucket() }));
+  const good = emptyBucket();
   const rest = emptyBucket();
-  const byCondition = conds.map((c) => ({ id: c.id, label: c.label, yes: emptyBucket(), no: emptyBucket() }));
+  const missing = emptyBucket();
   const missingTrades = [];
 
   closedOfUSD(trades || [], resources).forEach(({ t, r }) => {
     if (opts.direction && t.direction !== opts.direction) return;
     const reg = tradeRegime(t, regimes, accounts);
     if (!reg || reg.id !== regime.id) return;
-    const s = condScore(t, regime);
-    if (!s.answered) { addTo(missing, r); missingTrades.push(t); return; }
-    const checks = t.marketCond.checks || {};
-    byCondition.forEach((c) => {
-      if (checks[c.id] === true) addTo(c.yes, r);
-      else if (checks[c.id] === false) addTo(c.no, r);
-    });
-    if (s.answered < total) { addTo(partial, r); return; }
-    addTo(levels[total - s.met], r);
-    addTo(s.met === total ? full : rest, r);
+    const st = tradeState(t, regime);
+    if (!st) { addTo(missing, r); missingTrades.push(t); return; }
+    addTo(states.find((s) => s.id === st.id), r);
+    const tone = REGIME_TONES.some((x) => x.id === st.tone) ? st.tone : "neutral";
+    addTo(tones.find((x) => x.id === tone), r);
+    addTo(tone === "good" ? good : rest, r);
   });
 
   return {
-    total,
-    levels: levels.map((l) => ({ ...finish(l), met: l.met })),
-    partial: finish(partial),
+    states: states.map((s) => ({ ...finish(s), id: s.id, label: s.label, tone: s.tone })),
+    tones: tones.map((x) => ({ ...finish(x), id: x.id, label: x.label })),
+    good: finish(good),
+    rest: finish(rest),
     missing: finish(missing),
     missingTrades,
-    full: finish(full),
-    rest: finish(rest),
-    byCondition: byCondition.map((c) => ({ ...c, yes: finish(c.yes), no: finish(c.no) })),
   };
 }
