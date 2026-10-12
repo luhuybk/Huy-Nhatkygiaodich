@@ -8,7 +8,8 @@
 // điều kiện rời: "trên EMA9 dưới EMA21" và "dưới EMA9 trên EMA21" cùng là 2/3 nhưng là hai
 // thị trường khác hẳn nhau.
 //
-// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone }] }].
+// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone, note }] }].
+// note: ghi chú tự do (VD khuyến nghị đi vốn), hiện khi rê chuột vào trạng thái trong form lệnh.
 // Lệnh ghi ở trade.marketCond = { regimeId, stateId }; regimeId = "none" là "không áp dụng".
 // Trạng thái khoá theo id, không theo chữ: sửa chữ không mất dữ liệu cũ.
 import { closedOfUSD, uid } from "./helpers.js";
@@ -51,7 +52,7 @@ export function marketRegimesOf(resources) {
 }
 
 export function emptyState() {
-  return { id: uid(), label: "", tone: "neutral" };
+  return { id: uid(), label: "", tone: "neutral", note: "" };
 }
 
 export function emptyRegime() {

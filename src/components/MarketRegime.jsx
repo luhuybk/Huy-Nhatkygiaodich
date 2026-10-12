@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown } from "lucide-react";
+import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
-import { ConfirmButton, Field } from "./ui.jsx";
+import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
   activeStates, emptyRegime, emptyState, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
@@ -52,12 +52,16 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
         <>
           <div className="regime-states">
             {states.map((s) => (
-              <button key={s.id} type="button" className={`regime-state regime-tone-${s.tone || "neutral"} ${current && current.id === s.id ? "regime-state-on" : ""}`}
-                onClick={() => pickState(s.id)}>
-                <span className="regime-radio" />
-                <span className="regime-state-label">{s.label}</span>
-                <span className="regime-tone-tag">{toneLabel(s.tone)}</span>
-              </button>
+              <div key={s.id} className={`regime-state-wrap regime-tone-${s.tone || "neutral"}`}>
+                <button type="button" className={`regime-state ${current && current.id === s.id ? "regime-state-on" : ""}`}
+                  onClick={() => pickState(s.id)}>
+                  <span className="regime-radio" />
+                  <span className="regime-state-label">{s.label}</span>
+                  {s.note ? <Info size={13} className="regime-note-icon" /> : null}
+                  <span className="regime-tone-tag">{toneLabel(s.tone)}</span>
+                </button>
+                {s.note ? <div className="regime-note-pop"><NoteText text={s.note} /></div> : null}
+              </div>
             ))}
           </div>
           {sameDay ? (
@@ -72,10 +76,14 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
 }
 
 // Ô chữ chỉ lưu khi rời ô / Enter — lưu theo từng phím là mỗi chữ một lần ghi lên Supabase.
-function CommitInput({ value, onCommit, ...rest }) {
+// multiline: Enter xuống dòng như mọi ô ghi chú khác, chỉ lưu khi rời ô.
+function CommitInput({ value, onCommit, multiline, ...rest }) {
   const [draft, setDraft] = useState(value || "");
   useEffect(() => { setDraft(value || ""); }, [value]);
-  const commit = () => { if (draft.trim() !== (value || "").trim()) onCommit(draft.trim()); };
+  const commit = () => { if (draft.trim() !== (value || "").trim()) onCommit(multiline ? draft.replace(/\s+$/, "") : draft.trim()); };
+  if (multiline) {
+    return <textarea className="input textarea" rows={2} {...rest} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} />;
+  }
   return (
     <input className="input" {...rest} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
@@ -109,6 +117,7 @@ function RegimeSettings({ regimes, accounts, onChange }) {
       <p className="field-hint">
         Mỗi chỉ số là "nhiệt kế" của một loại thị trường, kèm danh sách trạng thái — mỗi lệnh tick đúng một trạng thái, nên các trạng thái
         nên loại trừ nhau và phủ hết các tình huống. Nhãn Thuận / Trung tính / Nghịch dùng để gộp thống kê.
+        Ghi chú của mỗi trạng thái (VD khuyến nghị đi vốn) hiện khi rê chuột vào trạng thái đó trong form lệnh.
         Tài khoản hàng hoá / forex không có chỉ số chung thì không gắn. Sửa chữ không mất dữ liệu cũ; xoá trạng thái thì các lệnh đã tick nó thành "chưa ghi".
       </p>
       {regimes.map((r) => (
@@ -135,7 +144,8 @@ function RegimeSettings({ regimes, accounts, onChange }) {
           <span className="field-label" style={{ marginTop: 12, display: "block" }}>Trạng thái thị trường</span>
           <div className="regime-cond-edit">
             {(r.states || []).map((s, i) => (
-              <div key={s.id} className="regime-cond-row">
+              <div key={s.id} className="regime-state-edit">
+              <div className="regime-cond-row">
                 <span className="mono regime-cond-num">{i + 1}.</span>
                 <CommitInput value={s.label} placeholder="VD: Trên EMA9 · nhưng dưới EMA21" onCommit={(v) => patchState(r, s.id, { label: v })} />
                 <select className={`input regime-tone-select regime-tone-${s.tone || "neutral"}`} value={s.tone || "neutral"} onChange={(e) => patchState(r, s.id, { tone: e.target.value })}>
@@ -144,6 +154,11 @@ function RegimeSettings({ regimes, accounts, onChange }) {
                 <button type="button" className="row-btn" disabled={i === 0} onClick={() => move(r, i, -1)} title="Lên"><ChevronUp size={14} /></button>
                 <button type="button" className="row-btn" disabled={i === r.states.length - 1} onClick={() => move(r, i, 1)} title="Xuống"><ChevronDown size={14} /></button>
                 <ConfirmButton onConfirm={() => setStates(r, r.states.filter((x) => x.id !== s.id))} />
+              </div>
+              <div className="regime-note-edit">
+                <CommitInput multiline value={s.note} onCommit={(v) => patchState(r, s.id, { note: v })}
+                  placeholder="Ghi chú — hiện khi rê chuột vào trạng thái. VD: Đi vốn 1.2% · ưu tiên setup breakout" />
+              </div>
               </div>
             ))}
           </div>
@@ -271,7 +286,7 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
               <tbody>
                 {st.states.map((s) => (
                   <tr key={s.id} className={s.count ? "" : "regime-row-dim"}>
-                    <td><span className={`regime-dot regime-tone-${s.tone || "neutral"}`} />{s.label}</td>
+                    <td className={s.note ? "regime-has-note" : ""} title={s.note || undefined}><span className={`regime-dot regime-tone-${s.tone || "neutral"}`} />{s.label}</td>
                     <StatCells s={s} />
                   </tr>
                 ))}

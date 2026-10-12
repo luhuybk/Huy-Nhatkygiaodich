@@ -1939,18 +1939,29 @@ button.nt-check:hover { filter: brightness(1.25); }
 .regime-picker-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .regime-picker-head .field-label { margin: 0; }
 .regime-select { max-width: 260px; padding: 5px 8px; font-size: 12.5px; }
-.regime-tone-good { --tone: var(--win); }
-.regime-tone-neutral { --tone: var(--text-dim); }
-.regime-tone-bad { --tone: var(--loss); }
+.regime-tone-good { --tone: var(--win); --tone-rgb: var(--win-rgb, 76,175,125); }
+.regime-tone-neutral { --tone: var(--text-dim); --tone-rgb: 141,145,152; }
+.regime-tone-bad { --tone: var(--loss); --tone-rgb: var(--loss-rgb, 224,97,90); }
 .regime-states { display: grid; gap: 5px; margin-top: 10px; }
+.regime-state-wrap { position: relative; }
 .regime-state { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
-.regime-state:hover { border-color: color-mix(in srgb, var(--tone) 55%, var(--border)); }
+.regime-state:hover { border-color: rgba(var(--tone-rgb), 0.55); }
 .regime-radio { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--text-dim); flex-shrink: 0; }
 .regime-state-label { flex: 1; }
 .regime-tone-tag { font-size: 11px; color: var(--tone); flex-shrink: 0; }
-.regime-state-on { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 12%, var(--surface)); }
+.regime-note-icon { color: var(--text-dim); flex-shrink: 0; }
+.regime-state-on { border-color: var(--tone); background: rgba(var(--tone-rgb), 0.12); }
 .regime-state-on .regime-radio { border-color: var(--tone); background: radial-gradient(circle, var(--tone) 45%, transparent 50%); }
+.regime-note-pop { display: none; position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; width: min(380px, 92%); padding: 10px 12px;
+  border-radius: 8px; border: 1px solid rgba(var(--tone-rgb), 0.6); background: var(--surface); color: var(--text); font-size: 12.5px;
+  line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,0.45); pointer-events: none; white-space: pre-wrap; }
+.regime-state-wrap:hover .regime-note-pop { display: block; }
+.regime-state-edit { display: grid; gap: 4px; padding-bottom: 6px; border-bottom: 1px dashed var(--border); }
+.regime-state-edit:last-child { border-bottom: none; }
+.regime-note-edit { padding-left: 24px; }
+.regime-note-edit .textarea { min-height: 38px; font-size: 12.5px; max-width: 620px; width: 100%; }
+.regime-has-note { cursor: help; text-decoration: underline dotted var(--text-dim); text-underline-offset: 3px; }
 .regime-copy { margin-top: 8px; }
 .regime-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); margin-right: 8px; vertical-align: middle; }
 .regime-settings { display: grid; gap: 12px; }
