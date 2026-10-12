@@ -1987,3 +1987,34 @@ button.nt-check:hover { filter: brightness(1.25); }
   .regime-cond-row .input { min-width: 0; flex-basis: calc(100% - 26px); }
   .regime-cond-row .regime-tone-select { margin-left: 24px; }
 }
+
+/* Thẻ tài khoản có màu riêng */
+.acct-tag { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 7px; border-radius: 6px; font-size: 12px; white-space: nowrap;
+  color: var(--acct); background: color-mix(in srgb, var(--acct) 13%, transparent); border: 1px solid color-mix(in srgb, var(--acct) 35%, transparent); }
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .acct-tag { background: rgba(255,255,255,0.04); border-color: currentColor; }
+}
+.acct-tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--acct); flex-shrink: 0; }
+
+/* Sức mạnh đồng tiền (FX) */
+.fx-grid { display: grid; grid-template-columns: auto 1fr 1fr 44px; gap: 6px 10px; align-items: center; margin-top: 10px; }
+.fx-col-head { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.fx-col-score { text-align: right; }
+.fx-coin { font-size: 13px; white-space: nowrap; }
+.fx-coin small { color: var(--text-dim); font-size: 11px; }
+.fx-seg { width: 100%; }
+.fx-seg .seg-btn { flex: 1; padding: 4px 6px; }
+.fx-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12.5px; }
+.fx-heat td, .fx-heat th { text-align: center; }
+.fx-heat td { font-size: 12px; white-space: nowrap; }
+.fx-heat td b { margin-right: 4px; }
+.fx-heat-empty { color: var(--text-dim); opacity: 0.5; }
+@media (max-width: 560px) {
+  .fx-grid { grid-template-columns: 1fr 44px; }
+  .fx-grid .fx-col-head { display: none; }
+  .fx-grid .fx-coin { grid-column: 1 / -1; margin-top: 4px; }
+  .fx-grid .fx-seg { grid-column: 1 / 2; }
+  .fx-grid > .fx-col-score.mono { grid-column: 2; grid-row: span 2; }
+  .fx-seg::before { content: attr(data-label); align-self: center; width: 26px; flex: none; font-size: 10.5px; color: var(--text-dim); padding-left: 4px; }
+}
+.fx-seg .seg-active { background: rgba(141,145,152,0.24); color: var(--text); }

@@ -153,6 +153,23 @@ export function ImagePreviewStrip({ items, empty = true }) {
 }
 
 // Công tắc bật/tắt gọn — thay cho nút to "🔔 Đang bật …" ở đầu mỗi mục.
+// Mỗi tài khoản một màu, theo thứ tự trong trang Tài khoản — cố định giữa các lần mở, và hai
+// tài khoản cạnh nhau (Forex - Ngắn / Forex - Dài) không bao giờ trùng màu.
+const ACCOUNT_COLORS = ["#5b9cf5", "#e0a64e", "#4fc1a6", "#c879e0", "#e06a8f", "#9ccc65", "#4dd0e1", "#ff8a65", "#a3a9e8", "#d8c94a"];
+export function accountColor(name, accounts) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const i = list.findIndex((a) => a.name === name);
+  if (i >= 0) return ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+  let h = 0;
+  for (const ch of String(name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return ACCOUNT_COLORS[h % ACCOUNT_COLORS.length];
+}
+
+export function AccountTag({ name, accounts }) {
+  if (!name) return null;
+  return <span className="acct-tag" style={{ "--acct": accountColor(name, accounts) }}>{name}</span>;
+}
+
 export function Switch({ checked, onChange, title, label }) {
   return (
     <button type="button" role="switch" aria-checked={!!checked} title={title}

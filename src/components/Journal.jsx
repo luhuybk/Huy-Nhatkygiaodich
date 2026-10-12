@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
-import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
+import { AccountTag, CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
 import { marketRegimesOf, toneLabel, tradeRegime, tradeState } from "../lib/marketRegime.js";
+import { fxDetailText } from "./FxStrength.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
@@ -317,6 +318,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
                   value={regimeState ? `${regimeState.label} — ${toneLabel(regimeState.tone)}` : "Chưa ghi"}
                   tone={regimeState ? (regimeState.tone === "good" ? "text-win" : regimeState.tone === "bad" ? "text-loss" : "") : ""} />
               ) : null}
+              {fxDetailText(t) ? <DetailRow prose label="Sức mạnh đồng tiền" value={fxDetailText(t)} /> : null}
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
               <DetailRow prose label="Nhận xét Setup" value={t.setupNote} onChange={editNote("setupNote")} />
@@ -675,7 +677,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
             const C = Object.fromEntries(JOURNAL_COLUMNS.map((c) => [c.id, c]));
             const cells = {
               entryDate: td(C.entryDate, t.entryDate || EMPTY, { className: "mono" }),
-              account: td(C.account, t.account || EMPTY),
+              account: td(C.account, t.account ? <AccountTag name={t.account} accounts={res.accounts} /> : EMPTY),
               symbol: td(C.symbol, t.symbol, { style: { fontWeight: 600 } }),
               images: td(C.images, <Strip items={shots} empty={false} />, { onClick: (e) => e.stopPropagation() }),
               direction: td(C.direction, <span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span>),

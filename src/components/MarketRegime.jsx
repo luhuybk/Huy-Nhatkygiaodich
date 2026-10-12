@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
+import { FxStatsPanel } from "./FxStrength.jsx";
+import { fxPairOf } from "../lib/fxStrength.js";
 import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
@@ -31,6 +33,8 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
     return { ...prev, marketCond: { regimeId: regime.id, stateId: same ? "" : stateId } };
   });
   const states = regime ? activeStates(regime) : [];
+  // Cặp FX đã có bảng sức mạnh đồng tiền riêng — khỏi hiện thêm khung "không có chỉ số".
+  if (!regime && !picked && fxPairOf(t.symbol)) return null;
 
   return (
     <div className="regime-picker">
@@ -197,7 +201,7 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
   const regime = regimes.find((r) => r.id === tab) || null;
-  useEffect(() => { if (tab !== "settings" && !regime) setTab(regimes[0] ? regimes[0].id : "settings"); }, [tab, regime, regimes]);
+  useEffect(() => { if (tab !== "settings" && tab !== "fx" && !regime) setTab(regimes[0] ? regimes[0].id : "settings"); }, [tab, regime, regimes]);
 
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
   const scoped = useMemo(
@@ -206,15 +210,45 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
   );
   const st = useMemo(() => (regime ? regimeStats(scoped, regime, resources, { direction }) : null), [scoped, regime, resources, direction]);
   const saveRegimes = (next) => onResourcesChange({ ...resources, marketRegimes: next });
+  const linkedNames = (r) => (r.accountIds || []).map((id) => (resources.accounts.find((a) => a.id === id) || {}).name).filter(Boolean);
 
   const tabs = (
     <div className="subtabs">
       {regimes.map((r) => (
         <button key={r.id} type="button" className={`subtab ${tab === r.id ? "subtab-active" : ""}`} onClick={() => setTab(r.id)}>{r.name || "(chưa đặt tên)"}</button>
       ))}
+      <button type="button" className={`subtab ${tab === "fx" ? "subtab-active" : ""}`} onClick={() => setTab("fx")}>Cặp tiền FX</button>
       <button type="button" className={`subtab ${tab === "settings" ? "subtab-active" : ""}`} onClick={() => setTab("settings")}><Settings2 size={13} /> Cài đặt</button>
     </div>
   );
+  const filters = (
+    <>
+      <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
+      <div className="mc-controls">
+        <div className="seg">
+          {[["", "Buy + Sell"], ["buy", "Chỉ Buy"], ["sell", "Chỉ Sell"]].map(([id, label]) => (
+            <button key={id} type="button" className={`seg-btn ${direction === id ? "seg-active" : ""}`} onClick={() => setDirection(id)}>{label}</button>
+          ))}
+        </div>
+        {regime ? (
+          <span className="field-hint">
+            {linkedNames(regime).length ? `Tài khoản: ${linkedNames(regime).join(", ")}` : "Chưa gắn tài khoản nào — chỉ tính lệnh tự chọn chỉ số này."}
+            {direction !== "buy" ? " · Lệnh Sell: thị trường \"thuận\" cho Buy thường là bất lợi, nên xem riêng." : ""}
+          </span>
+        ) : null}
+      </div>
+    </>
+  );
+
+  if (tab === "fx") {
+    return (
+      <div>
+        {tabs}
+        {filters}
+        <FxStatsPanel trades={scoped} resources={resources} direction={direction} onOpenTrade={onOpenTrade} />
+      </div>
+    );
+  }
 
   if (tab === "settings" || !regime) {
     return (
@@ -228,24 +262,12 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
   const recorded = st.states.reduce((n, s) => n + s.count, 0);
   const small = st.good.count < REGIME_MIN_SAMPLE || st.rest.count < REGIME_MIN_SAMPLE;
   const gapWr = st.good.winRate !== null && st.rest.winRate !== null ? st.good.winRate - st.rest.winRate : null;
-  const linked = (regime.accountIds || []).map((id) => (resources.accounts.find((a) => a.id === id) || {}).name).filter(Boolean);
   const best = st.states.filter((s) => s.count >= 3 && s.winRate !== null).sort((a, b) => b.winRate - a.winRate)[0] || null;
 
   return (
     <div>
       {tabs}
-      <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
-      <div className="mc-controls">
-        <div className="seg">
-          {[["", "Buy + Sell"], ["buy", "Chỉ Buy"], ["sell", "Chỉ Sell"]].map(([id, label]) => (
-            <button key={id} type="button" className={`seg-btn ${direction === id ? "seg-active" : ""}`} onClick={() => setDirection(id)}>{label}</button>
-          ))}
-        </div>
-        <span className="field-hint">
-          {linked.length ? `Tài khoản: ${linked.join(", ")}` : "Chưa gắn tài khoản nào — chỉ tính lệnh tự chọn chỉ số này."}
-          {direction !== "buy" ? " · Lệnh Sell: thị trường \"thuận\" cho Buy thường là bất lợi, nên xem riêng." : ""}
-        </span>
-      </div>
+      {filters}
 
       {recorded === 0 ? (
         <div className="empty-state">
