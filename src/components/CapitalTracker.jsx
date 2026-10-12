@@ -93,6 +93,19 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
   };
 
   const selectedAccount = accounts.find((a) => a.id === selectedId);
+  // Sửa tên / tiền tệ tại chỗ. Đổi tiền tệ chỉ đổi cách hiện số — các mốc đã ghi giữ nguyên
+  // con số, nên đổi USD → VND thì phải tự sửa lại các mốc nếu chúng đang là số USD.
+  const [editAcc, setEditAcc] = useState(null);
+  const [editAccError, setEditAccError] = useState("");
+  const startEditAccount = () => { setEditAcc({ name: selectedAccount.name, currency: selectedAccount.currency || "USD" }); setEditAccError(""); };
+  const saveAccount = () => {
+    const name = editAcc.name.trim();
+    if (!name) { setEditAccError("Nhập tên tài khoản."); return; }
+    if (accounts.some((a) => a.id !== selectedId && a.name.trim().toLowerCase() === name.toLowerCase())) { setEditAccError("Đã có tài khoản trùng tên."); return; }
+    onAccountsChange(accounts.map((a) => (a.id === selectedId ? { ...a, name, currency: editAcc.currency.trim().toUpperCase() || "USD" } : a)));
+    setEditAcc(null);
+  };
+  useEffect(() => { setEditAcc(null); }, [selectedId]);
   const accountEntries = entries.filter((e) => e.accountId === selectedId).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const accountFlows = flows.filter((f) => f.accountId === selectedId).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const lastEntry = accountEntries[accountEntries.length - 1] || null;
@@ -128,7 +141,10 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
     onFlowsChange(exists ? flows.map((f) => (f.id === payload.id ? payload : f)) : [...flows, payload]);
     setFlowForm(emptyCapitalFlow(flowForm.date));
   };
-  const removeFlow = (id) => onFlowsChange(flows.filter((f) => f.id !== id));
+  const removeFlow = (id) => {
+    onFlowsChange(flows.filter((f) => f.id !== id));
+    if (flowForm.id === id) setFlowForm(emptyCapitalFlow(flowForm.date));
+  };
 
   const curve = buildCapitalIndexCurve(accountEntries, accountFlows);
   const currentIndex = curve.length ? curve[curve.length - 1].index : null;
@@ -171,7 +187,29 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
           <select className="input" style={{ maxWidth: 240 }} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency || "USD"})</option>)}
           </select>
+          {selectedAccount && !editAcc ? <button type="button" className="btn btn-ghost" onClick={startEditAccount}><Pencil size={13} /> Sửa thông tin</button> : null}
           {selectedAccount ? <ConfirmButton onConfirm={() => removeAccount(selectedAccount.id)} className="btn btn-ghost" icon={Trash2} label="Xóa tài khoản này" /> : null}
+        </div>
+      ) : null}
+
+      {selectedAccount && editAcc ? (
+        <div className="account-form" style={{ marginBottom: 16 }}>
+          <h4 className="detail-col-title" style={{ marginTop: 0 }}>Sửa tài khoản "{selectedAccount.name}"</h4>
+          <div className="grid-3">
+            <Field label="Tên tài khoản">
+              <input className="input" value={editAcc.name} autoFocus onChange={(e) => setEditAcc((p) => ({ ...p, name: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") saveAccount(); if (e.key === "Escape") setEditAcc(null); }} />
+            </Field>
+            <Field label="Đơn vị tiền tệ" hint={editAcc.currency.trim().toUpperCase() !== (selectedAccount.currency || "USD") ? "Chỉ đổi đơn vị hiển thị — số tiền ở các mốc đã ghi giữ nguyên." : undefined}>
+              <input className="input" list="capital-currency-options" value={editAcc.currency} onChange={(e) => setEditAcc((p) => ({ ...p, currency: e.target.value }))} placeholder="USD" />
+            </Field>
+          </div>
+          <p className="field-hint">Vốn ban đầu là mốc ghi nhận đầu tiên — sửa ở bảng "Mốc ghi nhận" bên dưới.</p>
+          {editAccError ? <p className="error-text">{editAccError}</p> : null}
+          <div className="form-actions" style={{ marginTop: 4 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setEditAcc(null)}>Hủy</button>
+            <button type="button" className="btn btn-primary" onClick={saveAccount}>Lưu thay đổi</button>
+          </div>
         </div>
       ) : null}
 
@@ -289,7 +327,8 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
                 <Field label="Ghi chú"><input className="input" value={flowForm.note} onChange={(e) => setFF("note")(e.target.value)} placeholder="Tùy chọn..." /></Field>
                 {flowError ? <p className="error-text">{flowError}</p> : null}
                 <div className="form-actions" style={{ marginTop: 4 }}>
-                  <button type="button" className="btn btn-primary" onClick={saveFlow}>Lưu dòng vốn</button>
+                  {flowForm.id ? <button type="button" className="btn btn-ghost" onClick={() => { setFlowForm(emptyCapitalFlow(flowForm.date)); setFlowError(""); }}>Hủy sửa</button> : null}
+                  <button type="button" className="btn btn-primary" onClick={saveFlow}>{flowForm.id ? "Cập nhật dòng vốn" : "Lưu dòng vốn"}</button>
                 </div>
               </div>
               <div className="resource-list" style={{ marginTop: 16 }}>
@@ -303,7 +342,10 @@ export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange,
                       {f.type === "rebalance" && <>Cân tiền <strong>{fmtMoney(Number(f.amount), selectedAccount.currency)}</strong> ({f.direction === "reserveToTrade" ? "Dự phòng → Trade" : "Trade → Dự phòng"})</>}
                       {f.note ? <span style={{ color: "var(--text-dim)" }}> · {f.note}</span> : null}
                     </span>
-                    <ConfirmButton onConfirm={() => removeFlow(f.id)} />
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button type="button" className="row-btn" onClick={() => setFlowForm(f)}><Pencil size={13} /></button>
+                      <ConfirmButton onConfirm={() => removeFlow(f.id)} />
+                    </div>
                   </div>
                 ))}
               </div>

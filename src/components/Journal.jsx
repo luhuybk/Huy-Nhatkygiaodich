@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
+import { activeConditions, condScoreText, marketRegimesOf, tradeRegime } from "../lib/marketRegime.js";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
@@ -265,7 +266,7 @@ function tradeImageShots(t) {
   return shots;
 }
 
-export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete, onUpdate }) {
+export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete, onUpdate }) {
   if (!trade) return null;
   const t = trade;
   // Bấm ô ☐/☑ trong ghi chú là lưu thẳng vào lệnh, khỏi phải mở form sửa.
@@ -290,6 +291,9 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
   const skillNames = (t.skills || [])
     .map((id) => skillLabel((skills || []).find((x) => x.id === id)))
     .filter(Boolean);
+  const regime = resources ? tradeRegime(t, marketRegimesOf(resources), resources.accounts) : null;
+  const regimeText = regime ? (condScoreText(t, regime) || "Chưa ghi") : "";
+  const regimeChecks = regime && t.marketCond && t.marketCond.regimeId === regime.id ? t.marketCond.checks || {} : {};
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -309,6 +313,16 @@ export function TradeDetailModal({ trade, journeyLog, onOpenLog, setupErrors, sk
               <DetailRow label="Hướng lệnh" value={t.direction === "buy" ? "Buy" : "Sell"} />
               <DetailRow label="Khung thời gian" value={t.timeframe} />
               <DetailRow label="Phiên" value={t.session} />
+              {regime ? (
+                <DetailRow prose label={`Thị trường chung (${regime.name})`} value={(
+                  <div className="regime-detail">
+                    <b>{regimeText}</b>
+                    {activeConditions(regime).filter((c) => c.id in regimeChecks).map((c) => (
+                      <div key={c.id} className={regimeChecks[c.id] ? "text-win" : "text-loss"}>{regimeChecks[c.id] ? "✓" : "✗"} {c.label}</div>
+                    ))}
+                  </div>
+                )} />
+              ) : null}
               <DetailRow label="Setup" value={t.setup} />
               <DetailRow label="Bonus" value={t.setupBonus} />
               <DetailRow prose label="Nhận xét Setup" value={t.setupNote} onChange={editNote("setupNote")} />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
 import { RiskTierChips } from "./CapitalPlan.jsx";
+import { MarketCondPicker } from "./MarketRegime.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
 import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
@@ -496,6 +497,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             <ResourceSelect value={t.session} onChange={set("session")} options={resources.sessions} placeholder="Chọn phiên" />
           </Field>
         </div>
+        <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />
         <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")}>
           <ImageOrLink link={t.entryLink} image={t.entryImage} onLinkChange={set("entryLink")} onImageChange={set("entryImage")} label="entry" />
         </Field>

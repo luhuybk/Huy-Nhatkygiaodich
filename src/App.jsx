@@ -4,7 +4,7 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
   Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown, Scale,
-  NotebookPen,
+  NotebookPen, Globe2,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -29,6 +29,7 @@ const Analysis = lazy(() => import("./components/Analysis.jsx").then((m) => ({ d
 const TradeAnalysisPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.TradeAnalysisPage })));
 const HeatmapPage = lazy(() => import("./components/Analysis.jsx").then((m) => ({ default: m.HeatmapPage })));
 const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").then((m) => ({ default: m.SystemQualityPage })));
+const MarketRegimePage = lazy(() => import("./components/MarketRegime.jsx").then((m) => ({ default: m.MarketRegimePage })));
 const MistakeCostPage = lazy(() => import("./components/MistakeCost.jsx").then((m) => ({ default: m.MistakeCostPage })));
 const StreakPage = lazy(() => import("./components/Streaks.jsx").then((m) => ({ default: m.StreakPage })));
 const WeeklyReportPage = lazy(() => import("./components/WeeklyReport.jsx").then((m) => ({ default: m.WeeklyReportPage })));
@@ -64,6 +65,7 @@ const NAV_GROUPS = [
       { key: "symbolperf", label: "Hiệu suất Symbol", icon: Hash },
       { key: "setupperf", label: "Hiệu suất Setup", icon: Star },
       { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
+      { key: "marketregime", label: "Thị trường chung", icon: Globe2 },
       { key: "weekdayperf", label: "Hiệu suất Thứ", icon: CalendarDays },
       { key: "heatmap", label: "Bản đồ nhiệt", icon: Grid3x3 },
       { key: "weeklyreport", label: "Báo cáo tuần/tháng", icon: CalendarRange },
@@ -783,6 +785,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "weeklyreport" ? <WeeklyReportPage trades={trades} resources={resources} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} /> :
               view === "streaks" ? <StreakPage trades={trades} resources={resources} setupErrors={setupErrors} /> :
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
+              view === "marketregime" ? <MarketRegimePage trades={trades} resources={resources} onResourcesChange={handleResourcesChange} onOpenTrade={setViewingTrade} /> :
               view === "mistakecost" ? <MistakeCostPage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}
@@ -857,6 +860,7 @@ function AppShell({ onSignOut, userEmail }) {
         <Suspense fallback={null}>
           <TradeDetailModal
             trade={viewingTrade}
+            resources={resources}
             journeyLog={journeyLog}
             onOpenLog={() => { setViewingTrade(null); goTo("journeylog"); }}
             setupErrors={setupErrors}
