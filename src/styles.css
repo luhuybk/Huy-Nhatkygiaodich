@@ -2028,3 +2028,9 @@ button.nt-check:hover { filter: brightness(1.25); }
 .fx-heat-r { font-size: 11px; margin-top: 2px; }
 .fx-heat-total { background: var(--surface-2) !important; }
 .fx-pair-details { margin-top: 22px; }
+
+.demo-toggle { margin-left: auto; align-self: center; }
+.demo-toggle-on { color: var(--pending, #cddc39); border-color: currentColor; }
+.demo-banner { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; margin-bottom: 14px; border-radius: 8px; font-size: 12.5px;
+  border: 1px dashed var(--pending, #cddc39); color: var(--text); background: rgba(var(--pending-rgb, 205,220,57), 0.07); }
+.demo-banner svg { color: var(--pending, #cddc39); flex-shrink: 0; margin-top: 2px; }

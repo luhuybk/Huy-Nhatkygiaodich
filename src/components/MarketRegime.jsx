@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info } from "lucide-react";
+import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { FxStatsPanel } from "./FxStrength.jsx";
 import { fxPairOf } from "../lib/fxStrength.js";
+import { buildDemoTrades } from "../lib/demoTrades.js";
 import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
@@ -192,8 +193,14 @@ function StatCells({ s }) {
   );
 }
 
-export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenTrade }) {
+export function MarketRegimePage({ trades: realTrades, resources, onResourcesChange, onOpenTrade: openReal }) {
   const regimes = useMemo(() => marketRegimesOf(resources), [resources]);
+  // Dữ liệu mẫu chỉ sống trong state của trang này — không lưu, rời trang / tải lại là mất.
+  // Lệnh mẫu không mở được: mở ra là có nút Sửa, lưu lại là lọt lệnh giả vào dữ liệu thật.
+  const [demo, setDemo] = useState(false);
+  const demoTrades = useMemo(() => (demo ? buildDemoTrades(regimes) : null), [demo, regimes]);
+  const trades = demo ? demoTrades : realTrades;
+  const onOpenTrade = demo ? undefined : openReal;
   const [tab, setTab] = useState(regimes[0] ? regimes[0].id : "settings");
   const [direction, setDirection] = useState("");
   const [scope, setScope] = useState("");
@@ -219,8 +226,18 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
       ))}
       <button type="button" className={`subtab ${tab === "fx" ? "subtab-active" : ""}`} onClick={() => setTab("fx")}>Cặp tiền FX</button>
       <button type="button" className={`subtab ${tab === "settings" ? "subtab-active" : ""}`} onClick={() => setTab("settings")}><Settings2 size={13} /> Cài đặt</button>
+      <button type="button" className={`btn btn-ghost btn-xs demo-toggle ${demo ? "demo-toggle-on" : ""}`} onClick={() => setDemo((v) => !v)}
+        title="Sinh tạm vài trăm lệnh giả trong trình duyệt để xem bảng thống kê — không lưu, không đụng dữ liệu thật">
+        <FlaskConical size={13} /> {demo ? "Tắt dữ liệu mẫu" : "Xem thử với dữ liệu mẫu"}
+      </button>
     </div>
   );
+  const demoBanner = demo ? (
+    <div className="demo-banner">
+      <FlaskConical size={14} />
+      <span><b>Đang xem dữ liệu mẫu</b> — số liệu giả, sinh tạm trong trình duyệt, không lưu vào nhật ký. Bấm "Tắt dữ liệu mẫu" hoặc rời trang là về dữ liệu thật.</span>
+    </div>
+  ) : null;
   const filters = (
     <>
       <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
@@ -244,6 +261,7 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
     return (
       <div>
         {tabs}
+        {demoBanner}
         {filters}
         <FxStatsPanel trades={scoped} resources={resources} direction={direction} onOpenTrade={onOpenTrade} />
       </div>
@@ -267,6 +285,7 @@ export function MarketRegimePage({ trades, resources, onResourcesChange, onOpenT
   return (
     <div>
       {tabs}
+      {demoBanner}
       {filters}
 
       {recorded === 0 ? (
