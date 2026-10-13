@@ -44,18 +44,26 @@ async function answerCallback(botToken: string, callbackId: string, text: string
 type Button = { text: string; callback_data?: string };
 
 async function editMarkup(botToken: string, chatId: number, messageId: number, keyboard: Button[][]) {
-  await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard } }),
   });
+  if (!res.ok) console.error("editMessageReplyMarkup failed", res.status, await res.text());
+}
+
+// Giờ Việt Nam dạng 14:05 — ghi lên nút để biết đã bấm lúc nào.
+function vnClock(d = new Date()) {
+  const t = new Date(d.getTime() + 7 * 3600 * 1000);
+  return `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 const doneCell = (text: string) => ({ text, callback_data: "n|" });
 
 // Dòng của tin dạng bảng sau khi bấm: giữ ô tên mã, đổi nút vừa bấm thành trạng thái. "Tiếp tục" /
 // "Đã dời" vẫn để lại nút còn lại (sau đó vẫn có thể ngừng / kết thúc); "Ngừng" / "Kết thúc" thì
-// dòng đó xong hẳn.
+// dòng đó xong hẳn. Chữ trạng thái PHẢI khác chữ nút gốc — trước đây "✅ Đã dời" đổi thành đúng
+// "✅ Đã dời", nút bị khoá mà nhìn vào không thấy gì đổi, tưởng bấm không ăn.
 function rowAfter(row: Button[], kind: string, action: string): Button[] {
   const label = row[0];
   const find = (suffix: string) => row.find((b) => String(b.callback_data || "").endsWith(suffix));
@@ -67,7 +75,8 @@ function rowAfter(row: Button[], kind: string, action: string): Button[] {
   if (kind === "sl") {
     if (action === "closed") return [label, doneCell("🏁 Đã kết thúc")];
     const closed = find("|closed");
-    return closed ? [label, doneCell("✅ Đã dời"), closed] : [label, doneCell("✅ Đã dời")];
+    const moved = doneCell(`☑️ Dời ${vnClock()}`);
+    return closed ? [label, moved, closed] : [label, moved];
   }
   return row;
 }
@@ -222,8 +231,8 @@ Deno.serve(async (req) => {
       messageSuffix = "\n\n🏁 Lệnh đã kết thúc — ngừng nhắc. Nhớ điền ngày thoát vào nhật ký.";
     } else {
       // "Đã dời" chỉ để xác nhận — lệnh vẫn mở nên khung giờ sau vẫn nhắc tiếp như thường.
-      notice = "✅ Đã ghi nhận, sẽ nhắc lại ở khung giờ kế tiếp.";
-      messageSuffix = "\n\n✅ Đã dời SL — nhắc lại ở khung giờ kế tiếp.";
+      notice = `☑️ Đã ghi nhận dời SL lúc ${vnClock()}, sẽ nhắc lại ở khung giờ kế tiếp.`;
+      messageSuffix = `\n\n☑️ Đã dời SL lúc ${vnClock()} — nhắc lại ở khung giờ kế tiếp.`;
     }
   } else if (kind === "mf") {
     // Nhắc điền nhật ký cho lệnh đã bấm "Kết thúc lệnh" — tắt riêng nhắc này,
