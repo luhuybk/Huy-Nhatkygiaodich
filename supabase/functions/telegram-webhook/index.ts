@@ -33,23 +33,44 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-async function answerCallback(botToken: string, callbackId: string, text: string) {
+async function answerCallback(botToken: string, callbackId: string, text: string, alert = false) {
   await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callbackId, text }),
+    body: JSON.stringify({ callback_query_id: callbackId, text, show_alert: alert }),
   });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Gọi API sửa tin của Telegram. Bấm liên tiếp nhiều nút trên cùng một tin trong nhóm dễ dính
+// giới hạn tốc độ (429 "retry after N") — đợi đúng N giây rồi thử lại một lần thay vì bỏ cuộc.
+// Trả về "" khi xong, hoặc mô tả lỗi của Telegram để hiện cho người bấm.
+async function telegramEdit(botToken: string, method: string, body: unknown): Promise<string> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return "";
+    let info: { description?: string; parameters?: { retry_after?: number } } = {};
+    try { info = await res.json(); } catch (_e) { /* không phải JSON */ }
+    const desc = info.description || `HTTP ${res.status}`;
+    console.error(method, "failed", res.status, desc);
+    // Tin không đổi gì (bấm lại đúng nút cũ) thì coi như xong.
+    if (/message is not modified/i.test(desc)) return "";
+    const wait = info.parameters?.retry_after;
+    if (res.status === 429 && wait && wait <= 8 && attempt === 0) { await sleep(wait * 1000 + 300); continue; }
+    return desc;
+  }
+  return "Telegram từ chối sửa tin";
 }
 
 type Button = { text: string; callback_data?: string };
 
-async function editMarkup(botToken: string, chatId: number, messageId: number, keyboard: Button[][]) {
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard } }),
-  });
-  if (!res.ok) console.error("editMessageReplyMarkup failed", res.status, await res.text());
+function editMarkup(botToken: string, chatId: number, messageId: number, keyboard: Button[][]) {
+  return telegramEdit(botToken, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard } });
 }
 
 // Giờ Việt Nam dạng 14:05 — ghi lên nút để biết đã bấm lúc nào.
@@ -82,12 +103,8 @@ function rowAfter(row: Button[], kind: string, action: string): Button[] {
 }
 
 // Gỡ hàng nút đi sau khi đã xử lý, để không bấm nhầm lần nữa vào tin nhắn cũ.
-async function clearButtons(botToken: string, chatId: number, messageId: number, newText: string) {
-  await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text: newText }),
-  });
+function clearButtons(botToken: string, chatId: number, messageId: number, newText: string) {
+  return telegramEdit(botToken, "editMessageText", { chat_id: chatId, message_id: messageId, text: newText });
 }
 
 async function readValue(supabase: ReturnType<typeof createClient>, userId: string, key: string) {
@@ -115,13 +132,31 @@ function parseCallback(raw: string) {
   return { kind: "", rest: [] };
 }
 
+// Lỗi bất ngờ thì vẫn trả 200 và báo cho người bấm — trả 500 thì Telegram gửi lại cú bấm nhiều
+// lần, còn nút thì quay mãi không dừng.
 Deno.serve(async (req) => {
-  // Telegram luôn POST. Trả 200 cho mọi thứ khác để nó không thử lại vô tận.
-  if (req.method !== "POST") return new Response("ok");
+  const raw = await req.text();
+  try {
+    return await handle(raw);
+  } catch (e) {
+    console.error("webhook crashed", e);
+    try {
+      const cb = JSON.parse(raw)?.callback_query;
+      const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+      const { data } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
+      const owner = (data || []).find((r) => String((r.value as { telegramChatId?: string })?.telegramChatId) === String(cb?.message?.chat?.id));
+      const token = (owner?.value as { telegramBotToken?: string })?.telegramBotToken;
+      if (cb?.id && token) await answerCallback(token, cb.id, `⚠️ Bot gặp lỗi: ${String((e as Error)?.message || e).slice(0, 150)}`, true);
+    } catch (_e) { /* không báo được thì thôi */ }
+    return json({ ok: false, error: String(e) });
+  }
+});
 
+async function handle(raw: string): Promise<Response> {
+  // Telegram luôn POST; thân rỗng / không phải JSON thì trả 200 để nó không thử lại vô tận.
   let update: Record<string, any>;
   try {
-    update = await req.json();
+    update = JSON.parse(raw);
   } catch (_e) {
     return new Response("ok");
   }
@@ -257,18 +292,26 @@ Deno.serve(async (req) => {
     return json({ ok: true, skipped: "unknown kind" });
   }
 
-  await answerCallback(botToken, cb.id, notice);
+  // Sửa nút TRƯỚC rồi mới trả lời cú bấm: có lỗi thì thông báo nói đúng lý do, thay vì báo
+  // "đã ghi nhận" trong khi nút vẫn y nguyên. Dữ liệu (nếu có) đã lưu ở trên, lỗi ở đây chỉ là
+  // phần hiển thị trên Telegram.
+  let editError = "";
   if (cb.message?.message_id && fromChatId) {
     const keyboard = (cb.message.reply_markup?.inline_keyboard || []) as Button[][];
     const isTable = keyboard.some((row) => row.some((b) => String(b.callback_data || "").startsWith("n|")));
     if (isTable) {
       const action = rest[rest.length - 1];
       const next = keyboard.map((row) => (row.some((b) => b.callback_data === cb.data) ? rowAfter(row, kind, action) : row));
-      await editMarkup(botToken, fromChatId, cb.message.message_id, next);
+      editError = await editMarkup(botToken, fromChatId, cb.message.message_id, next);
     } else {
-      await clearButtons(botToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
+      editError = await clearButtons(botToken, fromChatId, cb.message.message_id, (cb.message.text || "") + messageSuffix);
     }
   }
+  if (editError) {
+    await answerCallback(botToken, cb.id, `${notice}\n\n⚠️ Đã ghi nhận nhưng Telegram không cho đổi nút: ${editError}`, true);
+  } else {
+    await answerCallback(botToken, cb.id, notice);
+  }
 
-  return json({ ok: true, kind, rest });
-});
+  return json({ ok: true, kind, rest, editError });
+}
