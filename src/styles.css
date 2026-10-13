@@ -1981,6 +1981,20 @@ button.nt-check:hover { filter: brightness(1.25); }
 .regime-wr span:last-child { position: relative; padding-left: 4px; }
 .regime-row-dim td { color: var(--text-dim); }
 .regime-missing { margin-top: 18px; }
+.regime-band-tag { font-size: 11px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; flex-shrink: 0; }
+.regime-state-on .regime-band-tag { color: var(--text); border-color: rgba(var(--tone-rgb), 0.55); }
+.regime-risk-hint { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 12.5px; color: var(--text-dim); }
+.regime-risk-hint.regime-fit-in { color: var(--win); }
+.regime-risk-hint.regime-fit-over { color: var(--loss); }
+.regime-risk-hint.regime-fit-under { color: var(--accent); }
+.mc-worst-row .regime-fit-over { color: var(--loss); }
+.mc-worst-row .regime-fit-under { color: var(--accent); }
+.regime-fit-dot-in { --tone: var(--win); }
+.regime-fit-dot-over { --tone: var(--loss); }
+.regime-fit-dot-under { --tone: var(--accent); }
+.regime-band-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.regime-band-edit .input { width: 72px; padding: 4px 8px; font-size: 12.5px; }
+.regime-band-hint { font-size: 11.5px; }
 .regime-missing summary { cursor: pointer; font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
 @media (max-width: 560px) {
   .regime-cond-row { flex-wrap: wrap; }

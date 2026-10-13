@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical } from "lucide-react";
+import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical, Scale } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { FxStatsPanel } from "./FxStrength.jsx";
 import { fxPairOf } from "../lib/fxStrength.js";
@@ -8,7 +8,7 @@ import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
   activeStates, emptyRegime, emptyState, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
-  regimeForAccount, regimeStats, sameDayState, toneLabel, tradeRegime, tradeState,
+  regimeForAccount, regimeStats, riskBandText, riskFit, sameDayState, stateRiskBand, toneLabel, tradeRegime, tradeState,
 } from "../lib/marketRegime.js";
 
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v.toFixed(1)}%`);
@@ -63,12 +63,14 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
                   <span className="regime-radio" />
                   <span className="regime-state-label">{s.label}</span>
                   {s.note ? <Info size={13} className="regime-note-icon" /> : null}
+                  {stateRiskBand(s) ? <span className="regime-band-tag mono">{riskBandText(stateRiskBand(s))}</span> : null}
                   <span className="regime-tone-tag">{toneLabel(s.tone)}</span>
                 </button>
                 {s.note ? <div className="regime-note-pop"><NoteText text={s.note} /></div> : null}
               </div>
             ))}
           </div>
+          <RegimeRiskHint t={t} state={current} />
           {sameDay ? (
             <button type="button" className="btn btn-ghost btn-xs regime-copy" onClick={() => pickState(sameDay.state.id)}>
               Giống lệnh {sameDay.trade.symbol || "khác"} cùng ngày: {sameDay.state.label}
@@ -78,6 +80,30 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
       )}
     </div>
   );
+}
+
+const FIT_TEXT = { in: "đúng khung", over: "vượt khung", under: "dưới khung" };
+
+// Dòng nhắc khung vốn của trạng thái đang tick — hiện cả ở mục 1 (cạnh trạng thái) lẫn mục 2
+// (cạnh ô Rủi ro %), vì lúc gõ % rủi ro thì mục 1 đã cuộn khuất.
+function RegimeRiskHint({ t, state }) {
+  const band = stateRiskBand(state);
+  if (!band) return null;
+  const fit = riskFit(t, state);
+  const pct = String(t.riskPercent || "").trim();
+  const text = band.max === 0
+    ? `Trạng thái này khuyến nghị đứng ngoài${fit === "over" ? ` — lệnh đang đi ${pct}%.` : "."}`
+    : `Khung vốn: ${riskBandText(band)}${fit ? ` — lệnh đang đi ${pct}%, ${FIT_TEXT[fit]}.` : " — chưa điền Rủi ro (%) ở mục 2."}`;
+  return <p className={`regime-risk-hint regime-fit-${fit || "none"}`}><Scale size={13} /> {text}</p>;
+}
+
+// Bản dùng ở mục 2 của form lệnh: tự tìm trạng thái đã tick ở mục 1.
+export function RegimeRiskNote({ t, resources }) {
+  const regimes = useMemo(() => marketRegimesOf(resources), [resources]);
+  const regime = tradeRegime(t, regimes, resources.accounts);
+  const state = tradeState(t, regime);
+  if (!state || !stateRiskBand(state)) return null;
+  return <RegimeRiskHint t={t} state={state} />;
 }
 
 // Ô chữ chỉ lưu khi rời ô / Enter — lưu theo từng phím là mỗi chữ một lần ghi lên Supabase.
@@ -122,7 +148,8 @@ function RegimeSettings({ regimes, accounts, onChange }) {
       <p className="field-hint">
         Mỗi chỉ số là "nhiệt kế" của một loại thị trường, kèm danh sách trạng thái — mỗi lệnh tick đúng một trạng thái, nên các trạng thái
         nên loại trừ nhau và phủ hết các tình huống. Nhãn Thuận / Trung tính / Nghịch dùng để gộp thống kê.
-        Ghi chú của mỗi trạng thái (VD khuyến nghị đi vốn) hiện khi rê chuột vào trạng thái đó trong form lệnh.
+        Ghi chú của mỗi trạng thái hiện khi rê chuột vào trạng thái đó trong form lệnh. Khung vốn (% rủi ro mỗi lệnh) thì form lệnh
+        nhắc ngay khi đi lệch, và tab thống kê so kết quả lệnh đi đúng khung với lệnh vượt khung.
         Tài khoản hàng hoá / forex không có chỉ số chung thì không gắn. Sửa chữ không mất dữ liệu cũ; xoá trạng thái thì các lệnh đã tick nó thành "chưa ghi".
       </p>
       {regimes.map((r) => (
@@ -161,6 +188,15 @@ function RegimeSettings({ regimes, accounts, onChange }) {
                 <ConfirmButton onConfirm={() => setStates(r, r.states.filter((x) => x.id !== s.id))} />
               </div>
               <div className="regime-note-edit">
+                <div className="regime-band-edit">
+                  <span className="field-hint">Khung vốn %</span>
+                  <CommitInput type="number" step="0.1" min="0" inputMode="decimal" className="input mono" value={s.riskMin === undefined ? "" : String(s.riskMin)}
+                    placeholder="từ" onCommit={(v) => patchState(r, s.id, { riskMin: v })} />
+                  <span className="field-hint">–</span>
+                  <CommitInput type="number" step="0.1" min="0" inputMode="decimal" className="input mono" value={s.riskMax === undefined ? "" : String(s.riskMax)}
+                    placeholder="đến" onCommit={(v) => patchState(r, s.id, { riskMax: v })} />
+                  <span className="field-hint regime-band-hint">{stateRiskBand(s) ? riskBandText(stateRiskBand(s)) : "để trống = không đặt khung · đến 0 = đứng ngoài"}</span>
+                </div>
                 <CommitInput multiline value={s.note} onCommit={(v) => patchState(r, s.id, { note: v })}
                   placeholder="Ghi chú — hiện khi rê chuột vào trạng thái. VD: Đi vốn 1.2% · ưu tiên setup breakout" />
               </div>
@@ -189,6 +225,65 @@ function StatCells({ s }) {
       </td>
       <td className={`mono ${toneR(s.avgR)}`}>{fmtR(s.avgR)}</td>
       <td className={`mono ${toneR(s.totalR)}`}>{s.rCount ? fmtR(s.totalR) : "—"}</td>
+    </>
+  );
+}
+
+// Kỷ luật đi vốn: lệnh đi đúng khung của trạng thái so với lệnh vượt / dưới khung. So bằng R nên
+// không bị cỡ lệnh làm lệch — câu hỏi là những lần "tay to" có thật sự là lệnh tốt hơn không.
+function RiskDiscipline({ st, onOpenTrade }) {
+  const measured = st.fit.reduce((n, x) => n + x.count, 0);
+  const inFit = st.fit.find((x) => x.id === "in");
+  const over = st.fit.find((x) => x.id === "over");
+  const offList = [...st.fitTrades.over.map((x) => ({ ...x, kind: "over" })), ...st.fitTrades.under.map((x) => ({ ...x, kind: "under" }))]
+    .sort((a, b) => (dateKey(b.t) || "").localeCompare(dateKey(a.t) || ""));
+
+  return (
+    <>
+      <h3 className="block-title" style={{ marginTop: 22 }}>Kỷ luật đi vốn</h3>
+      {measured === 0 ? (
+        <p className="field-hint">
+          {st.noBand && !st.noRisk
+            ? "Các trạng thái đã tick chưa đặt khung vốn — đặt ở tab Cài đặt (ô \"Khung vốn %\" dưới mỗi trạng thái)."
+            : "Chưa có lệnh nào vừa có khung vốn vừa ghi Rủi ro (%) để so."}
+        </p>
+      ) : (
+        <>
+          <p className="field-hint">
+            <b>{inFit.count}/{measured}</b> lệnh đi vốn đúng khung ({fmtPct((inFit.count / measured) * 100)}).
+            {over.count ? <> Vượt khung {over.count} lệnh, R TB <b className={toneR(over.avgR)}>{fmtR(over.avgR)}</b> so với đúng khung <b className={toneR(inFit.avgR)}>{fmtR(inFit.avgR)}</b>.</> : " Chưa lệnh nào vượt khung."}
+            {st.noBand || st.noRisk ? ` Không tính ${st.noBand + st.noRisk} lệnh (${[st.noBand ? `${st.noBand} ở trạng thái chưa đặt khung` : "", st.noRisk ? `${st.noRisk} chưa ghi Rủi ro %` : ""].filter(Boolean).join(", ")}).` : ""}
+          </p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Đi vốn</th><th>Số lệnh</th><th>Winrate</th><th>R TB</th><th>Tổng R</th></tr></thead>
+              <tbody>
+                {st.fit.map((x) => (
+                  <tr key={x.id} className={x.count ? "" : "regime-row-dim"}>
+                    <td><span className={`regime-dot regime-fit-dot-${x.id}`} />{x.label}</td>
+                    <StatCells s={x} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {offList.length ? (
+            <details className="regime-missing">
+              <summary>{offList.length} lệnh đi lệch khung</summary>
+              <div className="mc-worst">
+                {offList.slice(0, 40).map(({ t, state, kind }) => (
+                  <button type="button" key={t.id} className="mc-worst-row" onClick={() => onOpenTrade && onOpenTrade(t)}>
+                    <span className="mono mc-worst-date">{t.entryDate || "—"}</span>
+                    <b className="mc-worst-sym">{t.symbol || "—"}</b>
+                    <span className={`mono regime-fit-${kind}`}>{t.riskPercent}%</span>
+                    <span className="mc-worst-note">khung {riskBandText(stateRiskBand(state))} · {state.label}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </>
+      )}
     </>
   );
 }
@@ -349,6 +444,8 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
               </tbody>
             </table>
           </div>
+
+          <RiskDiscipline st={st} onOpenTrade={onOpenTrade} />
         </>
       )}
 

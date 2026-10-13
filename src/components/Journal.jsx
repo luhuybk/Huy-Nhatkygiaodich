@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { AccountTag, CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
-import { marketRegimesOf, toneLabel, tradeRegime, tradeState } from "../lib/marketRegime.js";
+import { marketRegimesOf, riskBandText, riskFit, stateRiskBand, toneLabel, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { fxDetailText } from "./FxStrength.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
@@ -317,6 +317,11 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
                 <DetailRow label={`Thị trường chung (${regime.name})`}
                   value={regimeState ? `${regimeState.label} — ${toneLabel(regimeState.tone)}` : "Chưa ghi"}
                   tone={regimeState ? (regimeState.tone === "good" ? "text-win" : regimeState.tone === "bad" ? "text-loss" : "") : ""} />
+              ) : null}
+              {regimeState && stateRiskBand(regimeState) ? (
+                <DetailRow label="Khung vốn"
+                  value={`${riskBandText(stateRiskBand(regimeState))}${riskFit(t, regimeState) ? ` — đi ${t.riskPercent}%, ${({ in: "đúng khung", over: "vượt khung", under: "dưới khung" })[riskFit(t, regimeState)]}` : ""}`}
+                  tone={riskFit(t, regimeState) === "over" ? "text-loss" : riskFit(t, regimeState) === "in" ? "text-win" : ""} />
               ) : null}
               {fxDetailText(t) ? <DetailRow prose label="Sức mạnh đồng tiền" value={fxDetailText(t)} /> : null}
               <DetailRow label="Setup" value={t.setup} />

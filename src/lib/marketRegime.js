@@ -10,6 +10,9 @@
 //
 // Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone, note }] }].
 // note: ghi chú tự do (VD khuyến nghị đi vốn), hiện khi rê chuột vào trạng thái trong form lệnh.
+// riskMin / riskMax: khung đi vốn (% rủi ro mỗi lệnh) cho trạng thái đó — để trống là không đặt khung,
+// riskMax = 0 là "đứng ngoài". Có khung thì form lệnh báo khi đi vốn lệch, trang thống kê so kết quả
+// lệnh đi đúng khung với lệnh vượt khung.
 // Lệnh ghi ở trade.marketCond = { regimeId, stateId }; regimeId = "none" là "không áp dụng".
 // Trạng thái khoá theo id, không theo chữ: sửa chữ không mất dữ liệu cũ.
 import { closedOfUSD, uid } from "./helpers.js";
@@ -52,7 +55,7 @@ export function marketRegimesOf(resources) {
 }
 
 export function emptyState() {
-  return { id: uid(), label: "", tone: "neutral", note: "" };
+  return { id: uid(), label: "", tone: "neutral", note: "", riskMin: "", riskMax: "" };
 }
 
 export function emptyRegime() {
@@ -104,6 +107,49 @@ export function sameDayState(trades, t, regime) {
   return hit ? { trade: hit, state: tradeState(hit, regime) } : null;
 }
 
+const pctOrNull = (v) => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+// Khung đi vốn của một trạng thái, hoặc null nếu chưa đặt. Nhập ngược (từ > đến) thì đảo lại.
+export function stateRiskBand(state) {
+  if (!state) return null;
+  let min = pctOrNull(state.riskMin);
+  let max = pctOrNull(state.riskMax);
+  if (min === null && max === null) return null;
+  if (min !== null && max !== null && min > max) [min, max] = [max, min];
+  return { min, max };
+}
+
+const fmtNum = (n) => String(Math.round(n * 100) / 100);
+export function riskBandText(band) {
+  if (!band) return "";
+  if (band.max === 0) return "Đứng ngoài";
+  if (band.min !== null && band.max !== null) return band.min === band.max ? `${fmtNum(band.min)}%` : `${fmtNum(band.min)}–${fmtNum(band.max)}%`;
+  if (band.max !== null) return `≤ ${fmtNum(band.max)}%`;
+  return `≥ ${fmtNum(band.min)}%`;
+}
+
+// Lệnh đi vốn so với khung: "in" | "over" | "under" — null khi trạng thái chưa có khung hoặc lệnh
+// chưa ghi % rủi ro. Làm tròn 2 chữ số để 1.2000001 không bị tính là vượt 1.2.
+export const RISK_FIT = [
+  { id: "in", label: "Đúng khung" },
+  { id: "over", label: "Vượt khung" },
+  { id: "under", label: "Dưới khung" },
+];
+export function riskFit(t, state) {
+  const band = stateRiskBand(state);
+  const pct = pctOrNull(t && t.riskPercent);
+  if (!band || pct === null) return null;
+  const v = Math.round(pct * 100) / 100;
+  if (band.max === 0) return v > 0 ? "over" : "in";
+  if (band.max !== null && v > band.max) return "over";
+  if (band.min !== null && v < band.min) return "under";
+  return "in";
+}
+
 function emptyBucket() {
   return { count: 0, wins: 0, losses: 0, rCount: 0, totalR: 0 };
 }
@@ -128,6 +174,10 @@ export function regimeStats(trades, regime, resources, opts = {}) {
   const rest = emptyBucket();
   const missing = emptyBucket();
   const missingTrades = [];
+  const fit = RISK_FIT.map((x) => ({ id: x.id, label: x.label, ...emptyBucket() }));
+  const fitTrades = { over: [], under: [] };
+  let noBand = 0;
+  let noRisk = 0;
 
   closedOfUSD(trades || [], resources).forEach(({ t, r }) => {
     if (opts.direction && t.direction !== opts.direction) return;
@@ -139,6 +189,12 @@ export function regimeStats(trades, regime, resources, opts = {}) {
     const tone = REGIME_TONES.some((x) => x.id === st.tone) ? st.tone : "neutral";
     addTo(tones.find((x) => x.id === tone), r);
     addTo(tone === "good" ? good : rest, r);
+    const f = riskFit(t, st);
+    if (f) {
+      addTo(fit.find((x) => x.id === f), r);
+      if (fitTrades[f]) fitTrades[f].push({ t, state: st });
+    } else if (!stateRiskBand(st)) noBand += 1;
+    else noRisk += 1;
   });
 
   return {
@@ -148,5 +204,9 @@ export function regimeStats(trades, regime, resources, opts = {}) {
     rest: finish(rest),
     missing: finish(missing),
     missingTrades,
+    fit: fit.map((x) => ({ ...finish(x), id: x.id, label: x.label })),
+    fitTrades,
+    noBand,
+    noRisk,
   };
 }

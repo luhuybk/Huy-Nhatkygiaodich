@@ -2,7 +2,7 @@
 // lệnh. Sinh trong bộ nhớ, KHÔNG BAO GIỜ được lưu: không đi qua onSave/persist nào cả.
 // Hạt giống cố định để mỗi lần bật đều ra cùng một bộ số, dễ so khi đổi bộ lọc.
 import { emptyTrade } from "./helpers.js";
-import { activeStates } from "./marketRegime.js";
+import { activeStates, stateRiskBand } from "./marketRegime.js";
 import { FX_MAJORS } from "./fxStrength.js";
 
 function rng(seed) {
@@ -27,6 +27,17 @@ function result(r, winP) {
   return { riskAmount: String(risk), profit: String(profit) };
 }
 
+// % rủi ro theo khung của trạng thái: phần lớn đúng khung, ~1/5 vượt khung — lệnh vượt khung
+// thua nhiều hơn một chút để bảng "Kỷ luật đi vốn" có gì mà xem.
+function demoRisk(r, state) {
+  const band = stateRiskBand(state);
+  if (!band) return { pct: Math.round((0.3 + r() * 1.2) * 10) / 10, over: false };
+  const lo = band.min ?? 0.3;
+  const hi = band.max === 0 ? 0 : (band.max ?? lo * 1.5);
+  if (hi === 0 || r() < 0.2) return { pct: Math.round(((hi || lo) + 0.2 + r() * 0.6) * 10) / 10, over: true };
+  return { pct: Math.round((lo + r() * (hi - lo)) * 10) / 10, over: false };
+}
+
 function demoTrade(r, id, extra) {
   const d = day(r);
   return { ...emptyTrade(), id: `demo-${id}`, createdAt: 0, entryDate: d, exitDate: d, ...extra };
@@ -45,9 +56,10 @@ export function buildDemoTrades(regimes) {
       const st = pick(r, states);
       const dir = r() < 0.85 ? "buy" : "sell";
       const base = toneWin[st.tone] ?? 0.45;
-      const winP = dir === "buy" ? base : 0.9 - base;
+      const risk = demoRisk(r, st);
+      const winP = (dir === "buy" ? base : 0.9 - base) - (risk.over ? 0.1 : 0);
       out.push(demoTrade(r, `r${ri}-${i}`, {
-        symbol: `MẪU${ri + 1}`, account: `Mẫu · ${reg.name || "Chỉ số"}`, direction: dir,
+        symbol: `MẪU${ri + 1}`, account: `Mẫu · ${reg.name || "Chỉ số"}`, direction: dir, riskPercent: String(risk.pct),
         marketCond: { regimeId: reg.id, stateId: st.id }, ...result(r, winP),
       }));
     }
