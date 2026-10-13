@@ -3395,6 +3395,19 @@ export function expandAccountFilter(want, accounts) {
 }
 
 // Danh sách cho ô chọn: cha trước, con ngay dưới, kèm độ sâu để thụt vào cho thấy quan hệ.
+// Mỗi tài khoản một màu dùng khắp app (thẻ, bộ lọc, biểu đồ, nhật ký). Tự chọn ở trang Tài khoản
+// (account.color); chưa chọn thì lấy theo thứ tự trong danh sách — cố định giữa các lần mở, và hai
+// tài khoản cạnh nhau (Forex - Ngắn / Forex - Dài) không bao giờ trùng màu.
+export const ACCOUNT_COLORS = ["#5b9cf5", "#e0a64e", "#4fc1a6", "#c879e0", "#e06a8f", "#9ccc65", "#4dd0e1", "#ff8a65", "#a3a9e8", "#d8c94a"];
+export function accountColor(name, accounts) {
+  const list = (accounts || []).filter((a) => a && a.name);
+  const i = list.findIndex((a) => a.name === name);
+  if (i >= 0) return /^#[0-9a-f]{6}$/i.test(list[i].color || "") ? list[i].color : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+  let h = 0;
+  for (const ch of String(name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return ACCOUNT_COLORS[h % ACCOUNT_COLORS.length];
+}
+
 export function accountOptions(accounts) {
   const list = (accounts || []).filter((a) => a && a.name);
   const out = [];
@@ -3407,7 +3420,7 @@ export function accountOptions(accounts) {
       if (seen.has(a)) return;
       seen.add(a);
       const isGroup = !!a.id && list.some((x) => x.parentId === a.id);
-      out.push({ value: a.name, depth, isGroup });
+      out.push({ value: a.name, depth, isGroup, color: accountColor(a.name, list) });
       if (a.id) walk(a.id, depth + 1);
     });
   };

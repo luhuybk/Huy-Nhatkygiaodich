@@ -3,7 +3,7 @@ import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
-import { familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
+import { ACCOUNT_COLORS, accountColor, familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
 
 // Ngưỡng cảnh báo rủi ro tổng. 6% là "đang gánh nặng", 10% là một phiên xấu đủ thổi bay
 // hai tháng lãi — đặt ở đây để sau này chỉnh một chỗ.
@@ -82,14 +82,14 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
     const openRisk = accountOpenRisk(a, ledger, trades, sc);
     // Thẻ không thể là <button> vì bên trong đã có nút sửa/xóa — button lồng button là HTML sai.
     return (
-      <div key={a.id} className="account-card" role="button" tabIndex={0} onClick={() => onView(a.id)}
+      <div key={a.id} className="account-card account-card-colored" style={{ "--acct": accountColor(a.name, accounts) }} role="button" tabIndex={0} onClick={() => onView(a.id)}
         onKeyDown={(e) => {
           // Enter/Space bấm trên nút con cũng nổi bọt lên đây, chỉ nhận phím khi chính thẻ đang focus.
           if (e.target !== e.currentTarget) return;
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(a.id); }
         }}>
         <div className="account-card-head">
-          <strong>{a.name}</strong>
+          <strong className="acct-name"><span className="acct-dot" />{a.name}</strong>
           {sc.isGroup ? <span className="account-group-tag" title={`Gộp ${sc.members.length} tài khoản: ${sc.members.map((x) => x.name).join(", ")}`}>nhóm · {sc.members.length}</span> : null}
           <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 4 }}>
             <button type="button" className="row-btn" aria-label="Sửa tài khoản" onClick={() => { setForm({ ...blank, ...a }); setError(""); }}><Pencil size={13} /></button>
@@ -198,6 +198,19 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
             <IdSelect value={form.parentId} onChange={setF("parentId")} items={accounts.filter((a) => a.id !== form.id)} placeholder="Không thuộc nhóm nào" />
           </Field>
         </div>
+        <Field label="Màu tài khoản" hint="Dùng cho thẻ, bộ lọc, nhật ký và biểu đồ. Để Tự động thì app gán màu theo thứ tự.">
+          <div className="acct-swatches">
+            <button type="button" className={`acct-swatch acct-swatch-auto ${!form.color ? "acct-swatch-on" : ""}`} onClick={() => setF("color")("")}>Tự động</button>
+            {ACCOUNT_COLORS.map((c) => (
+              <button key={c} type="button" aria-label={`Màu ${c}`} className={`acct-swatch ${form.color === c ? "acct-swatch-on" : ""}`} style={{ background: c }} onClick={() => setF("color")(c)} />
+            ))}
+            <label className={`acct-swatch acct-swatch-custom ${form.color && !ACCOUNT_COLORS.includes(form.color) ? "acct-swatch-on" : ""}`}
+              style={form.color && !ACCOUNT_COLORS.includes(form.color) ? { background: form.color } : undefined} title="Màu khác">
+              +
+              <input type="color" value={form.color || "#5b9cf5"} onChange={(e) => setF("color")(e.target.value)} />
+            </label>
+          </div>
+        </Field>
         <label className={`checklist-item ${form.syncBrokerTime !== false ? "checklist-checked" : ""}`}>
           <input type="checkbox" checked={form.syncBrokerTime !== false}
             onChange={(e) => setF("syncBrokerTime")(e.target.checked)} />
@@ -372,7 +385,7 @@ export function AccountDetail({ account, accounts, fxRates, ledger, trades, onBa
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} padding={{ left: 20, right: 20 }} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={54} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-            <Line type="monotone" dataKey="balance" stroke={ACCENT} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="balance" stroke={accountColor(account.name, accounts) || ACCENT} strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

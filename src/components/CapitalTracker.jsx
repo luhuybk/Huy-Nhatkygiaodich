@@ -3,7 +3,7 @@ import { Trash2, Pencil, LineChart as LineChartIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ACCENT, CAPITAL_FLOW_TYPES, CURRENCIES, GRID, MUTED, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, Field, MoneyInput, StatCard } from "./ui.jsx";
-import { buildCapitalIndexCurve, buildTWRCurve, emptyCapitalEntry, emptyCapitalFlow, fmtMoney, todayStr, uid } from "../lib/helpers.js";
+import { accountColor, buildCapitalIndexCurve, buildTWRCurve, emptyCapitalEntry, emptyCapitalFlow, fmtMoney, todayStr, uid } from "../lib/helpers.js";
 
 export function EquityIndexPage({ resources, ledger, trades }) {
   const [accountId, setAccountId] = useState(resources.accounts[0]?.id || "");
@@ -37,6 +37,7 @@ export function EquityIndexPage({ resources, ledger, trades }) {
         <select className="input" style={{ maxWidth: 240 }} value={account.id} onChange={(e) => setAccountId(e.target.value)}>
           {resources.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        <span className="acct-dot acct-dot-lg" style={{ background: accountColor(account.name, resources.accounts) }} />
       </div>
 
       <div className="stat-grid">
@@ -53,7 +54,7 @@ export function EquityIndexPage({ resources, ledger, trades }) {
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={40} padding={{ left: 20, right: 20 }} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={50} domain={["auto", "auto"]} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-            <Line type="monotone" dataKey="index" stroke={ACCENT} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="index" stroke={accountColor(account.name, resources.accounts)} strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

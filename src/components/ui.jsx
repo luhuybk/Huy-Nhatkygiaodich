@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
-import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi } from "../lib/helpers.js";
+import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
+export { accountColor };
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
 import { isRuleLine, parseItem } from "../lib/listContinue.js";
@@ -153,18 +154,6 @@ export function ImagePreviewStrip({ items, empty = true }) {
 }
 
 // Công tắc bật/tắt gọn — thay cho nút to "🔔 Đang bật …" ở đầu mỗi mục.
-// Mỗi tài khoản một màu, theo thứ tự trong trang Tài khoản — cố định giữa các lần mở, và hai
-// tài khoản cạnh nhau (Forex - Ngắn / Forex - Dài) không bao giờ trùng màu.
-const ACCOUNT_COLORS = ["#5b9cf5", "#e0a64e", "#4fc1a6", "#c879e0", "#e06a8f", "#9ccc65", "#4dd0e1", "#ff8a65", "#a3a9e8", "#d8c94a"];
-export function accountColor(name, accounts) {
-  const list = (accounts || []).filter((a) => a && a.name);
-  const i = list.findIndex((a) => a.name === name);
-  if (i >= 0) return ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
-  let h = 0;
-  for (const ch of String(name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return ACCOUNT_COLORS[h % ACCOUNT_COLORS.length];
-}
-
 export function AccountTag({ name, accounts }) {
   if (!name) return null;
   return <span className="acct-tag" style={{ "--acct": accountColor(name, accounts) }}>{name}</span>;
@@ -315,6 +304,8 @@ export function MultiFilterSelect({ value, onChange, options, placeholder, open:
     <div className="msel" ref={ref}>
       <button type="button" className={`input msel-btn ${selected.length ? "msel-on" : ""}`} onClick={() => setOpen(!open)}
         title={selected.length > 1 ? selected.join(", ") : undefined}>
+        {selected.length === 1 && (list.find((o) => o.value === selected[0]) || {}).color
+          ? <span className="acct-dot" style={{ background: list.find((o) => o.value === selected[0]).color }} /> : null}
         <span className="msel-label">{label}</span>
         <ChevronDown size={13} />
       </button>
@@ -327,6 +318,7 @@ export function MultiFilterSelect({ value, onChange, options, placeholder, open:
               title={o.isGroup ? `Nhóm tổng — chọn là lấy cả các tài khoản bên dưới` : undefined}
               onClick={() => toggle(o.value)}>
               <span className="msel-box">{selected.includes(o.value) ? <Check size={11} /> : null}</span>
+              {o.color ? <span className="acct-dot" style={{ background: o.color }} /> : null}
               <span className="msel-opt-label">{o.value}</span>
               {o.isGroup ? <span className="msel-group-tag">nhóm</span> : null}
             </button>

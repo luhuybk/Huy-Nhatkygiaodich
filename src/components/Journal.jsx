@@ -308,7 +308,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
             <DetailGroup title="Thông tin">
               <DetailRow label="Ngày entry" value={t.entryDate} />
               <DetailRow label="Giờ entry" value={t.entryTime} />
-              <DetailRow label="Tài khoản" value={t.account} />
+              <DetailRow label="Tài khoản" value={t.account ? <AccountTag name={t.account} accounts={resources && resources.accounts} /> : ""} />
               <DetailRow label="Symbol" value={t.symbol} />
               <DetailRow label="Hướng lệnh" value={t.direction === "buy" ? "Buy" : "Sell"} />
               <DetailRow label="Khung thời gian" value={t.timeframe} />

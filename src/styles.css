@@ -2034,3 +2034,20 @@ button.nt-check:hover { filter: brightness(1.25); }
 .demo-banner { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; margin-bottom: 14px; border-radius: 8px; font-size: 12.5px;
   border: 1px dashed var(--pending, #cddc39); color: var(--text); background: rgba(var(--pending-rgb, 205,220,57), 0.07); }
 .demo-banner svg { color: var(--pending, #cddc39); flex-shrink: 0; margin-top: 2px; }
+
+/* Màu tài khoản dùng khắp app */
+.acct-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--acct, var(--text-dim)); flex-shrink: 0; }
+.acct-dot-lg { width: 10px; height: 10px; }
+.msel-btn .acct-dot { margin-right: 6px; }
+.msel-opt .acct-dot { margin-right: 2px; }
+.account-card-colored { border-left: 3px solid var(--acct) !important; }
+.acct-name { display: inline-flex; align-items: center; gap: 7px; }
+.account-quickswitch .acct-dot { margin-left: 4px; }
+.acct-swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.acct-swatch { width: 24px; height: 24px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; padding: 0; position: relative; }
+.acct-swatch-on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg); }
+.acct-swatch-auto { width: auto; padding: 0 9px; font-size: 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); font-family: inherit; }
+.acct-swatch-auto.acct-swatch-on { color: var(--text); border: 2px solid var(--text); }
+.acct-swatch-custom { display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text-dim); border: 1px dashed var(--border); font-size: 14px; overflow: hidden; }
+.acct-swatch-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.week-line-name .acct-tag { font-size: 11.5px; }

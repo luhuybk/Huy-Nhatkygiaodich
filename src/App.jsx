@@ -11,8 +11,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
-  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog,
-} from "./lib/helpers.js";
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor } from "./lib/helpers.js";
 import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
 import { PrinciplesSection } from "./components/Principles.jsx";
 import { ResourceManager } from "./components/Resources.jsx";
@@ -706,6 +705,7 @@ function AppShell({ onSignOut, userEmail }) {
             <button type="button" className="sidebar-close" onClick={() => setMobileNavOpen(false)} aria-label="Đóng menu"><X size={18} /></button>
           </div>
           <div className="account-quickswitch">
+            {activeAccount ? <span className="acct-dot acct-dot-lg" style={{ background: accountColor(activeAccount, resources.accounts) }} /> : null}
             <select className="input" value={activeAccount} onChange={(e) => setActiveAccount(e.target.value)}>
               <option value="">Tất cả tài khoản</option>
               {resources.accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}

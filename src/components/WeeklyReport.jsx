@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { PrintTrades } from "./PrintTrades.jsx";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { ChartCard, StatCard, FxWarning } from "./ui.jsx";
+import { AccountTag, ChartCard, StatCard, FxWarning } from "./ui.jsx";
 import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { fmt, fmtR, periodAccountReport, periodEnd, periodLabel, periodOf, periodRTrend, periodStart, PERIODS, readLocalUi, shiftDate, shiftPeriod, todayStr, weekLabel, weeksOfMonth, weekStart, writeLocalUi } from "../lib/helpers.js";
 
@@ -172,7 +172,7 @@ export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, s
                   const d = r.rNet - (prevByAccount[r.account] || 0);
                   return (
                     <tr key={r.account}>
-                      <td><b>{r.account}</b></td>
+                      <td><AccountTag name={r.account} accounts={resources.accounts} /></td>
                       <td>{r.count} <span className="err-note">({r.wins} thắng / {r.losses} thua{r.be ? ` / ${r.be} hòa` : ""})</span></td>
                       <td>{r.winRate === null ? "—" : `${r.winRate.toFixed(0)}%`}</td>
                       <td className="text-win">{r.rCount ? fmtR(r.rWin) : "—"}</td>
@@ -200,7 +200,7 @@ export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, s
           <div className="week-lines">
             {report.rows.map((r) => (
               <div key={r.account} className="week-line">
-                <span className="week-line-name">{r.account}</span>
+                <span className="week-line-name"><AccountTag name={r.account} accounts={resources.accounts} /></span>
                 <b className={rTone(r.rNet)}>{r.rCount ? fmtR(r.rNet) : "—"}</b>
                 <span className="err-note">({rBreakdown(r)})</span>
               </div>
