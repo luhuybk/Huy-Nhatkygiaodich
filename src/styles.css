@@ -2001,6 +2001,8 @@ button.nt-check:hover { filter: brightness(1.25); }
 .regime-group-settings .regime-state-edit { padding-bottom: 8px; }
 .regime-group-settings .regime-note-edit { padding-left: 0; }
 .regime-add-state { justify-self: start; color: var(--tone); }
+.regime-clone { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; color: var(--text-dim); }
+.regime-clone .input { width: auto; max-width: 320px; padding: 5px 8px; font-size: 12.5px; }
 .regime-group-edit-list { display: grid; gap: 10px; margin-top: 10px; }
 .regime-group-edit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .regime-group-edit .input { width: 180px; color: var(--tone); font-weight: 600; border-color: rgba(var(--tone-rgb), 0.5); }

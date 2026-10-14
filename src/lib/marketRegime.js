@@ -82,6 +82,14 @@ export function emptyState(tone = "neutral") {
   return { id: uid(), label: "", tone, note: "", riskMin: "", riskMax: "" };
 }
 
+// Chép toàn bộ trạng thái của chỉ số nguồn sang chỉ số đích (thay hẳn). Trạng thái mặc định giữ đúng
+// "đuôi" id ("sp500-up" → "vnindex-up") để lệnh của chỉ số đích đã tick theo bộ mặc định vẫn khớp;
+// trạng thái tự thêm thì nhận id mới.
+export function cloneStates(source, target) {
+  const pre = `${source.id}-`;
+  return activeStates(source).map((s) => ({ ...s, id: s.id.startsWith(pre) ? `${target.id}-${s.id.slice(pre.length)}` : uid() }));
+}
+
 export function emptyRegime() {
   return { id: uid(), name: "", accountIds: [], states: [emptyState()] };
 }

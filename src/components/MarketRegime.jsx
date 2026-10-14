@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical, Scale } from "lucide-react";
+import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical, Scale, Copy } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { FxStatsPanel } from "./FxStrength.jsx";
 import { fxPairOf } from "../lib/fxStrength.js";
@@ -7,7 +7,7 @@ import { buildDemoTrades } from "../lib/demoTrades.js";
 import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
-  activeStates, emptyRegime, emptyState, GROUP_COLORS, groupOf, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
+  activeStates, cloneStates, emptyRegime, emptyState, GROUP_COLORS, groupOf, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
   regimeForAccount, regimeGroupsOf, regimeStats, riskBandText, riskFit, sameDayState, stateName, stateRiskBand, toneVars, tradeRegime, tradeState,
 } from "../lib/marketRegime.js";
 
@@ -198,6 +198,35 @@ function GroupSettings({ groups, onChange }) {
   );
 }
 
+// Chép trạng thái từ chỉ số khác — bấm hai lần (thay hẳn danh sách hiện có).
+function CloneStates({ regime, regimes, onClone }) {
+  const others = regimes.filter((x) => x.id !== regime.id && activeStates(x).length);
+  const [from, setFrom] = useState("");
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return undefined;
+    const id = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  if (!others.length) return null;
+  const src = others.find((x) => x.id === from) || null;
+  return (
+    <div className="regime-clone">
+      <Copy size={13} />
+      <select className="input" value={from} onChange={(e) => { setFrom(e.target.value); setArmed(false); }}>
+        <option value="">Chép trạng thái từ chỉ số khác…</option>
+        {others.map((x) => <option key={x.id} value={x.id}>{x.name || "(chưa đặt tên)"} — {activeStates(x).length} trạng thái</option>)}
+      </select>
+      {src ? (
+        <button type="button" className={`btn btn-xs ${armed ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => { if (!armed) { setArmed(true); return; } onClone(src); setArmed(false); setFrom(""); }}>
+          {armed ? `Bấm lần nữa: thay ${activeStates(regime).length} trạng thái hiện có` : `Chép ${activeStates(src).length} trạng thái của ${src.name}`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange }) {
   const update = (id, patch) => onChange(regimes.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const owner = (accId, selfId) => regimes.find((r) => r.id !== selfId && (r.accountIds || []).includes(accId));
@@ -236,6 +265,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
             </Field>
             <ConfirmButton onConfirm={() => onChange(regimes.filter((x) => x.id !== r.id))} className="btn btn-ghost" icon={Trash2} label="Xoá chỉ số" />
           </div>
+          <CloneStates regime={r} regimes={regimes} onClone={(src) => setStates(r, cloneStates(src, r))} />
           <span className="field-label">Tài khoản dùng chỉ số này</span>
           <div className="regime-accounts">
             {list.length === 0 ? <span className="field-hint">Chưa có tài khoản nào.</span> : list.map((a) => {
