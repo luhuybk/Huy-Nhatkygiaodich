@@ -46,7 +46,7 @@ function demoTrade(r, id, extra) {
 export function buildDemoTrades(regimes) {
   const r = rng(20261012);
   const out = [];
-  // Thị trường chung: trạng thái Thuận thắng nhiều hơn, Nghịch thua nhiều hơn — đủ chênh để
+  // Thị trường chung: nhóm Tích cực thắng nhiều hơn, Tiêu cực thua nhiều hơn — đủ chênh để
   // bảng nhìn ra khác biệt, không phải kết quả thật của ai.
   const toneWin = { good: 0.6, neutral: 0.45, bad: 0.28 };
   (regimes || []).forEach((reg, ri) => {

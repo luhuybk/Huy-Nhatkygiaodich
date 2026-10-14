@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { AccountTag, CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
-import { marketRegimesOf, riskBandText, riskFit, stateRiskBand, toneLabel, tradeRegime, tradeState } from "../lib/marketRegime.js";
+import { groupOf, marketRegimesOf, regimeGroupsOf, riskBandText, riskFit, stateName, stateRiskBand, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { fxDetailText } from "./FxStrength.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
@@ -315,8 +315,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
               <DetailRow label="Phiên" value={t.session} />
               {regime ? (
                 <DetailRow label={`Thị trường chung (${regime.name})`}
-                  value={regimeState ? `${regimeState.label} — ${toneLabel(regimeState.tone)}` : "Chưa ghi"}
-                  tone={regimeState ? (regimeState.tone === "good" ? "text-win" : regimeState.tone === "bad" ? "text-loss" : "") : ""} />
+                  value={regimeState ? <><b style={{ color: groupOf(regimeGroupsOf(resources), regimeState.tone || "neutral").color }}>{stateName(regimeState, regimeGroupsOf(resources))}</b> · {regimeState.label}</> : "Chưa ghi"} />
               ) : null}
               {regimeState && stateRiskBand(regimeState) ? (
                 <DetailRow label="Khung vốn"

@@ -8,7 +8,8 @@
 // điều kiện rời: "trên EMA9 dưới EMA21" và "dưới EMA9 trên EMA21" cùng là 2/3 nhưng là hai
 // thị trường khác hẳn nhau.
 //
-// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone, note }] }].
+// Cấu hình ở resources.marketRegimes = [{ id, name, accountIds, states: [{ id, label, tone, code, note }] }].
+// code: chữ cái định danh trong nhóm ("A" → "Tích cực A"), cố định từ lúc tạo.
 // note: ghi chú tự do (VD khuyến nghị đi vốn), hiện khi rê chuột vào trạng thái trong form lệnh.
 // riskMin / riskMax: khung đi vốn (% rủi ro mỗi lệnh) cho trạng thái đó — để trống là không đặt khung,
 // riskMax = 0 là "đứng ngoài". Có khung thì form lệnh báo khi đi vốn lệch, trang thống kê so kết quả
@@ -21,12 +22,62 @@ export const REGIME_NONE = "none";
 // Dưới mức này thì mỗi nhóm chỉ là vài lệnh — winrate nhảy 30% chỉ vì thêm một lệnh thắng.
 export const REGIME_MIN_SAMPLE = 10;
 
+// Ba nhóm cố định (id good / neutral / bad — thống kê gộp theo đây), tên và màu thì người dùng tự đặt,
+// lưu ở resources.regimeGroups = { good: { label, color }, ... }, dùng chung cho mọi chỉ số.
+// icon khác nhau theo nhóm để không phải dựa hẳn vào màu.
 export const REGIME_TONES = [
-  { id: "good", label: "Thuận" },
-  { id: "neutral", label: "Trung tính" },
-  { id: "bad", label: "Nghịch" },
+  { id: "good", label: "Tích cực", color: "#4caf7d", icon: "▲" },
+  { id: "neutral", label: "Trung tính", color: "#e0a64e", icon: "●" },
+  { id: "bad", label: "Tiêu cực", color: "#e0615a", icon: "▼" },
 ];
-export const toneLabel = (id) => (REGIME_TONES.find((x) => x.id === id) || REGIME_TONES[1]).label;
+export const GROUP_COLORS = ["#4caf7d", "#2fb5a3", "#5b9cf5", "#a3a9e8", "#c879e0", "#e0a64e", "#d8c94a", "#8d9198", "#ff8a65", "#e0615a"];
+const HEX = /^#[0-9a-f]{6}$/i;
+
+export function regimeGroupsOf(resources) {
+  const saved = (resources && resources.regimeGroups) || {};
+  return REGIME_TONES.map((g) => {
+    const x = saved[g.id] || {};
+    return { ...g, label: String(x.label || "").trim() || g.label, color: HEX.test(x.color || "") ? x.color : g.color };
+  });
+}
+export const groupOf = (groups, tone) => (groups || REGIME_TONES).find((g) => g.id === tone) || (groups || REGIME_TONES)[1];
+export const toneLabel = (id, groups) => groupOf(groups, id).label;
+
+// Biến CSS màu nhóm: --tone cho chữ / viền, --tone-rgb cho nền mờ.
+export function toneVars(group) {
+  const c = (group && group.color) || "#8d9198";
+  const n = parseInt(c.slice(1), 16);
+  return { "--tone": c, "--tone-rgb": `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}` };
+}
+
+// Mã trạng thái trong nhóm: A, B, C... Gán MỘT LẦN lúc tạo / lúc đổi nhóm và lưu luôn vào trạng
+// thái — thêm trạng thái mới về sau thì lấy chữ kế tiếp, không làm "Tích cực B" cũ đổi tên.
+// Lấy chữ SAU chữ lớn nhất đang có trong nhóm, không lấp chỗ trống: xoá / chuyển "Trung tính A" đi
+// rồi thêm trạng thái mới thì nó là "Trung tính F", không giành lại tên "A" mà lệnh cũ từng mang.
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const codeOrdinal = (code) => {
+  const m = /^([A-Z])(\d*)/.exec(String(code || "").toUpperCase());
+  if (!m) return -1;
+  const round = m[2] ? Math.max(1, parseInt(m[2], 10)) : 1;
+  return (round - 1) * 26 + LETTERS.indexOf(m[1]);
+};
+export function nextCode(states, tone, exceptId) {
+  const used = (states || []).filter((s) => s && s.id !== exceptId && (s.tone || "neutral") === tone).map((s) => codeOrdinal(s.code));
+  const n = used.length ? Math.max(...used) + 1 : 0;
+  const round = Math.floor(n / 26) + 1;
+  return `${LETTERS[n % 26]}${round > 1 ? round : ""}`;
+}
+// Trạng thái lưu từ trước khi có mã: đánh theo thứ tự trong nhóm, lần lưu kế tiếp sẽ ghi cố định.
+function withCodes(states) {
+  const out = [];
+  (states || []).forEach((s) => {
+    if (!s) return;
+    out.push(String(s.code || "").trim() ? s : { ...s, code: nextCode([...out, ...states.filter((x) => x && String(x.code || "").trim())], s.tone || "neutral", s.id) });
+  });
+  return out;
+}
+// "Tích cực A" — tên gọi ngắn của trạng thái.
+export const stateName = (s, groups) => (s ? `${toneLabel(s.tone || "neutral", groups)} ${s.code || ""}`.trim() : "");
 
 // Id cố định để bộ mặc định (chưa lưu lần nào) vẫn khớp với những lệnh đã ghi theo nó.
 const defaultStates = (prefix) => [
@@ -49,13 +100,13 @@ export function defaultRegimes(accounts) {
 
 export function marketRegimesOf(resources) {
   const saved = resources && resources.marketRegimes;
-  if (!Array.isArray(saved)) return defaultRegimes(resources && resources.accounts);
+  const list = Array.isArray(saved) ? saved.filter((r) => r && r.id) : defaultRegimes(resources && resources.accounts);
   // Bản lưu từ phiên bản chấm điểm từng điều kiện chưa có `states` — cấp bộ mặc định.
-  return saved.filter((r) => r && r.id).map((r) => (Array.isArray(r.states) ? r : { ...r, states: defaultStates(r.id) }));
+  return list.map((r) => ({ ...r, states: withCodes(Array.isArray(r.states) ? r.states : defaultStates(r.id)) }));
 }
 
-export function emptyState() {
-  return { id: uid(), label: "", tone: "neutral", note: "", riskMin: "", riskMax: "" };
+export function emptyState(tone = "neutral", states = []) {
+  return { id: uid(), label: "", tone, code: nextCode(states, tone), note: "", riskMin: "", riskMax: "" };
 }
 
 export function emptyRegime() {
@@ -163,13 +214,17 @@ function finish(b) {
   return { ...b, winRate: b.count ? (b.wins / b.count) * 100 : null, avgR: b.rCount ? b.totalR / b.rCount : null };
 }
 
-// Thống kê lệnh ĐÃ ĐÓNG của một chỉ số: theo từng trạng thái, theo nhóm Thuận/Trung tính/Nghịch,
-// Thuận so với phần còn lại, và những lệnh chưa tick.
+// Thống kê lệnh ĐÃ ĐÓNG của một chỉ số: theo từng trạng thái (xếp theo nhóm rồi theo mã), theo
+// nhóm, nhóm Tích cực so với phần còn lại, và những lệnh chưa tick.
 export function regimeStats(trades, regime, resources, opts = {}) {
   const regimes = marketRegimesOf(resources);
   const accounts = (resources && resources.accounts) || [];
-  const states = activeStates(regime).map((s) => ({ id: s.id, label: s.label, tone: s.tone || "neutral", ...emptyBucket() }));
-  const tones = REGIME_TONES.map((x) => ({ id: x.id, label: x.label, ...emptyBucket() }));
+  const groups = regimeGroupsOf(resources);
+  const rank = (s) => REGIME_TONES.findIndex((g) => g.id === (s.tone || "neutral"));
+  const states = activeStates(regime)
+    .map((s, i) => ({ id: s.id, label: s.label, tone: s.tone || "neutral", code: s.code || "", note: s.note || "", order: i, ...emptyBucket() }))
+    .sort((a, b) => rank(a) - rank(b) || a.code.localeCompare(b.code, "vi", { numeric: true }) || a.order - b.order);
+  const tones = groups.map((x) => ({ id: x.id, label: x.label, ...emptyBucket() }));
   const good = emptyBucket();
   const rest = emptyBucket();
   const missing = emptyBucket();
@@ -198,7 +253,7 @@ export function regimeStats(trades, regime, resources, opts = {}) {
   });
 
   return {
-    states: states.map((s) => ({ ...finish(s), id: s.id, label: s.label, tone: s.tone })),
+    states: states.map((s) => ({ ...finish(s), id: s.id, label: s.label, tone: s.tone, code: s.code, note: s.note })),
     tones: tones.map((x) => ({ ...finish(x), id: x.id, label: x.label })),
     good: finish(good),
     rest: finish(rest),
