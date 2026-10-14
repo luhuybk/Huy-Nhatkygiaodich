@@ -7,21 +7,20 @@ import { buildDemoTrades } from "../lib/demoTrades.js";
 import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
 import {
-  activeStates, emptyRegime, emptyState, GROUP_COLORS, groupOf, marketRegimesOf, nextCode, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
+  activeStates, emptyRegime, emptyState, GROUP_COLORS, groupOf, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
   regimeForAccount, regimeGroupsOf, regimeStats, riskBandText, riskFit, sameDayState, stateName, stateRiskBand, toneVars, tradeRegime, tradeState,
 } from "../lib/marketRegime.js";
 
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v.toFixed(1)}%`);
 const toneR = (v) => (v > 0 ? "text-win" : v < 0 ? "text-loss" : "");
 
-// Ô mã trạng thái: ký hiệu nhóm (▲ ● ▼) + chữ cái, tô màu nhóm. Hình + màu + chữ để Tích cực
-// và Tiêu cực không bao giờ lẫn nhau dù tên viết tắt giống nhau.
-export function RegimeCode({ state, groups, full }) {
+// Nhãn nhóm: ký hiệu (▲ ● ▼) + tên nhóm, tô màu nhóm — hình + màu để không phải dựa hẳn vào màu.
+export function RegimeMark({ state, groups, short }) {
   if (!state) return null;
   const g = groupOf(groups, state.tone || "neutral");
   return (
-    <span className={`regime-code ${full ? "regime-code-full" : ""}`} style={toneVars(g)} title={stateName(state, groups)}>
-      <i>{g.icon}</i>{full ? stateName(state, groups) : state.code || "?"}
+    <span className={`regime-code ${short ? "" : "regime-code-full"}`} style={toneVars(g)} title={g.label}>
+      <i>{g.icon}</i>{short ? null : g.label}
     </span>
   );
 }
@@ -71,7 +70,7 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
         <>
           <div className="regime-groups">
             {groups.map((g) => {
-              const list = sortByCode(states.filter((s) => (s.tone || "neutral") === g.id));
+              const list = states.filter((s) => (s.tone || "neutral") === g.id);
               if (!list.length) return null;
               return (
                 <div key={g.id} className="regime-group" style={toneVars(g)}>
@@ -82,7 +81,7 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
                     return (
                       <div key={s.id} className="regime-state-wrap">
                         <button type="button" className={`regime-state ${on ? "regime-state-on" : ""}`} onClick={() => pickState(s.id)}>
-                          <RegimeCode state={s} groups={groups} />
+                          <span className="regime-radio" />
                           <span className="regime-state-label">{s.label}</span>
                           {s.note && !on ? <Info size={13} className="regime-note-icon" /> : null}
                           {band ? <span className={`regime-band-tag mono ${band.max === 0 ? "regime-band-out" : ""}`}>{riskBandText(band)}</span> : null}
@@ -98,7 +97,7 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
           {current ? (
             <div className="regime-current" style={toneVars(curGroup)}>
               <div className="regime-current-head">
-                <RegimeCode state={current} groups={groups} full />
+                <RegimeMark state={current} groups={groups} />
                 <span>{current.label}</span>
               </div>
               {current.note ? <div className="regime-current-note"><NoteText text={current.note} /></div> : null}
@@ -115,8 +114,6 @@ export function MarketCondPicker({ t, setT, resources, trades }) {
     </div>
   );
 }
-
-const sortByCode = (list) => [...list].sort((a, b) => String(a.code || "").localeCompare(String(b.code || ""), "vi", { numeric: true }));
 
 const FIT_TEXT = { in: "đúng khung", over: "vượt khung", under: "dưới khung" };
 
@@ -214,18 +211,12 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
   };
   const setStates = (r, states) => update(r.id, { states });
   const patchState = (r, sid, patch) => setStates(r, r.states.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
-  // Đổi nhóm thì lấy chữ kế tiếp của nhóm mới — "Tích cực A" không đụng hàng với "Tích cực A" đã có.
-  const changeTone = (r, s, tone) => patchState(r, s.id, { tone, code: nextCode(r.states, tone, s.id) });
-  const changeCode = (r, s, v) => {
-    const code = v.toUpperCase().replace(/\s+/g, "").slice(0, 4);
-    if (code) patchState(r, s.id, { code });
-  };
-  // Lên / xuống trong cùng nhóm: đổi chữ cái cho nhau (thứ tự hiển thị đi theo mã).
+  // Lên / xuống trong cùng nhóm: đổi chỗ với trạng thái liền kề CÙNG nhóm trong danh sách.
   const move = (r, list, i, d) => {
     const a = list[i];
     const b = list[i + d];
     if (!a || !b) return;
-    setStates(r, r.states.map((s) => (s.id === a.id ? { ...s, code: b.code } : s.id === b.id ? { ...s, code: a.code } : s)));
+    setStates(r, r.states.map((s) => (s.id === a.id ? b : s.id === b.id ? a : s)));
   };
   const list = (accounts || []).filter((a) => a && a.name);
 
@@ -233,8 +224,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
     <div className="regime-settings">
       <p className="field-hint">
         Mỗi chỉ số là "nhiệt kế" của một loại thị trường, kèm danh sách trạng thái — mỗi lệnh tick đúng một trạng thái, nên các trạng thái
-        nên loại trừ nhau và phủ hết các tình huống. Mỗi trạng thái thuộc một nhóm và có mã chữ cái cố định (Tích cực A, Tích cực B...):
-        thêm trạng thái mới thì lấy chữ kế tiếp, mã cũ giữ nguyên. Ghi chú hiện khi rê chuột / khi chọn trạng thái trong form lệnh.
+        nên loại trừ nhau và phủ hết các tình huống. Mỗi trạng thái thuộc một nhóm (Tích cực / Trung tính / Tiêu cực — tự đổi tên, màu ở khung dưới). Ghi chú hiện khi rê chuột / khi chọn trạng thái trong form lệnh.
         Khung vốn (% rủi ro mỗi lệnh) thì form lệnh nhắc ngay khi đi lệch. Sửa chữ không mất dữ liệu cũ; xoá trạng thái thì các lệnh đã tick nó thành "chưa ghi".
       </p>
       <GroupSettings groups={groups} onChange={onGroupsChange} />
@@ -260,20 +250,19 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
             })}
           </div>
           {groups.map((g) => {
-            const inGroup = sortByCode((r.states || []).filter((s) => (s.tone || "neutral") === g.id));
+            const inGroup = (r.states || []).filter((s) => (s.tone || "neutral") === g.id);
             return (
               <div key={g.id} className="regime-group regime-group-settings" style={toneVars(g)}>
                 <div className="regime-group-head"><i>{g.icon}</i>{g.label}<small>{inGroup.length} trạng thái</small></div>
                 {inGroup.map((s, i) => (
                   <div key={s.id} className="regime-state-edit">
                     <div className="regime-cond-row">
-                      <CommitInput className="input mono regime-code-input" value={s.code || ""} title="Mã trạng thái trong nhóm" onCommit={(v) => changeCode(r, s, v)} />
                       <CommitInput value={s.label} placeholder="VD: Trên EMA9 · nhưng dưới EMA21" onCommit={(v) => patchState(r, s.id, { label: v })} />
-                      <select className="input regime-tone-select" value={s.tone || "neutral"} onChange={(e) => changeTone(r, s, e.target.value)} title="Chuyển sang nhóm khác">
+                      <select className="input regime-tone-select" value={s.tone || "neutral"} onChange={(e) => patchState(r, s.id, { tone: e.target.value })} title="Chuyển sang nhóm khác">
                         {groups.map((x) => <option key={x.id} value={x.id}>{x.icon} {x.label}</option>)}
                       </select>
-                      <button type="button" className="row-btn" disabled={i === 0} onClick={() => move(r, inGroup, i, -1)} title="Lên (đổi mã với trạng thái trên)"><ChevronUp size={14} /></button>
-                      <button type="button" className="row-btn" disabled={i === inGroup.length - 1} onClick={() => move(r, inGroup, i, 1)} title="Xuống (đổi mã với trạng thái dưới)"><ChevronDown size={14} /></button>
+                      <button type="button" className="row-btn" disabled={i === 0} onClick={() => move(r, inGroup, i, -1)} title="Lên"><ChevronUp size={14} /></button>
+                      <button type="button" className="row-btn" disabled={i === inGroup.length - 1} onClick={() => move(r, inGroup, i, 1)} title="Xuống"><ChevronDown size={14} /></button>
                       <ConfirmButton onConfirm={() => setStates(r, r.states.filter((x) => x.id !== s.id))} />
                     </div>
                     <div className="regime-note-edit">
@@ -291,8 +280,8 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
                     </div>
                   </div>
                 ))}
-                <button type="button" className="btn btn-ghost btn-xs regime-add-state" onClick={() => setStates(r, [...(r.states || []), emptyState(g.id, r.states)])}>
-                  <Plus size={13} /> Thêm trạng thái {g.label} {nextCode(r.states, g.id)}
+                <button type="button" className="btn btn-ghost btn-xs regime-add-state" onClick={() => setStates(r, [...(r.states || []), emptyState(g.id)])}>
+                  <Plus size={13} /> Thêm trạng thái {g.label}
                 </button>
               </div>
             );
@@ -367,7 +356,7 @@ function RiskDiscipline({ st, groups, onOpenTrade }) {
                     <span className="mono mc-worst-date">{t.entryDate || "—"}</span>
                     <b className="mc-worst-sym">{t.symbol || "—"}</b>
                     <span className={`mono regime-fit-${kind}`}>{t.riskPercent}%</span>
-                    <RegimeCode state={state} groups={groups} />
+                    <RegimeMark state={state} groups={groups} short />
                     <span className="mc-worst-note">khung {riskBandText(stateRiskBand(state))} · {state.label}</span>
                   </button>
                 ))}
@@ -493,7 +482,7 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
                 <p className="mc-hero-why">
                   Winrate {st.good.count} lệnh vào lúc nhóm "{groups[0].label}" so với {st.rest.count} lệnh vào lúc {groups[1].label} / {groups[2].label}.
                   R trung bình <b>{fmtR(st.good.avgR)}</b> so với <b>{fmtR(st.rest.avgR)}</b>.
-                  {best ? <> Trạng thái winrate cao nhất (từ 3 lệnh): <b>{stateName(best, groups)}</b> · {best.label} — {fmtPct(best.winRate)}.</> : null}
+                  {best ? <> Trạng thái winrate cao nhất (từ 3 lệnh): <b>{best.label}</b> ({stateName(best, groups)}) — {fmtPct(best.winRate)}.</> : null}
                 </p>
               </>
             ) : (
@@ -539,7 +528,7 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
                     ...rows.map((s) => (
                       <tr key={s.id} className={s.count ? "" : "regime-row-dim"}>
                         <td className={s.note ? "regime-has-note" : ""} title={s.note || undefined}>
-                          <span className="regime-state-cell"><RegimeCode state={s} groups={groups} /><span>{s.label}</span></span>
+                          <span className="regime-state-cell"><span className="regime-dot" style={toneVars(groupOf(groups, s.tone || "neutral"))} /><span>{s.label}</span></span>
                         </td>
                         <StatCells s={s} />
                       </tr>

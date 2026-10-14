@@ -1999,8 +1999,7 @@ button.nt-check:hover { filter: brightness(1.25); }
 .regime-current .regime-risk-hint { margin-top: 8px; }
 .regime-group-settings { margin-top: 16px; gap: 8px; }
 .regime-group-settings .regime-state-edit { padding-bottom: 8px; }
-.regime-code-input.input { flex: none; width: 54px; text-align: center; font-weight: 700; color: var(--tone); border-color: rgba(var(--tone-rgb), 0.45); background: rgba(var(--tone-rgb), 0.1); }
-.regime-group-settings .regime-note-edit { padding-left: 60px; }
+.regime-group-settings .regime-note-edit { padding-left: 0; }
 .regime-add-state { justify-self: start; color: var(--tone); }
 .regime-group-edit-list { display: grid; gap: 10px; margin-top: 10px; }
 .regime-group-edit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2021,7 +2020,6 @@ button.nt-check:hover { filter: brightness(1.25); }
 .mc-worst-row .regime-code { height: 20px; min-width: 32px; font-size: 11px; }
 @media (max-width: 640px) {
   .regime-group-cards { grid-template-columns: 1fr; }
-  .regime-group-settings .regime-note-edit { padding-left: 0; }
 }
 .regime-band-tag { font-size: 11px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; flex-shrink: 0; }
 .regime-band-out { color: var(--loss); border-color: rgba(224,97,90,0.4); }
