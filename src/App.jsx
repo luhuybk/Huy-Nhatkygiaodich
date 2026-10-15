@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
+import { useBackNav } from "./lib/useBackNav.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
@@ -523,6 +524,9 @@ function AppShell({ onSignOut, userEmail }) {
   };
   const openEditForm = (t) => { setEditing(t); setView("form"); };
   const startEdit = (t) => { setViewingTrade(t); };
+
+  // Nút Back / Forward của chuột, trình duyệt, vuốt trên điện thoại.
+  const formDirtyRef = useBackNav({ view, setView, viewingTrade, setViewingTrade, editing, trades, onNavigate: () => setMobileNavOpen(false) });
   // Sửa nhiều lệnh cùng lúc (điền phí sàn hàng loạt): gọi handleSaveTrade nhiều lần sẽ chỉ
   // giữ lại lần cuối, vì lần nào cũng dựng danh sách mới từ cùng một `trades` cũ.
   const handleUpdateTrades = (list) => {
@@ -773,7 +777,7 @@ function AppShell({ onSignOut, userEmail }) {
                   onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
               ) :
               view === "form" ? (
-                <TradeForm initial={editing} resources={resources} capitalPlan={capitalPlan} setupErrors={setupErrors} skills={skills} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} />
+                <TradeForm initial={editing} resources={resources} capitalPlan={capitalPlan} setupErrors={setupErrors} skills={skills} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} onDirtyChange={(d) => { formDirtyRef.current = d; }} />
               ) :
               view === "analysis" ? <Analysis trades={trades} resources={resources} onViewTrade={startEdit} /> :
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :

@@ -345,8 +345,17 @@ function ReviewLog({ entries, onChange, onRemove, onAdd }) {
   );
 }
 
-export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills, trades, ledger, onSave, onCancel }) {
+export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills, trades, ledger, onSave, onCancel, onDirtyChange }) {
   const [t, setT] = useState(() => migrateReviewFields(initial || emptyTrade()));
+  // Báo cho App biết form đã sửa gì chưa — để nút Back của chuột / trình duyệt hỏi lại trước khi
+  // bỏ thay đổi. So từng trường theo tham chiếu: setT chỉ thay trường vừa sửa, khỏi stringify cả lệnh.
+  const startRef = useRef(t);
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    const a = startRef.current;
+    onDirtyChange(Object.keys({ ...a, ...t }).some((k) => a[k] !== t[k]));
+  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (onDirtyChange) onDirtyChange(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
   const missing = (key) => isFieldMissing(t, key);
