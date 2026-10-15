@@ -703,6 +703,25 @@ export function untelexSymbol(raw, known) {
   return pick(0, []) || fallback;
 }
 
+// Gõ nhanh "cadchf" / "CADCHF" / "cad chf" → "CAD/CHF": cặp hai đồng tiền chính luôn viết có "/".
+// Mã khác (vàng, chỉ số, cổ phiếu) mà đã từng dùng thì theo đúng cách viết cũ, ưu tiên bản có "/" —
+// gõ "xauusd" mà nhật ký đang ghi "XAUUSD" thì giữ "XAUUSD", không tự đẻ ra mã thứ hai.
+const FX_SLASH_CCY = ["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"];
+// Mọi cặp hai đồng chính, viết liền — để dịch ngược Telex đoán đúng ("eủusd" → EURUSD chứ không EUUSDR).
+const FX_SLASH_PAIRS = FX_SLASH_CCY.flatMap((a) => FX_SLASH_CCY.filter((b) => b !== a).map((b) => a + b));
+export function canonicalSymbol(raw, known) {
+  const list = known instanceof Set ? [...known] : (known || []).map((k) => String(k || "").toUpperCase());
+  const s = untelexSymbol(raw, new Set([...list, ...FX_SLASH_PAIRS]));
+  if (!s) return s;
+  const compact = s.replace(/[^A-Z0-9]/g, "");
+  const base = compact.slice(0, 3);
+  const quote = compact.slice(3);
+  if (/^[A-Z]{6}$/.test(compact) && base !== quote && FX_SLASH_CCY.includes(base) && FX_SLASH_CCY.includes(quote)) return `${base}/${quote}`;
+  const same = list.filter((k) => k.replace(/[^A-Z0-9]/g, "") === compact);
+  if (!same.length || same.includes(s)) return s;
+  return same.find((k) => k.includes("/")) || same[0];
+}
+
 // Có chữ tiếng Việt thì tức là bộ gõ đã can thiệp — dùng để báo cho người gõ biết.
 export function looksTelexed(raw) {
   return /[^\x00-\x7F]/.test(String(raw || ""));

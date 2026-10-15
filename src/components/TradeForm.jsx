@@ -6,7 +6,7 @@ import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -82,8 +82,15 @@ function FormToc({ trade, sections }) {
     scrollBoxTo(box, Math.max(0, top));
   };
 
+  // RR thực ghim ở đầu mục lục — khỏi kéo lên mục Quản trị vốn mỗi lần muốn xem.
+  const { rr, outcome } = computeResult(trade);
   return (
     <nav className="form-toc" aria-label="Mục lục form">
+      <button type="button" className={`form-toc-rr ${outcome === "win" ? "form-toc-rr-win" : outcome === "loss" ? "form-toc-rr-loss" : ""}`}
+        onClick={() => go("sec-2")} title="RR thực — tự tính khi có Lãi/Lỗ và Rủi ro (số tiền). Bấm để tới mục Quản trị vốn.">
+        <span>RR thực</span>
+        <b className="mono">{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</b>
+      </button>
       <span className="form-toc-title">Các mục</span>
       <ul className="form-toc-list">
         {sections.map((sec) => {
@@ -427,8 +434,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     }
     setFormError("");
     // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn". Symbol dịch ngược
-    // Telex thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
-    onSave(clearBrokerFilled({ ...t, symbol: untelexSymbol(t.symbol, knownSymbols) }));
+    // Chuẩn hoá thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
+    onSave(clearBrokerFilled({ ...t, symbol: canonicalSymbol(t.symbol, knownSymbols) }));
   };
 
   return (
@@ -450,13 +457,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               list="symbol-suggestions"
               value={t.symbol}
               onChange={(e) => applySymbol(e.target.value.toUpperCase())}
-              // Dịch ngược Telex lúc rời ô chứ không phải lúc đang gõ — xem untelexSymbol.
-              onBlur={() => { if (looksTelexed(t.symbol)) applySymbol(untelexSymbol(t.symbol, knownSymbols)); }}
+              // Chuẩn hoá lúc rời ô chứ không phải lúc đang gõ: dịch ngược Telex, "cadchf" → "CAD/CHF".
+              onBlur={() => { const c = canonicalSymbol(t.symbol, knownSymbols); if (c !== t.symbol) applySymbol(c); }}
               placeholder="VD: XAUUSD, HPG..."
             />
             {looksTelexed(t.symbol) ? (
               <span className="field-hint telex-note">
-                Bộ gõ tiếng Việt đang bật — rời ô này sẽ tự sửa thành <b className="mono">{untelexSymbol(t.symbol, knownSymbols)}</b>.
+                Bộ gõ tiếng Việt đang bật — rời ô này sẽ tự sửa thành <b className="mono">{canonicalSymbol(t.symbol, knownSymbols)}</b>.
               </span>
             ) : null}
             <datalist id="symbol-suggestions">
