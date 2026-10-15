@@ -86,11 +86,14 @@ function FormToc({ trade, sections }) {
   const { rr, outcome } = computeResult(trade);
   return (
     <nav className="form-toc" aria-label="Mục lục form">
-      <button type="button" className={`form-toc-rr ${outcome === "win" ? "form-toc-rr-win" : outcome === "loss" ? "form-toc-rr-loss" : ""}`}
-        onClick={() => go("sec-2")} title="RR thực — tự tính khi có Lãi/Lỗ và Rủi ro (số tiền). Bấm để tới mục Quản trị vốn.">
-        <span>RR thực</span>
-        <b className="mono">{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</b>
-      </button>
+      <div className="form-toc-rr-wrap">
+        <button type="button" className={`form-toc-rr ${outcome === "win" ? "form-toc-rr-win" : outcome === "loss" ? "form-toc-rr-loss" : ""}`}
+          onClick={() => go("sec-2")} title="RR thực — tự tính khi có Lãi/Lỗ và Rủi ro (số tiền). Bấm để tới mục Quản trị vốn.">
+          <span className="form-toc-rr-label">RR thực</span>
+          <b className="mono">{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</b>
+          <span className="form-toc-rr-hint">{rr === null ? "Chưa có Lãi/Lỗ" : outcome === "win" ? "Lệnh thắng" : outcome === "loss" ? "Lệnh thua" : "Hoà vốn"} · mục 2 →</span>
+        </button>
+      </div>
       <span className="form-toc-title">Các mục</span>
       <ul className="form-toc-list">
         {sections.map((sec) => {
