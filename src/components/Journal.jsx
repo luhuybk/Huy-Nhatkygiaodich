@@ -608,10 +608,24 @@ function useFitToViewport(ref, on) {
 
 // sticky: chỉ bật cho bảng nhật ký chính. Mấy bảng con vài dòng nằm trong thẻ biểu đồ thì
 // thêm một thanh cuộn nữa là thừa.
-export function JournalTable({ trades, resources, onEdit, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange, columns, sticky }) {
+export function JournalTable({ trades, resources, onEdit, onEditForm, onDelete, selected, onToggleOne, onToggleAll, sort, onSortChange, columns, sticky }) {
   const res = resources || { checklistItems: [] };
   const wrapRef = useRef(null);
   useFitToViewport(wrapRef, sticky && trades.length > 0);
+  // Bấm một lần = xem chi tiết, bấm đúp = vào thẳng form sửa. Phải đợi một nhịp mới mở chi tiết:
+  // mở ngay thì cú bấm thứ hai rơi vào nền mờ của hộp chi tiết và đóng nó lại.
+  const clickTimer = useRef(null);
+  useEffect(() => () => clearTimeout(clickTimer.current), []);
+  const rowClick = (t, e) => {
+    clearTimeout(clickTimer.current);
+    if (!onEditForm) { onEdit(t); return; }
+    if (e.detail >= 2) {
+      if (window.getSelection) window.getSelection().removeAllRanges();
+      onEditForm(t);
+      return;
+    }
+    clickTimer.current = setTimeout(() => onEdit(t), 250);
+  };
   if (trades.length === 0) return <p className="empty-note" style={{ padding: "24px 0" }}>Không có giao dịch nào khớp bộ lọc.</p>;
   const selectable = !!selected && !!onToggleOne;
   const allSelected = selectable && trades.length > 0 && trades.every((t) => selected.has(t.id));
@@ -734,7 +748,8 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
               hasLesson: td(C.hasLesson, t.hasLesson ? <StickyNote size={16} className="lesson-icon" /> : EMPTY, { title: t.lessonNote || "" }),
             };
             return (
-              <tr key={t.id} onClick={() => onEdit(t)} className={t.hasLesson ? "row-has-lesson" : ""}>
+              <tr key={t.id} onClick={(e) => rowClick(t, e)} className={t.hasLesson ? "row-has-lesson" : ""}
+                title={onEditForm ? "Bấm để xem chi tiết · bấm đúp để sửa" : undefined}>
                 {selectable ? (
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(t.id)} onChange={() => onToggleOne(t.id)} aria-label="Chọn lệnh" />
@@ -743,7 +758,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
                 {shown.map((col) => cells[col.id])}
                 <td onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: 2 }}>
-                    <button type="button" className="row-btn" onClick={() => onEdit(t)}><Pencil size={13} /></button>
+                    <button type="button" className="row-btn" onClick={() => (onEditForm || onEdit)(t)} title={onEditForm ? "Sửa lệnh" : "Xem lệnh"}><Pencil size={13} /></button>
                     <ConfirmButton onConfirm={() => onDelete(t.id)} />
                   </div>
                 </td>
@@ -756,7 +771,7 @@ export function JournalTable({ trades, resources, onEdit, onDelete, selected, on
   );
 }
 
-export function TradingCalendar({ trades, resources, onEdit, columns }) {
+export function TradingCalendar({ trades, resources, onEdit, onEditForm, columns }) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [selected, setSelected] = useState("");
   const y = cursor.getFullYear(), m = cursor.getMonth();
@@ -824,7 +839,7 @@ export function TradingCalendar({ trades, resources, onEdit, columns }) {
       {selected ? (
         <div style={{ marginTop: 16 }}>
           <h3 className="block-title">Giao dịch ngày {selected}</h3>
-          <JournalTable trades={selectedTrades} resources={resources} onEdit={onEdit} onDelete={() => {}} columns={columns} />
+          <JournalTable trades={selectedTrades} resources={resources} onEdit={onEdit} onEditForm={onEditForm} onDelete={() => {}} columns={columns} />
         </div>
       ) : null}
     </div>
@@ -835,7 +850,7 @@ export function TradingCalendar({ trades, resources, onEdit, columns }) {
 // quay về — không nhớ thì bị đá về Danh sách, phải bấm lại tab và soát tiếp từ đầu.
 let lastJournalTab = "list";
 
-export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, onAddTrades, uiSettings, onUiSettingsChange }) {
+export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onEditForm, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, onAddTrades, uiSettings, onUiSettingsChange }) {
   const [tab, setTabState] = useState(lastJournalTab);
   const setTab = (v) => { lastJournalTab = v; setTabState(v); };
   const [selected, setSelected] = useState(() => new Set());
@@ -935,10 +950,10 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
             </div>
           </div>
           <SortBar sort={sort} onChange={setSort} />
-          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} sticky />
+          <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onEditForm={onEditForm} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} sticky />
         </div>
       ) : tab === "calendar" ? (
-        <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} columns={uiSettings && uiSettings.journalColumns} />
+        <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} onEditForm={onEditForm} columns={uiSettings && uiSettings.journalColumns} />
       ) : null}
     </div>
   );
