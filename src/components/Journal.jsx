@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { AccountTag, CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
@@ -846,13 +847,11 @@ export function TradingCalendar({ trades, resources, onEdit, onEditForm, columns
   );
 }
 
-// Tab đang xem nhớ ở cấp module: sửa một lệnh từ tab đối chiếu Exness/DNSE là sang trang form rồi lưu
-// quay về — không nhớ thì bị đá về Danh sách, phải bấm lại tab và soát tiếp từ đầu.
-let lastJournalTab = "list";
 
 export function JournalSection({ trades, resources, setupErrors, skills, ledger, filterPresets, onFilterPresetsChange, onEdit, onEditForm, onCreate, onUpdate, onDelete, onBulkDelete, onDuplicate, onAddTrades, uiSettings, onUiSettingsChange }) {
-  const [tab, setTabState] = useState(lastJournalTab);
-  const setTab = (v) => { lastJournalTab = v; setTabState(v); };
+  // useNavTab nhớ tab qua lần rời trang: sửa một lệnh từ tab đối chiếu Exness/DNSE là sang trang form
+  // rồi lưu quay về — không nhớ thì bị đá về Danh sách, phải bấm lại tab và soát tiếp từ đầu.
+  const [tab, setTab] = useNavTab("journalTab", "list");
   const [selected, setSelected] = useState(() => new Set());
   // Bộ lọc + kiểu sắp xếp lưu vào uiSettings để rời trang quay lại vẫn giữ nguyên.
   // Phải qua useMemo: chưa lưu bộ lọc nào thì `|| {}` đẻ ra object MỚI mỗi lần render,

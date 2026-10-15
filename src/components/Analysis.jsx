@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { LineChart as LineChartIcon, Layers, Target } from "lucide-react";
 import { ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./Dashboard.jsx";
@@ -313,7 +314,7 @@ function FeeBreakdown({ closed }) {
 }
 
 export function Analysis({ trades, resources, onViewTrade }) {
-  const [tab, setTab] = useState("topbottom");
+  const [tab, setTab] = useNavTab("analysisTab", "topbottom");
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");

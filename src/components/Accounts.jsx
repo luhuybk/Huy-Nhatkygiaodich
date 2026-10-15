@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
@@ -432,7 +433,7 @@ export function AccountDetail({ account, accounts, fxRates, ledger, trades, onBa
 }
 
 export function AccountsSection({ accounts, ledger, trades, onAccountsChange, onMoveTrades, onLedgerChange, fxRates, onFxRatesChange }) {
-  const [tab, setTab] = useState("list");
+  const [tab, setTab] = useNavTab("accountsTab", "list");
   const [viewingId, setViewingId] = useState("");
   const [editTarget, setEditTarget] = useState(null);
   const viewing = accounts.find((a) => a.id === viewingId);

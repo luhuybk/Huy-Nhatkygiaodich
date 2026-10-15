@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { Globe2, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Info, FlaskConical, Scale, Copy } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { FxStatsPanel } from "./FxStrength.jsx";
@@ -407,7 +408,7 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
   const demoTrades = useMemo(() => (demo ? buildDemoTrades(regimes) : null), [demo, regimes]);
   const trades = demo ? demoTrades : realTrades;
   const onOpenTrade = demo ? undefined : openReal;
-  const [tab, setTab] = useState(regimes[0] ? regimes[0].id : "settings");
+  const [tab, setTab] = useNavTab("marketRegimeTab", regimes[0] ? regimes[0].id : "settings");
   const [direction, setDirection] = useState("");
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");

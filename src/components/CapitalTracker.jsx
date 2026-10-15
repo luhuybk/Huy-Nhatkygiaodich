@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { Trash2, Pencil, LineChart as LineChartIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { ACCENT, CAPITAL_FLOW_TYPES, CURRENCIES, GRID, MUTED, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
@@ -64,7 +65,7 @@ export function EquityIndexPage({ resources, ledger, trades }) {
 
 export function CapitalTrackerPage({ accounts, entries, flows, onAccountsChange, onEntriesChange, onFlowsChange }) {
   const [selectedId, setSelectedId] = useState(accounts[0]?.id || "");
-  const [tab, setTab] = useState("curve");
+  const [tab, setTab] = useNavTab("capitalTab", "curve");
 
   useEffect(() => {
     if (!selectedId && accounts.length) setSelectedId(accounts[0].id);

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { ArrowDown, ArrowUp, Bug, Check, Pencil, Plus, X } from "lucide-react";
 import { ConfirmButton, StatCard } from "./ui.jsx";
 import { emptySetupError, fmt, fmtR, moveSetupError, nextOrder, setupErrorStats, sortSetupErrors, stripSetupError, uid } from "../lib/helpers.js";
@@ -279,7 +280,7 @@ function StatsTab({ errors, trades, resources, setup, onSetup }) {
 }
 
 export function SetupErrorsPage({ errors, trades, resources, onChange, onTradesChange }) {
-  const [tab, setTab] = useState("catalog");
+  const [tab, setTab] = useNavTab("setupErrorsTab", "catalog");
   // Setup đang chọn dùng chung cho cả hai tab: xem thống kê của DD rồi bấm sang "Bộ lỗi"
   // là sửa đúng bộ lỗi của DD, không phải mò chọn lại.
   const [setup, setSetup] = useState("");

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Gauge, Pencil, Plus } from "lucide-react";
 import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard, NoteText } from "./ui.jsx";
 import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
@@ -296,7 +297,7 @@ function EffectivenessTab({ items, trades, resources }) {
 }
 
 export function SkillsPage({ items, trades, resources, onChange, onTradesChange }) {
-  const [tab, setTab] = useState("list");
+  const [tab, setTab] = useNavTab("skillsTab", "list");
   // Xóa kỹ năng thì gỡ khỏi mọi lệnh đã tick, không thì lệnh treo một id không còn tồn tại.
   const handleChange = (next) => {
     const gone = (items || []).filter((s) => !(next || []).some((x) => x.id === s.id));

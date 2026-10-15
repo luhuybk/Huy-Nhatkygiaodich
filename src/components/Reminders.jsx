@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
-import { ConfirmButton, Field, useStickyTab } from "./ui.jsx";
+import { ConfirmButton, Field } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
 import { NotifySettingsPanel, PlansPanel } from "./SlReminders.jsx";
@@ -122,7 +123,7 @@ const OLD_TAB = { all: "plans", sl: "plans", setupcheck: "plans", symbolwatch: "
 
 export function RemindersPage({ reminders, onChange, resources, slReminderSettings, onSlReminderSettingsChange, symbolWatches, onSymbolWatchesChange, trades, setupCheckLog, onSetupCheckLogChange, slMutedTrades, onSlMutedTradesChange, taskDone, onTaskDoneChange }) {
   const [editing, setEditing] = useState(null);
-  const [tabRaw, setTab] = useStickyTab("remindersTab", "today", [...TABS, ...Object.keys(OLD_TAB)]);
+  const [tabRaw, setTab] = useNavTab("remindersTab", "today", { sticky: true, allowed: [...TABS, ...Object.keys(OLD_TAB)] });
   const tab = OLD_TAB[tabRaw] || tabRaw;
   const ts = todayStr();
   const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);

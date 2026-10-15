@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, GripVertical } from "lucide-react";
 import { ConfirmButton } from "./ui.jsx";
 import { RESOURCE_GROUPS, sortStructureScores } from "../lib/constants.js";
@@ -119,9 +120,9 @@ function StructureRangeFiller({ list, onApply }) {
 }
 
 export function ResourceManager({ resources, onChange }) {
-  const [activeGroup, setActiveGroup] = useState(RESOURCE_GROUPS[0].key);
+  const [activeGroup, setActiveGroup] = useNavTab("resourcesGroup", RESOURCE_GROUPS[0].key, { allowed: RESOURCE_GROUPS.map((g) => g.key) });
   const group = RESOURCE_GROUPS.find((g) => g.key === activeGroup);
-  const [activeChild, setActiveChild] = useState(group.children ? group.children[0].key : null);
+  const [activeChild, setActiveChild] = useNavTab("resourcesChild", group.children ? group.children[0].key : null);
   const selectGroup = (g) => { setActiveGroup(g.key); setActiveChild(g.children ? g.children[0].key : null); };
   const childDef = group.children ? (group.children.find((c) => c.key === activeChild) || group.children[0]) : null;
   // Thang số luôn tự xếp tăng dần, kể cả sau khi đổi tên một mức (sửa 7 thành 7.5 thì nó phải

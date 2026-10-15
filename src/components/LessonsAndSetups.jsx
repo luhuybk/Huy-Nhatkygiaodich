@@ -1,6 +1,7 @@
 import { useState, useMemo, Suspense, lazy } from "react";
+import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, useStickyTab, NoteText } from "./ui.jsx";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
 
@@ -582,7 +583,7 @@ function MissCostSection({ missedSetups, skippedSetups, trades }) {
 // Bốn mục này cùng trả lời một câu hỏi ("setup nào mình đã bỏ lỡ hoặc chưa nhận ra?"),
 // nên gộp về một trang thay vì các mục rời rạc ngoài menu.
 export function SetupHubSection({ missedSetups, skippedSetups, setupVariants, trades, resources, onChangeMissed, onChangeSkipped, onChangeVariants }) {
-  const [tab, setTab] = useStickyTab("setupHubTab", "missed", ["missed", "skipped", "variants", "cost"]);
+  const [tab, setTab] = useNavTab("setupHubTab", "missed", { sticky: true, allowed: ["missed", "skipped", "variants", "cost"] });
   const tabs = [
     { key: "missed", label: "Bị miss", icon: EyeOff, count: missedSetups.length },
     { key: "skipped", label: "Bị skip", icon: SkipForward, count: skippedSetups.length },
@@ -1220,7 +1221,7 @@ export function NewsLogSection({ items, onChange }) {
 }
 
 export function JourneySection({ lessons, resources, trades, onChangeTrades, onChangeLessons, tradingPlans, onChangeTradingPlans, skills, onChangeSkills, processImprovements, onChangeProcessImprovements, problemLogs, onChangeProblemLogs, newsLogs, onChangeNewsLogs, avoidPrinciples, onOpenTrade }) {
-  const [tab, setTab] = useStickyTab("journeyTab", "lessons", ["plan", "skills", "lessons", "process", "problems", "news"]);
+  const [tab, setTab] = useNavTab("journeyTab", "lessons", { sticky: true, allowed: ["plan", "skills", "lessons", "process", "problems", "news"] });
   const unresolvedCount = useMemo(() => problemLogs.filter((p) => !p.resolved).length, [problemLogs]);
   const thisWeekViolations = useMemo(() => {
     const thisMonday = startOfWeek(todayStr());
