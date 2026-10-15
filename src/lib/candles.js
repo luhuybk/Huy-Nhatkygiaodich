@@ -22,8 +22,8 @@ export const UTC_TZ = "Etc/UTC";
 export const SESSION_PRESETS = [
   { id: "fx", name: "Forex · OANDA kim loại · FXTF", note: "FX:, OANDA: vàng/bạc/XPD/XPT, FXTF:XNGUSD", tz: NY_TZ, spec: "1700-1700", preset: true },
   { id: "lme", name: "Kim loại LME · FUSIONMARKETS", note: "đồng XCU, nhôm XAL, niken XNI, chì XPB, kẽm XZN · H4/H8 nhắc theo giờ FX", tz: LONDON_TZ, spec: "0100-1850", intradayAs: "fx", preset: true },
-  { id: "usoil", name: "Dầu WTI · FOREXCOM:USOIL", note: "theo giờ UTC, không đổi giờ mùa", tz: UTC_TZ, spec: "2200-0000:1|0000-0000:2345|0000-2100:6", preset: true },
-  { id: "ukoil", name: "Dầu Brent · FOREXCOM:UKOIL", note: "theo giờ UTC, nghỉ 2 tiếng mỗi đêm", tz: UTC_TZ, spec: "2200-2200:2|0000-2200:3456", preset: true },
+  { id: "usoil", name: "Dầu WTI · FOREXCOM:USOIL", note: "theo giờ UTC, không đổi giờ mùa · H4/H8 nhắc theo giờ FX", tz: UTC_TZ, spec: "2200-0000:1|0000-0000:2345|0000-2100:6", intradayAs: "fx", preset: true },
+  { id: "ukoil", name: "Dầu Brent · FOREXCOM:UKOIL", note: "theo giờ UTC, nghỉ 2 tiếng mỗi đêm · H4/H8 nhắc theo giờ FX", tz: UTC_TZ, spec: "2200-2200:2|0000-2200:3456", intradayAs: "fx", preset: true },
 ];
 
 // Mã chưa tự gán phiên thì đoán theo tên — đúng với các nguồn đang dùng trên chart, sửa được ở
@@ -153,8 +153,8 @@ function sessionRanges(session, vnDate) {
 
 // Mọi mốc nến khung `hours` đóng trong ngày `vnDate` (giờ VN), theo phiên `session`. Nến xếp từ
 // đầu mỗi phiên; nến cuối phiên đóng ở giờ hết phiên dù chưa đủ độ dài (đồng đóng 0h50, Brent 5h).
-// intradayAs: nến dưới D của phiên này xếp theo phiên khác — kim loại LME lệch FX một tiếng
-// (H4 đóng 1h-15h-23h thay vì 0h-16h-20h), lệch ít nên nhắc chung giờ FX cho đỡ lắt nhắt. Nến D giữ phiên thật.
+// intradayAs: nến dưới D của phiên này xếp theo phiên khác — kim loại LME, dầu WTI / Brent lệch FX một
+// hai tiếng (H4 đóng 1h-15h-23h thay vì 0h-16h-20h), lệch ít nên nhắc chung giờ FX cho đỡ lắt nhắt. Nến D giữ phiên thật.
 export function candleClosesVN(hours, session, vnDate) {
   if (!hours || !session) return [];
   if (hours < 24 && session.intradayAs) session = SESSION_PRESETS.find((x) => x.id === session.intradayAs) || session;

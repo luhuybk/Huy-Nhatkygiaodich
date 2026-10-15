@@ -82,8 +82,8 @@ const NY_TZ = "America/New_York";
 const SESSION_PRESETS: CandleSession[] = [
   { id: "fx", tz: NY_TZ, spec: "1700-1700" },
   { id: "lme", tz: "Europe/London", spec: "0100-1850", intradayAs: "fx" },
-  { id: "usoil", tz: "Etc/UTC", spec: "2200-0000:1|0000-0000:2345|0000-2100:6" },
-  { id: "ukoil", tz: "Etc/UTC", spec: "2200-2200:2|0000-2200:3456" },
+  { id: "usoil", tz: "Etc/UTC", spec: "2200-0000:1|0000-0000:2345|0000-2100:6", intradayAs: "fx" },
+  { id: "ukoil", tz: "Etc/UTC", spec: "2200-2200:2|0000-2200:3456", intradayAs: "fx" },
 ];
 const DEFAULT_SYMBOL_RULES: [RegExp, string][] = [
   [/^X(CU|AL|NI|PB|ZN)/, "lme"],
@@ -177,7 +177,7 @@ function sessionRanges(session: CandleSession, vnDate: string) {
   return out;
 }
 
-// intradayAs: nến dưới D của phiên này xếp theo phiên khác — kim loại LME lệch FX một tiếng, nhắc
+// intradayAs: nến dưới D của phiên này xếp theo phiên khác — kim loại LME, dầu lệch FX một hai tiếng, nhắc
 // chung giờ FX cho đỡ lắt nhắt. Nến D giữ phiên thật.
 function candleClosesVN(hours: number, session: CandleSession | undefined, vnDate: string) {
   if (!hours || !session) return [] as string[];
