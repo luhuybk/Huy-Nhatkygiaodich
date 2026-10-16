@@ -810,7 +810,7 @@ function AppShell({ onSignOut, userEmail }) {
                   onChangeMissed={persistMissedSetups} onChangeSkipped={persistSkippedSetups} onChangeVariants={persistSetupVariants} />
               ) :
               view === "form" ? (
-                <TradeForm initial={editing} resources={resources} capitalPlan={capitalPlan} setupErrors={setupErrors} skills={skills} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} onDirtyChange={(d) => { formDirtyRef.current = d; }} />
+                <TradeForm key={editing ? editing.id : "new"} initial={editing} resources={resources} capitalPlan={capitalPlan} setupErrors={setupErrors} skills={skills} trades={trades} ledger={ledger} onSave={handleSaveTrade} onCancel={() => { setEditing(null); setView("journal"); }} onDirtyChange={(d) => { formDirtyRef.current = d; }} />
               ) :
               view === "analysis" ? <Analysis trades={trades} resources={resources} onViewTrade={startEdit} /> :
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :

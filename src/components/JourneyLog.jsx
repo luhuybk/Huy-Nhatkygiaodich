@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab, NoteText, editOnDouble } from "./ui.jsx";
-import { dateKey, emptyLesson, todayStr, uid, weekStart } from "../lib/helpers.js";
+import { dateKey, emptyLesson, symbolSearchKey, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
   logRange, logRangeLabel, logStats, monthRange, moodMeta, tradesInRange,
@@ -55,9 +55,9 @@ function TradePicker({ trades, draft, onToggle }) {
   const { from, to } = logRange({ ...draft, date: draft.scope === "week" ? weekStart(draft.date) : draft.date });
   const near = useMemo(() => (trades || []).filter((t) => { const d = dateKey(t); return d && d >= from && d <= to; }), [trades, from, to]);
   const found = useMemo(() => {
-    const k = q.trim().toUpperCase();
+    const k = symbolSearchKey(q.trim());
     if (!k) return [];
-    return (trades || []).filter((t) => String(t.symbol || "").toUpperCase().includes(k) && !near.includes(t))
+    return (trades || []).filter((t) => symbolSearchKey(t.symbol).includes(k) && !near.includes(t))
       .sort((a, b) => String(dateKey(b)).localeCompare(String(dateKey(a)))).slice(0, 8);
   }, [trades, q, near]);
   const picked = (trades || []).filter((t) => ids.includes(t.id) && !near.includes(t));

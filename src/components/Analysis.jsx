@@ -5,7 +5,7 @@ import { ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./Dashboard.jsx";
 import { CATEGORY_COLORS, GRADE_OPTIONS, LOSS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
-import { expandAccountFilter, toFilterList, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
+import { symbolGroupKey, expandAccountFilter, toFilterList, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
 
 export function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
@@ -254,7 +254,7 @@ export function TradeAnalysisPage({ trades, resources }) {
 // nó chỉ hiện ra khi gom lại — từng lệnh nhìn thì chỉ vài đô, cả tháng lại là một con số khác.
 function FeeBreakdown({ closed }) {
   const stats = feeStats(closed);
-  const bySymbol = groupFeeStats(closed, (t) => t.symbol);
+  const bySymbol = groupFeeStats(closed, (t) => symbolGroupKey(t.symbol));
   const byAccount = groupFeeStats(closed, (t) => t.account);
   const filled = stats.withFee > 0;
 

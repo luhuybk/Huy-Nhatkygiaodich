@@ -5,7 +5,7 @@ import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { accountFamily, accountOptions, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { symbolGroupKey, accountFamily, accountOptions, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -142,7 +142,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   const bySession = groupStats(closed, (t) => t.session);
   const sessionData = Object.entries(bySession).map(([name, s]) => ({ name, pnl: Number(s.pnl.toFixed(2)) }));
 
-  const bySymbol = groupStats(closed, (t) => t.symbol);
+  const bySymbol = groupStats(closed, (t) => symbolGroupKey(t.symbol));
   const topSymbols = Object.entries(bySymbol).sort((a, b) => b[1].pnl - a[1].pnl).slice(0, 6).map(([name, s]) => ({ name, pnl: Number(s.pnl.toFixed(2)) }));
 
   const violations = closed.filter((x) => x.t.ratingRisk > 0 && x.t.ratingRisk <= 2).length;
@@ -381,7 +381,7 @@ export function RankTable({ title, rows, tone }) {
 
 export function TopBottom({ closed }) {
   const bySetup = groupStats(closed, (t) => t.setup || "Chưa gắn setup");
-  const bySymbol = groupStats(closed, (t) => t.symbol);
+  const bySymbol = groupStats(closed, (t) => symbolGroupKey(t.symbol));
   const setupEntries = Object.entries(bySetup).filter(([, s]) => s.count >= 1);
   const symbolEntries = Object.entries(bySymbol).filter(([, s]) => s.count >= 1);
   const topSetup = [...setupEntries].sort((a, b) => b[1].totalR - a[1].totalR).slice(0, 5);
@@ -626,7 +626,11 @@ export function AdvancedMetrics({ closed, currency = "USD" }) {
 export function DimensionPerformance({ trades, resources, dimension, onViewTrade }) {
   const [selected, setSelected] = useState("");
   const cfg = DIM_CONFIG[dimension];
-  const allItems = useMemo(() => cfg.allItems(trades, resources), [trades, resources, dimension]);
+  // Mã viết liền / có "/" gộp làm một, khớp với keyForDim.
+  const allItems = useMemo(() => {
+    const list = cfg.allItems(trades, resources);
+    return dimension === "symbol" ? [...new Set(list.map(symbolGroupKey).filter(Boolean))].sort() : list;
+  }, [trades, resources, dimension]); // eslint-disable-line react-hooks/exhaustive-deps
   const closedUSD = closedOfUSD(trades, resources);
   const quickStats = useMemo(() => {
     const out = {};

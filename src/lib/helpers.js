@@ -722,6 +722,12 @@ export function canonicalSymbol(raw, known) {
   return same.find((k) => k.includes("/")) || same[0];
 }
 
+// Khoá gom nhóm theo mã: "CADCHF" (lệnh cũ) và "CAD/CHF" (lệnh mới) là cùng một mã — thống kê theo
+// symbol phải gộp chung, không thì một cặp tách làm hai dòng.
+export const symbolGroupKey = (s) => (s ? canonicalSymbol(s) : "");
+// Chữ gõ tìm mã khớp bất kể dấu "/" hay cách: "cadchf" tìm ra "CAD/CHF" và ngược lại.
+export const symbolSearchKey = (s) => untelexSymbol(s).replace(/[^A-Z0-9]/g, "");
+
 // Có chữ tiếng Việt thì tức là bộ gõ đã can thiệp — dùng để báo cho người gõ biết.
 export function looksTelexed(raw) {
   return /[^\x00-\x7F]/.test(String(raw || ""));
@@ -3451,9 +3457,10 @@ export function accountOptions(accounts) {
 
 export function applyFilters(trades, filters, resources) {
   const accountWanted = expandAccountFilter(filters.account, resources && resources.accounts);
+  const q = filters.q ? symbolSearchKey(filters.q) : "";
   return trades.filter((t) => {
     const r = computeResult(t);
-    if (filters.q && !String(t.symbol || "").toUpperCase().includes(untelexSymbol(filters.q))) return false;
+    if (q && !symbolSearchKey(t.symbol).includes(q)) return false;
     if (accountWanted && !accountWanted.has(t.account)) return false;
     if (!filterMatches(yearKey(t.entryDate), filters.year)) return false;
     if (!filterMatches((t.entryDate || "").slice(5, 7), filters.month)) return false;
@@ -3595,7 +3602,7 @@ export function buildInsights(closed) {
 }
 
 export function keyForDim(t, dim) {
-  if (dim === "symbol") return t.symbol || "—";
+  if (dim === "symbol") return symbolGroupKey(t.symbol) || "—";
   if (dim === "setup") return t.setup || "Chưa gắn setup";
   // Theo ngày mở lệnh (entryDate), không phải ngày đóng — winrate theo thứ phục vụ quyết định vào lệnh.
   if (dim === "weekday") { const wd = weekdayIndex(t.entryDate); return wd === null ? "—" : WEEKDAY_LABEL[wd]; }
