@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Filter, HardDrive, ShieldCheck, Stethoscope } from "lucide-react";
+import { ChevronDown, ChevronRight, Filter, HardDrive, ShieldCheck, Stethoscope, Wand2 } from "lucide-react";
 import { DangerConfirmButton, StatCard } from "./ui.jsx";
-import { dateKey, journalHealth } from "../lib/helpers.js";
+import { dateKey, journalHealth, symbolFixPlan } from "../lib/helpers.js";
 import { collectImagePaths, listStoredImages, deleteStoredImages } from "../lib/storage.js";
 
 const MAX_LISTED = 60;
@@ -46,6 +46,50 @@ function CheckRow({ check, trades, onOpenTrade, onGoToJournal }) {
       </div>
       <p className="health-hint">{check.hint}</p>
       {open ? <TradeList ids={check.ids} trades={trades} onOpenTrade={onOpenTrade} /> : null}
+    </div>
+  );
+}
+
+// Mã viết chưa chuẩn: lệnh cũ "CADCHF" và lệnh mới "CAD/CHF" là cùng một cặp — đổi hết về một cách viết
+// để tìm kiếm, bộ lọc, gợi ý mã đều thống nhất. Xem trước từng cặp cũ → mới, bấm hai lần mới đổi.
+function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange }) {
+  const plan = useMemo(() => symbolFixPlan(trades, resources), [trades, resources]);
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState("");
+  if (!plan.tradeCount && !plan.symbols) {
+    return done ? <p className="health-ok"><ShieldCheck size={16} /><span>{done}</span></p> : null;
+  }
+  const apply = () => {
+    const to = new Map();
+    plan.groups.forEach((g) => g.ids.forEach((id) => to.set(id, g.to)));
+    const changed = (trades || []).filter((t) => to.has(t.id)).map((t) => ({ ...t, symbol: to.get(t.id) }));
+    if (changed.length) onUpdateTrades(changed);
+    if (plan.symbols) onResourcesChange({ ...resources, symbols: plan.symbols });
+    setDone(`Đã đổi ${changed.length} lệnh${plan.symbols ? " và gộp danh sách symbol" : ""}.`);
+  };
+  return (
+    <div className="health-row health-warn">
+      <div className="health-head" onClick={() => setOpen((v) => !v)}>
+        {open ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
+        <span className="health-label">Mã viết chưa chuẩn (VD CADCHF thay vì CAD/CHF)</span>
+        <span className="health-count health-count-warn">{plan.tradeCount}</span>
+        <span onClick={(e) => e.stopPropagation()}>
+          <DangerConfirmButton label={<><Wand2 size={12} /> Đổi hết về cách viết chuẩn</>}
+            confirmLabel={`Bấm lần nữa: đổi ${plan.tradeCount} lệnh`} onConfirm={apply} />
+        </span>
+      </div>
+      <p className="health-hint">
+        Cặp hai đồng tiền chính viết thành XXX/YYY, mã khác viết hoa, gõ Telex thì dịch ngược — như ô Symbol
+        lúc lưu lệnh mới. Chỉ đổi tên mã, không đụng gì khác của lệnh.
+        {plan.symbols ? " Danh sách symbol trong Tài nguyên cũng được gộp các mã trùng." : ""}
+      </p>
+      {open ? (
+        <div className="health-list">
+          {plan.groups.map((g) => (
+            <p key={`${g.from}→${g.to}`} className="health-stale mono">{g.from} → <b>{g.to}</b> · {g.ids.length} lệnh</p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -147,7 +191,7 @@ function ImageCleanup({ allData }) {
   );
 }
 
-export function HealthCheckPage({ trades, resources, setupErrors, skills, filterPresets, allData, onOpenTrade, onGoToJournal }) {
+export function HealthCheckPage({ trades, resources, setupErrors, skills, filterPresets, allData, onOpenTrade, onGoToJournal, onUpdateTrades, onResourcesChange }) {
   const h = useMemo(
     () => journalHealth(trades, resources, setupErrors, filterPresets, skills),
     [trades, resources, setupErrors, filterPresets, skills]
@@ -193,6 +237,8 @@ export function HealthCheckPage({ trades, resources, setupErrors, skills, filter
       {h.checks.map((c) => (
         <CheckRow key={c.id} check={c} trades={trades} onOpenTrade={onOpenTrade} onGoToJournal={onGoToJournal} />
       ))}
+
+      {onUpdateTrades ? <SymbolFix trades={trades} resources={resources} onUpdateTrades={onUpdateTrades} onResourcesChange={onResourcesChange} /> : null}
 
       {h.stale.length ? (
         <div className="health-row health-warn">

@@ -725,6 +725,28 @@ export function canonicalSymbol(raw, known) {
 // Khoá gom nhóm theo mã: "CADCHF" (lệnh cũ) và "CAD/CHF" (lệnh mới) là cùng một mã — thống kê theo
 // symbol phải gộp chung, không thì một cặp tách làm hai dòng.
 export const symbolGroupKey = (s) => (s ? canonicalSymbol(s) : "");
+// Lệnh cũ ghi mã chưa chuẩn ("CADCHF", "eurusd", gõ Telex) → đổi về cách viết chuẩn một lần cho cả nhật
+// ký. Gom theo từng cặp cũ → mới để xem trước; kèm danh sách symbol trong Tài nguyên đã gộp trùng.
+export function symbolFixPlan(trades, resources) {
+  const groups = new Map();
+  (trades || []).forEach((t) => {
+    if (!t || !t.symbol) return;
+    const to = canonicalSymbol(t.symbol, []);
+    if (!to || to === t.symbol) return;
+    const key = `${t.symbol}→${to}`;
+    if (!groups.has(key)) groups.set(key, { from: t.symbol, to, ids: [] });
+    groups.get(key).ids.push(t.id);
+  });
+  const list = (resources && resources.symbols) || [];
+  const symbols = [...new Set(list.map((s) => canonicalSymbol(s, [])).filter(Boolean))];
+  const symbolsChanged = symbols.length !== list.length || symbols.some((s, i) => s !== list[i]);
+  return {
+    groups: [...groups.values()].sort((a, b) => b.ids.length - a.ids.length || a.from.localeCompare(b.from)),
+    tradeCount: [...groups.values()].reduce((n, g) => n + g.ids.length, 0),
+    symbols: symbolsChanged ? symbols : null,
+  };
+}
+
 // Chữ gõ tìm mã khớp bất kể dấu "/" hay cách: "cadchf" tìm ra "CAD/CHF" và ngược lại.
 export const symbolSearchKey = (s) => untelexSymbol(s).replace(/[^A-Z0-9]/g, "");
 

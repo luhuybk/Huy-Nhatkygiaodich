@@ -854,6 +854,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "health" ? (
                 <HealthCheckPage trades={trades} resources={resources} setupErrors={setupErrors} skills={skills}
                   filterPresets={filterPresets} allData={allData} onOpenTrade={setViewingTrade}
+                  onUpdateTrades={handleUpdateTrades} onResourcesChange={handleResourcesChange}
                   onGoToJournal={(f) => { persistUiSettings({ ...uiSettings, journalFilters: f }); setView("journal"); }} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :
