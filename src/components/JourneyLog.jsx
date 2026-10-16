@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
-import { ConfirmButton, Field, useStickyTab, NoteText } from "./ui.jsx";
+import { ConfirmButton, Field, useStickyTab, NoteText, editOnDouble } from "./ui.jsx";
 import { dateKey, emptyLesson, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
@@ -162,7 +162,7 @@ function EntryCard({ e, tagById, trades, onOpenTrade, onEdit, onDelete, onToLess
   const mood = moodMeta(e.mood);
   const linked = (trades || []).filter((t) => (e.tradeIds || []).includes(t.id));
   return (
-    <div className={`jl-entry ${e.scope === "week" ? "jl-entry-week" : ""}`}>
+    <div className={`jl-entry ${e.scope === "week" ? "jl-entry-week" : ""}`} title="Bấm đúp để sửa" onDoubleClick={editOnDouble(() => onEdit(e))}>
       <div className="jl-entry-head">
         {mood ? <span className="jl-entry-mood" title={mood.label}>{mood.icon}</span> : null}
         <b className="jl-entry-date">{logRangeLabel(e)}</b>

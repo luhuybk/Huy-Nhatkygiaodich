@@ -1,7 +1,7 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText } from "./ui.jsx";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, clickOrDouble } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
 
@@ -698,7 +698,7 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
             <IdSelect value={form.tradeId} onChange={setF("tradeId")} items={tradeItems} placeholder="Không gắn với lệnh cụ thể" />
           </Field>
           <Field label="Tiêu đề" hint="Hiển thị ngắn gọn trong danh sách — để trống sẽ tự lấy từ nội dung">
-            <input className="input" value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: Đừng vào lệnh khi chưa đủ tín hiệu xác nhận" />
+            <input className="input" data-autocap value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: Đừng vào lệnh khi chưa đủ tín hiệu xác nhận" />
           </Field>
           <Field label="Mức độ quan trọng" hint="Cấp 1 lên đầu trang. Để trống cũng được — phân cấp nhanh được ngay trên thẻ.">
             <div className="lsn-pick lsn-pick-lg">
@@ -907,7 +907,7 @@ export function ProblemLogSection({ items, onChange }) {
           const attachments = n.images || [];
           const isOpen = expanded.has(n.id);
           return (
-            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
+            <div key={n.id} className="note-card" title="Bấm để mở rộng · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => toggleExpand(n.id), () => openEdit(n))}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
                 <span onClick={(e) => toggleResolved(n, e)} title={n.resolved ? "Đã xử lý — bấm để bỏ đánh dấu" : "Bấm để đánh dấu đã xử lý"}>
@@ -1085,7 +1085,7 @@ export function SetupLibrarySection({ items, onChange }) {
         {items.map((it) => {
           const thumb = it.image || it.link;
           return (
-            <div key={it.id} className="setup-card" onClick={() => setViewingId(it.id)}>
+            <div key={it.id} className="setup-card" title="Bấm để xem · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => setViewingId(it.id), () => openEditMain(it))}>
               {thumb ? <img src={thumb} alt={it.name} className="setup-img" /> : <div className="setup-img setup-img-empty"><Layers size={20} color="var(--text-dim)" /></div>}
               <div className="setup-card-body">
                 <strong>{it.name}</strong>
@@ -1167,7 +1167,7 @@ export function NewsLogSection({ items, onChange }) {
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
             </Field>
             <Field label="Tên tin tức" required>
-              <input className="input" value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: CPI Mỹ, NFP, Lãi suất FED..." />
+              <input className="input" data-autocap value={form.title} onChange={(e) => setF("title")(e.target.value)} placeholder="VD: CPI Mỹ, NFP, Lãi suất FED..." />
             </Field>
           </div>
           <Field label="Đồng tiền ảnh hưởng">
@@ -1193,7 +1193,7 @@ export function NewsLogSection({ items, onChange }) {
           const attachments = n.images || [];
           const isOpen = expanded.has(n.id);
           return (
-            <div key={n.id} className="note-card" onClick={() => toggleExpand(n.id)}>
+            <div key={n.id} className="note-card" title="Bấm để mở rộng · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => toggleExpand(n.id), () => openEdit(n))}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
                 <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>{n.title || "(Chưa có tên)"}</span>

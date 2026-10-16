@@ -24,6 +24,32 @@ export function useRemembered(key, initial) {
 
 // Nhớ trang/tab đang xem qua các lần tải lại. `allowed` để một giá trị cũ đã bị gỡ
 // không làm màn hình trắng — rơi về fallback.
+// Bấm một lần / bấm đúp trên một thẻ hay dòng danh sách: bấm đúp để sửa ngay. Bấm một lần phải đợi
+// một nhịp (250ms) mới chạy — chạy ngay thì cú bấm thứ hai rơi vào thứ vừa mở (hộp chi tiết, trang
+// con) hoặc gập lại phần vừa mở rộng. Một bộ đếm giờ chung là đủ: mỗi lúc chỉ có một chuỗi bấm.
+const INTERACTIVE = "button, a, input, textarea, select, label, [role=checkbox], [data-no-dbledit]";
+export const clearTextSelection = () => { if (window.getSelection) window.getSelection().removeAllRanges(); };
+let clickTimer = 0;
+export function clickOrDouble(e, single, double) {
+  clearTimeout(clickTimer);
+  if (e.detail >= 2) {
+    if (e.target && e.target.closest && e.target.closest(INTERACTIVE)) return;
+    clearTextSelection();
+    double();
+    return;
+  }
+  clickTimer = setTimeout(single, 250);
+}
+// Thẻ không có việc gì cho bấm một lần (log, nhắc việc, mục kế hoạch): chỉ bấm đúp để sửa. Bấm đúp
+// trúng nút bên trong (VD hai lần bấm xác nhận xoá) thì bỏ qua.
+export function editOnDouble(fn) {
+  return (e) => {
+    if (e.target && e.target.closest && e.target.closest(INTERACTIVE)) return;
+    clearTextSelection();
+    fn();
+  };
+}
+
 export function useStickyTab(key, fallback, allowed) {
   const [value, setValue] = useState(() => {
     const saved = readLocalUi(key, fallback);

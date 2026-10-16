@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
-import { ConfirmButton, Field } from "./ui.jsx";
+import { ConfirmButton, Field, editOnDouble } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
 import { NotifySettingsPanel, PlansPanel } from "./SlReminders.jsx";
@@ -20,7 +20,7 @@ export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
   return (
     <div className="reminder-form">
       <Field label="Nội dung nhắc nhở">
-        <input className="input" value={r.title} onChange={(e) => set("title")(e.target.value)} placeholder="VD: Cập nhật đường cong vốn" />
+        <input className="input" data-autocap value={r.title} onChange={(e) => set("title")(e.target.value)} placeholder="VD: Cập nhật đường cong vốn" />
       </Field>
       <div className="grid-2">
         <Field label="Tần suất">
@@ -94,7 +94,7 @@ function ReminderList({ list, ts, onDone, onEdit, onRemove, empty }) {
       {list.map((r) => {
         const isDue = reminderDueToday(r, ts);
         return (
-          <div key={r.id} className={`reminder-item ${isDue ? "reminder-item-due" : ""}`}>
+          <div key={r.id} className={`reminder-item ${isDue ? "reminder-item-due" : ""}`} title="Bấm đúp để sửa" onDoubleClick={editOnDouble(() => onEdit(r))}>
             <div className="reminder-item-main">
               <Clock size={14} color="var(--text-dim)" />
               <div>

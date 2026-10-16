@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Dumbbell, Gauge, Pencil, Plus } from "lucide-react";
-import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard, NoteText } from "./ui.jsx";
+import { ChecklistEditor, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, ImagePreviewStrip as Strip, MultiChipSelect, MultiImageOrLink, ResourceSelect, StatCard, NoteText, clickOrDouble } from "./ui.jsx";
 import { applySkillFilters, emptySkill, firstSkillDate, fmt, fmtR, moveSkill, nextOrder, skillAttachments, skillEffectiveness, skillLevel, skillStats, sortedByOrder, stripSkill, SKILL_LEVELS, SKILL_MAX_IMAGES, uid } from "../lib/helpers.js";
 
 function LevelBadge({ id }) {
@@ -91,7 +91,7 @@ export function SkillsSection({ items, resources, onChange }) {
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa kỹ năng" : "Thêm kỹ năng"} onClose={closeModal}>
           <Field label="Tên kỹ năng" required hint="Viết cho đủ ý — đây là tên bạn đọc lại ở trang này">
-            <input className="input" value={form.name} autoFocus onChange={(e) => setF("name")(e.target.value)} placeholder="VD: Bóp StopLoss khi giá quét thanh khoản rồi đóng nến ngoài vùng" />
+            <input className="input" data-autocap value={form.name} autoFocus onChange={(e) => setF("name")(e.target.value)} placeholder="VD: Bóp StopLoss khi giá quét thanh khoản rồi đóng nến ngoài vùng" />
           </Field>
           <Field label="Tên ngắn" hint="Hiện trên chip trong nhật ký giao dịch — để trống thì lấy tên đầy đủ. Tên đầy đủ vẫn thấy khi rê chuột.">
             <input className="input" value={form.shortName || ""} onChange={(e) => setF("shortName")(e.target.value)} placeholder="VD: Bóp SL | LQS" />
@@ -143,7 +143,7 @@ export function SkillsSection({ items, resources, onChange }) {
           const shots = skillAttachments(s);
           const steps = s.steps || [];
           return (
-            <div key={s.id} className="note-card" onClick={() => toggleExpand(s.id)}>
+            <div key={s.id} className="note-card" title="Bấm để mở rộng · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => toggleExpand(s.id), () => openEdit(s))}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
                 <span className="note-content" style={{ fontWeight: 600, flex: 1 }}>

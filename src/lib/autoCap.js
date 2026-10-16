@@ -3,7 +3,8 @@
 // thập phân, đường dẫn (không có dấu cách sau dấu chấm).
 //
 // Gắn MỘT lần cho cả trang như listContinue.js: mọi <textarea> đều có; ô nào không muốn thì thêm
-// data-no-autocap. Chỉ sửa khi con trỏ đứng ở CUỐI chữ đầu câu (đang gõ tới) — sửa giữa chữ cũ thì
+// data-no-autocap. Ô một dòng (tiêu đề, tên…) thì chỉ khi được đánh dấu data-autocap — để ô mã, tên tài
+// khoản, ô tìm kiếm không bị viết hoa bậy. Chỉ sửa khi con trỏ đứng ở CUỐI chữ đầu câu (đang gõ tới) — sửa giữa chữ cũ thì
 // để yên, nên muốn viết thường ("iPhone") thì sửa lại chữ cái đó là xong. Sửa qua execCommand để
 // React nhận như gõ tay.
 //
@@ -33,7 +34,8 @@ export function autoCapIndex(value, caret) {
 
 let busy = false;
 function fix(el) {
-  if (busy || !el || el.tagName !== "TEXTAREA" || el.readOnly || el.disabled || el.hasAttribute("data-no-autocap")) return;
+  if (busy || !el || el.readOnly || el.disabled || el.hasAttribute("data-no-autocap")) return;
+  if (el.tagName !== "TEXTAREA" && !(el.tagName === "INPUT" && el.hasAttribute("data-autocap"))) return;
   if (el.selectionStart !== el.selectionEnd) return;
   const caret = el.selectionStart;
   const i = autoCapIndex(el.value, caret);
@@ -44,7 +46,8 @@ function fix(el) {
     el.setSelectionRange(i, i + 1);
     const ok = document.execCommand && document.execCommand("insertText", false, upper);
     if (!ok) {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      const proto = el.tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
       setter.call(el, el.value.slice(0, i) + upper + el.value.slice(i + 1));
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }

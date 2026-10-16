@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, Map as MapIcon, Pencil, Plus } from "lucide-react";
-import { ConfirmButton, DangerConfirmButton, Field, FormModal, NoteText } from "./ui.jsx";
+import { ConfirmButton, DangerConfirmButton, Field, FormModal, NoteText, clickOrDouble, editOnDouble } from "./ui.jsx";
 import { emptyPlan, emptyPlanItem, groupByPlanLevel, lessonLevel, moveWithinLevel, planItemLevelMeta, planItemLine, planLevelMeta, PLAN_ITEM_LEVELS, PLAN_LEVELS, uid } from "../lib/helpers.js";
 
 // Kế hoạch là thứ ĐỌC TRƯỚC khi vào lệnh, không phải nhật ký ghi lại sau. Nên ở đây không có
@@ -113,7 +113,7 @@ function PlanDetail({ plan, onChange, onBack, onRemovePlan, onEditPlan }) {
                 </h4>
                 <div className="plan-item-list">
                   {g.list.map((it, i) => (
-                    <article key={it.id} className={`plan-item ${levelClass(g.level)}`}>
+                    <article key={it.id} className={`plan-item ${levelClass(g.level)}`} title="Bấm đúp để sửa" onDoubleClick={editOnDouble(() => openEdit(it))}>
                       <div className="plan-item-body">
                         {String(it.when || "").trim() ? (
                           <p className="plan-item-when"><span className="plan-item-kw">Nếu</span><NoteText text={it.when} /></p>
@@ -179,11 +179,11 @@ export function TradingPlanSection({ items, onChange }) {
   const planForm = form ? (
     <FormModal title={form.id ? "Sửa kế hoạch" : "Kế hoạch mới"} onClose={close}>
       <Field label="Tên kế hoạch" required>
-        <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)}
+        <input className="input" data-autocap value={form.name} onChange={(e) => setF("name")(e.target.value)}
           placeholder="VD: Kế hoạch đi vốn — VN Stock" />
       </Field>
       <Field label="Phạm vi áp dụng" hint="Một dòng ngắn: thị trường nào, tài khoản nào, giai đoạn nào.">
-        <input className="input" value={form.scope} onChange={(e) => setF("scope")(e.target.value)}
+        <input className="input" data-autocap value={form.scope} onChange={(e) => setF("scope")(e.target.value)}
           placeholder="VD: Cổ phiếu Việt Nam, tài khoản chính" />
       </Field>
       <Field label="Cấp của kế hoạch" hint="So kế hoạch này với các kế hoạch khác. Cấp 1 là khung lớn chi phối mọi lệnh; cấp 2 là cách xử lý riêng từng nhóm, từng mã.">
@@ -259,7 +259,8 @@ export function TradingPlanSection({ items, onChange }) {
                     const core = (p.items || []).filter((it) => lessonLevel(it) === 1).slice(0, 2);
                     return (
                       <article key={p.id} className={`plan-card plan-card-lv${g.level} ${p.active === false ? "plan-card-off" : ""}`} role="button" tabIndex={0}
-                        onClick={() => setOpenId(p.id)}
+                        title="Bấm để mở · bấm đúp để sửa"
+                        onClick={(e) => clickOrDouble(e, () => setOpenId(p.id), () => openEdit(p))}
                         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpenId(p.id); } }}>
                         <div className="var-card-head">
                           <b className="plan-card-name">{p.name}</b>
