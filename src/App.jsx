@@ -98,6 +98,10 @@ function LazyFallback() {
   return <p className="empty-note" style={{ padding: "24px 0" }}>Đang tải...</p>;
 }
 
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
+const NEW_TRADE_KEY = IS_MAC ? "⌘E" : "Ctrl+E";
+const NEW_TRADE_KEY_ALT = IS_MAC ? "⌘K" : "Ctrl+K";
+
 function AppShell({ onSignOut, userEmail }) {
   const [loading, setLoading] = useState(true);
   const [trades, setTrades] = useState([]);
@@ -527,6 +531,33 @@ function AppShell({ onSignOut, userEmail }) {
 
   // Nút Back / Forward của chuột, trình duyệt, vuốt trên điện thoại.
   const formDirtyRef = useBackNav({ view, setView, viewingTrade, setViewingTrade, editing, trades, onNavigate: () => setMobileNavOpen(false) });
+
+  // Phím tắt thêm giao dịch: ⌘E (tay trái, cạnh ⌘) hoặc ⌘K ở mọi nơi, hoặc phím N khi không gõ trong ô nào.
+  // Không dùng ⌘N / ⌘T / ⌘W / ⌘Q: trình duyệt giữ để mở / đóng cửa sổ, tab — trang web không chặn được.
+  // ⌘E của Chrome / Safari chỉ là "tìm theo chữ đang chọn", chặn được. So theo e.code để bộ gõ tiếng
+  // Việt hay bàn phím khác kiểu không làm lệch phím.
+  const newTradeRef = useRef(null);
+  newTradeRef.current = () => {
+    if (view === "form" && formDirtyRef.current && !window.confirm("Lệnh đang sửa chưa lưu. Bỏ các thay đổi và mở lệnh mới?")) return;
+    setViewingTrade(null);
+    setMobileNavOpen(false);
+    startNew();
+  };
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.isComposing || e.repeat) return;
+      const k = String(e.key || "").toLowerCase();
+      const cmdK = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (k === "k" || k === "e" || e.code === "KeyK" || e.code === "KeyE");
+      const el = e.target;
+      const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      const plainN = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && k === "n" && !typing;
+      if (!cmdK && !plainN) return;
+      e.preventDefault();
+      newTradeRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Sửa nhiều lệnh cùng lúc (điền phí sàn hàng loạt): gọi handleSaveTrade nhiều lần sẽ chỉ
   // giữ lại lần cuối, vì lần nào cũng dựng danh sách mới từ cùng một `trades` cũ.
   const handleUpdateTrades = (list) => {
@@ -758,7 +789,9 @@ function AppShell({ onSignOut, userEmail }) {
             <ReminderBell reminders={reminders} onOpen={() => goTo("reminders")} />
             <span className="field-hint user-email">{userEmail}</span>
             <button type="button" className="btn btn-ghost" onClick={onSignOut}>Đăng xuất</button>
-            <button type="button" className="btn btn-primary" onClick={startNew}><PlusCircle size={15} /> Thêm giao dịch</button>
+            <button type="button" className="btn btn-primary" onClick={startNew} title={`Thêm giao dịch (${NEW_TRADE_KEY}, ${NEW_TRADE_KEY_ALT} hoặc phím N)`}>
+              <PlusCircle size={15} /> Thêm giao dịch <kbd className="kbd-hint">{NEW_TRADE_KEY}</kbd>
+            </button>
           </div>
           <div className="body">
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (

@@ -2125,3 +2125,8 @@ button.nt-check:hover { filter: brightness(1.25); }
 .acct-swatch-custom { display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text-dim); border: 1px dashed var(--border); font-size: 14px; overflow: hidden; }
 .acct-swatch-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
 .week-line-name .acct-tag { font-size: 11.5px; }
+
+/* Gợi ý phím tắt trên nút */
+.kbd-hint { margin-left: 6px; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600; background: rgba(0,0,0,0.18); border: 1px solid rgba(0,0,0,0.22); color: inherit; opacity: 0.8; }
+@media (max-width: 760px) { .kbd-hint { display: none; } }
