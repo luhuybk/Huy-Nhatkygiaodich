@@ -83,12 +83,21 @@ function FormToc({ trade, sections }) {
   };
 
   // RR thực ghim ở đầu mục lục — khỏi kéo lên mục Quản trị vốn mỗi lần muốn xem.
+  // Kèm tên lệnh (mã · Buy/Sell · ngày vào) để biết đang sửa lệnh nào mà khỏi kéo lên đầu form.
   const { rr, outcome } = computeResult(trade);
+  const symbol = canonicalSymbol(trade.symbol) || "";
+  const dateBits = (trade.entryDate || "").split("-");
+  const entryDay = dateBits.length === 3 ? `${dateBits[2]}/${dateBits[1]}` : "";
   return (
     <nav className="form-toc" aria-label="Mục lục form">
       <div className="form-toc-rr-wrap">
         <button type="button" className={`form-toc-rr ${outcome === "win" ? "form-toc-rr-win" : outcome === "loss" ? "form-toc-rr-loss" : ""}`}
           onClick={() => go("sec-2")} title="RR thực — tự tính khi có Lãi/Lỗ và Rủi ro (số tiền). Bấm để tới mục Quản trị vốn.">
+          <span className="form-toc-rr-trade">
+            <span className={`form-toc-rr-symbol ${symbol ? "" : "is-empty"}`}>{symbol || "Chưa có mã"}</span>
+            <span className={`dir-pill ${trade.direction}`}>{trade.direction === "buy" ? "Buy" : "Sell"}</span>
+            {entryDay && <span className="form-toc-rr-date mono">{entryDay}</span>}
+          </span>
           <span className="form-toc-rr-label">RR thực</span>
           <b className="mono">{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</b>
           <span className="form-toc-rr-hint">{rr === null ? "Chưa có Lãi/Lỗ" : outcome === "win" ? "Lệnh thắng" : outcome === "loss" ? "Lệnh thua" : "Hoà vốn"} · mục 2 →</span>
