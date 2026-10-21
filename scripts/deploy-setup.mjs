@@ -39,15 +39,21 @@ function next() {
   if (closed) return Promise.resolve(null);
   return new Promise((res) => { waiter = res; });
 }
+// Câu hỏi phải là prompt CỦA readline: in thẳng ra stdout thì lúc gõ chữ readline vẽ lại dòng
+// (xoá dòng, in prompt mặc định "> ") và câu hỏi biến mất.
 async function ask(q) {
-  process.stdout.write(q);
+  rl.setPrompt(q);
+  rl.prompt();
   const a = await next();
   if (a === null) { console.log("\n✖ Đã huỷ, chưa lưu gì."); process.exit(1); }
   return a.trim();
 }
+// Mật khẩu: câu hỏi in trên một dòng riêng, dòng gõ bên dưới tắt tiếng hẳn — readline vẽ lại
+// dòng đang gõ thì chỉ xoá dòng trống đó, không xoá câu hỏi.
 async function askHidden(q) {
+  process.stdout.write(`${q}\n`);
   muted = true;
-  try { return await ask(q); } finally { muted = false; }
+  try { return await ask(""); } finally { muted = false; }
 }
 
 // Có giá trị cũ thật (không phải chữ mẫu) thì Enter là giữ nguyên.
