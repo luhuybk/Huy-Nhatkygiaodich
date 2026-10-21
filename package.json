@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && node scripts/deploy.mjs"
+    "deploy": "vite build && node scripts/deploy.mjs",
+    "deploy:setup": "node scripts/deploy-setup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

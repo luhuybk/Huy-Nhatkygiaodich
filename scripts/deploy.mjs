@@ -48,9 +48,11 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 
 async function main() {
   const env = readEnv(join(ROOT, ".env.deploy"));
-  if (!env) fail("Chưa có file .env.deploy — chép .env.deploy.example thành .env.deploy rồi điền thông tin FTP.");
+  if (!env) fail("Chưa có file .env.deploy — chạy: npm run deploy:setup (hỏi từng thông tin FTP rồi tự lưu).");
   const { FTP_HOST, FTP_USER, FTP_PASSWORD } = env;
-  if (!FTP_HOST || !FTP_USER || !FTP_PASSWORD) fail(".env.deploy thiếu FTP_HOST / FTP_USER / FTP_PASSWORD.");
+  if (!FTP_HOST || !FTP_USER || !FTP_PASSWORD || /tenmien-cua-ban/.test(FTP_HOST) || FTP_USER === "u123456789") {
+    fail(".env.deploy chưa điền thông tin FTP thật (còn trống hoặc còn chữ mẫu) — chạy: npm run deploy:setup");
+  }
   const remoteDir = env.FTP_DIR || "public_html";
   const secure = String(env.FTP_SECURE || "true").toLowerCase() !== "false";
   if (!existsSync(join(DIST, "index.html"))) fail("Không thấy dist/index.html — build hỏng hoặc chưa build.");
