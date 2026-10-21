@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Download, ImageOff, Printer, X } from "lucide-react";
-import { computeResult, fmtMoney, fmtR, mistakeImages, periodAccountReport, reviewEntries, shiftDate, tradeCurrency } from "../lib/helpers.js";
+import { avgPillarScore, computeResult, fmtHold, fmtMoney, fmtR, holdHours, mistakeImages, partialExitsOf, partialExitStats, periodAccountReport, reviewEntries, shiftDate, skillLabel, tradeCurrency } from "../lib/helpers.js";
+import { GRADE_OPTIONS } from "../lib/constants.js";
+import { marketRegimesOf, regimeGroupsOf, riskBandText, riskFit, stateName, stateRiskBand, tradeRegime, tradeState } from "../lib/marketRegime.js";
+import { fxDetailText } from "./FxStrength.jsx";
 import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
 import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
@@ -153,6 +156,141 @@ function Sheet({ trade, kind, shot, index, total, resources, onImage, book, erro
       </div>
       {book === "review" && !mis ? <ReviewStrip trade={trade} kind={kind} /> : null}
       {book === "errors" && !mis ? <ErrorStrip trade={trade} kind={kind} errors={errors} /> : null}
+    </section>
+  );
+}
+
+const stars = (n) => {
+  const v = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  return v ? `${"★".repeat(v)}${"☆".repeat(5 - v)}` : "—";
+};
+const filled = (v) => String(v === null || v === undefined ? "" : v).trim();
+
+// Tờ chi tiết, in TRƯỚC hai tờ ảnh của mỗi lệnh: bên trái là số liệu (vào/ra, vốn, kết quả,
+// setup, thị trường chung, chấm điểm), bên phải là những gì đã ghi chú. Chỗ trống còn lại kẻ
+// dòng để ghi tay lúc lật lại xem. Ghi chú dài thì tờ tự cao ra, sang trang sau chứ không cắt.
+function DetailSheet({ trade: t, index, total, resources, book, errors, skills }) {
+  const r = computeResult(t);
+  const cur = tradeCurrency(t, resources);
+  const dir = t.direction === "sell" ? "SELL" : "BUY";
+  const partial = partialExitStats(t);
+  const partialRows = partialExitsOf(t);
+  const grade = GRADE_OPTIONS.find((g) => g.id === t.tradeGrade);
+  const score = avgPillarScore(t);
+  const regime = resources ? tradeRegime(t, marketRegimesOf(resources), resources.accounts) : null;
+  const regimeState = regime ? tradeState(t, regime) : null;
+  const band = regimeState ? stateRiskBand(regimeState) : null;
+  const fit = band ? riskFit(t, regimeState) : null;
+  const errorNames = setupErrorNames(t, errors);
+  const skillNames = (t.skills || []).map((id) => skillLabel((skills || []).find((x) => x.id === id))).filter(Boolean);
+  const fx = fxDetailText(t);
+  const hold = holdHours(t);
+  const outcome = r.status === "open" ? "Đang mở" : r.outcome === "win" ? "Thắng" : r.outcome === "loss" ? "Thua" : "Hoà";
+  const dt = (d, time) => (d ? `${weekdayVN(d)} ${fmtDateVN(d)}${time ? ` ${time}` : ""}` : "");
+
+  const rows = [
+    ["Tài khoản", t.account],
+    ["Vào lệnh", dt(t.entryDate, t.entryTime)],
+    ["Thoát lệnh", t.exitDate ? dt(t.exitDate, t.exitTime) : "đang mở"],
+    ["Giữ lệnh", hold > 0 ? fmtHold(hold) : ""],
+    ["Khung · Phiên", [t.timeframe, t.session].filter(Boolean).join(" · ")],
+    ["Setup", [t.setup, t.setupBonus ? `bonus: ${t.setupBonus}` : ""].filter(Boolean).join(" · ")],
+    ["Điểm cấu trúc", t.structureScore],
+    regime ? [`Thị trường chung (${regime.name})`, regimeState ? `${stateName(regimeState, regimeGroupsOf(resources))} · ${regimeState.label}` : "chưa ghi"] : null,
+    band ? ["Khung vốn", `${riskBandText(band)}${fit ? ` — ${({ in: "đúng khung", over: "VƯỢT khung", under: "dưới khung" })[fit]}` : ""}`] : null,
+    ["Rủi ro", [t.riskPercent ? `${t.riskPercent}%` : "", filled(t.riskAmount) ? fmtMoney(Number(t.riskAmount), cur) : ""].filter(Boolean).join(" · ")],
+    ["Quản trị vốn", t.riskAction],
+    partial.count ? ["Chốt từng phần", `${partial.count} lần · ${Number(partial.percent.toFixed(2))}% vị thế · ${fmtMoney(partial.profit, cur)}`] : null,
+    filled(t.fees) ? ["Phí + thuế", fmtMoney(Number(t.fees), cur)] : null,
+    ["Lãi / Lỗ", r.profit === null ? "" : fmtMoney(r.profit, cur)],
+    ["Lỗi setup", (t.setupErrors || []).length ? errorNames.join(" · ") : t.setupClean ? "Không lỗi" : ""],
+    ["Kỹ năng đã dùng", skillNames.join(" · ")],
+    ["Vào · Trong · Thoát", [t.entrySkill, t.inTradeSkill, t.exitSkill].some(Boolean) ? [t.entrySkill || "—", t.inTradeSkill || "—", t.exitSkill || "—"].join(" · ") : ""],
+    ["Tâm lý", t.psychology],
+    ["Nhãn đánh giá", grade ? grade.label : ""],
+  ].filter(Boolean);
+
+  const notes = [
+    ["Lý do vào lệnh", t.entryReason],
+    ["Nhận xét setup", t.setupNote],
+    ["Sức mạnh đồng tiền", fx],
+    ["Lý do quản trị vốn", t.riskActionReason],
+    ["Cảm nghĩ trong lệnh", t.inTradeNote],
+    ["Cảm nhận kỹ năng", t.skillNote],
+    ["Cảm nghĩ tâm lý", t.psychologyNote],
+    [t.hasMistake ? "⚠ Lỗi trong lệnh" : "Lỗi đã ghi", t.mistakeNote || (t.hasMistake ? "đã đánh dấu có lỗi, chưa ghi chi tiết" : "")],
+    ["Bài học", t.lessonNote],
+    ["Nhận xét / Review", t.reviewNote],
+    ["📌 Vì sao cần nhìn lại", t.needsReview ? t.reviewReason : ""],
+  ].filter(([, v]) => filled(v));
+  const checked = Object.entries(t.checklist || {}).filter(([, v]) => v).map(([k]) => k);
+
+  return (
+    <section className="print-sheet print-detail">
+      <header className="print-head">
+        <div className="print-head-main">
+          <span className="print-symbol">{t.symbol || "—"}</span>
+          <span className={`print-dir ${dir === "SELL" ? "is-sell" : ""}`}>{dir}</span>
+          <span className="print-kind">CHI TIẾT LỆNH</span>
+          {t.needsReview && book !== "review" ? <span className="print-pin">📌 cần nhìn lại</span> : null}
+          {hasAnyError(t) && book !== "errors" ? <span className="print-pin">⚠ có lỗi</span> : null}
+          <span className="print-count">Lệnh {index + 1}/{total}</span>
+        </div>
+      </header>
+      <div className="print-detail-kpis">
+        <div><span>RR thực</span><b>{fmtR(r.rr)}</b></div>
+        <div><span>Kết quả</span><b>{outcome}</b></div>
+        <div><span>Lãi / Lỗ</span><b>{r.profit === null ? "—" : fmtMoney(r.profit, cur)}</b></div>
+        <div><span>Rủi ro</span><b>{t.riskPercent ? `${t.riskPercent}%` : "—"}</b></div>
+        <div><span>Chấm điểm TB</span><b>{score === null ? "—" : `${score.toFixed(1)} / 5`}</b></div>
+      </div>
+      <div className="print-detail-body">
+        <div className="print-detail-facts">
+          <table className="print-table print-kv">
+            <tbody>
+              {rows.map(([k, v]) => (
+                <tr key={k}><th>{k}</th><td>{filled(v) || <span className="print-dim">—</span>}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <table className="print-table print-kv print-pillars">
+            <tbody>
+              <tr><th>Kiến thức</th><td>{stars(t.ratingKnowledge)}</td><th>Kỹ năng</th><td>{stars(t.ratingSkill)}</td></tr>
+              <tr><th>Quản trị vốn</th><td>{stars(t.ratingRisk)}</td><th>Tâm lý</th><td>{stars(t.ratingPsychology)}</td></tr>
+            </tbody>
+          </table>
+          {partialRows.length ? (
+            <table className="print-table print-partials">
+              <thead><tr><th>Chốt bớt</th><th>% vị thế</th><th>Lãi/Lỗ</th><th>Ghi chú</th></tr></thead>
+              <tbody>
+                {partialRows.map((row, i) => (
+                  <tr key={row.id || i}>
+                    <td>Lần {i + 1}{row.date ? ` · ${fmtDateVN(row.date).slice(0, 5)}` : ""}{row.time ? ` ${row.time}` : ""}</td>
+                    <td>{row.percent === "" ? "—" : `${row.percent}%`}</td>
+                    <td>{row.profit === "" ? "—" : fmtMoney(Number(row.profit), cur)}</td>
+                    <td className="print-small">{row.note || ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
+        <div className="print-detail-notes">
+          {notes.length ? notes.map(([k, v]) => (
+            <div key={k} className="print-note">
+              <b>{k}</b>
+              <div className="print-note-text"><NoteText text={String(v).trim()} /></div>
+            </div>
+          )) : <p className="print-cover-empty">Lệnh này chưa có ghi chú nào.</p>}
+          {checked.length ? (
+            <div className="print-note">
+              <b>Checklist đã tick ({checked.length})</b>
+              <div className="print-note-text">{checked.map((c) => `☑ ${c}`).join("   ")}</div>
+            </div>
+          ) : null}
+          <div className="print-handwrite"><span>Ghi tay</span></div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -348,10 +486,11 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
 
 // Trang xem trước bản in, phủ toàn màn hình. Bấm In là gọi hộp thoại in của trình duyệt —
 // chọn máy Canon ở đó; khổ A4 ngang và lề đã đặt sẵn bằng @page.
-export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupErrors, mode, from, to, label, onClose }) {
+export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
   const [book, setBook] = useState("closed");
   const [allMarked, setAllMarked] = useState(false);
   const [withCover, setWithCover] = useState(true);
+  const [withDetail, setWithDetail] = useState(true);
   const [withMistakeShots, setWithMistakeShots] = useState(true);
   const all = useMemo(() => {
     if (book === "review") return reviewTradesToPrint(trades, from, to, allMarked);
@@ -381,7 +520,7 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
   const toggle = (id) => setSkip((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
   const title = book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`;
-  const pages = list.reduce((n, t) => n + 2 + mistakeShots(t).length, 0) + (withCover ? 1 : 0);
+  const pages = list.reduce((n, t) => n + 2 + (withDetail ? 1 : 0) + mistakeShots(t).length, 0) + (withCover ? 1 : 0);
   const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
   const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}.pdf`;
   const download = async () => {
@@ -414,6 +553,9 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
             <label className="print-opt"><input type="checkbox" checked={withMistakeShots} onChange={(e) => setWithMistakeShots(e.target.checked)} /> Kèm ảnh lỗi</label>
           ) : null}
           <label className="print-opt"><input type="checkbox" checked={withCover} onChange={(e) => setWithCover(e.target.checked)} /> Kèm trang tổng kết</label>
+          <label className="print-opt" title="Mỗi lệnh thêm một tờ ghi đủ số liệu và ghi chú, đứng trước hai tờ ảnh">
+            <input type="checkbox" checked={withDetail} onChange={(e) => setWithDetail(e.target.checked)} /> Kèm trang chi tiết mỗi lệnh
+          </label>
           <span className="field-hint" style={{ margin: 0 }}>{list.length} lệnh · khoảng {pages} tờ A4 ngang</span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn" disabled={!list.length || loading > 0 || !!exporting} onClick={download}
@@ -453,6 +595,7 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
         ) : null}
         {list.length ? list.map((t, i) => (
           <Fragment key={t.id}>
+            {withDetail ? <DetailSheet trade={t} index={i} total={list.length} resources={resources} book={book} errors={setupErrors} skills={skills} /> : null}
             <Sheet trade={t} kind="entry" index={i} total={list.length} resources={resources} onImage={onImage} book={book} errors={setupErrors} />
             <Sheet trade={t} kind="exit" index={i} total={list.length} resources={resources} onImage={onImage} book={book} errors={setupErrors} />
             {mistakeShots(t).map((n) => (

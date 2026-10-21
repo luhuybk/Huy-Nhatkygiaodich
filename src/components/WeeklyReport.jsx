@@ -59,7 +59,7 @@ function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
   );
 }
 
-export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, setupErrors }) {
+export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, setupErrors, skills }) {
   const [mode, setMode] = useState(() => (readLocalUi("reportMode", "week") === "month" ? "month" : "week"));
   const [anchor, setAnchor] = useState(() => periodStart(mode, todayStr()));
   const [printing, setPrinting] = useState(false);
@@ -122,13 +122,13 @@ export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, s
         {anchor !== thisPeriod ? (
           <button type="button" className="btn btn-ghost" onClick={() => setAnchor(thisPeriod)}>{meta.back}</button>
         ) : <span className="field-hint" style={{ margin: 0 }}>{meta.current}</span>}
-        <button type="button" className="btn btn-ghost" title="In mỗi lệnh đóng thành 2 tờ A4: ảnh vào lệnh và ảnh thoát lệnh"
+        <button type="button" className="btn btn-ghost" title="In mỗi lệnh đóng: tờ chi tiết lệnh + ảnh vào lệnh + ảnh thoát lệnh (A4 ngang)"
           onClick={() => setPrinting(true)}>
           <Printer size={14} /> In lệnh {meta.noun} này
         </button>
       </div>
       {printing ? (
-        <PrintTrades trades={trades} resources={resources} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} mode={mode} from={anchor} to={to}
+        <PrintTrades trades={trades} resources={resources} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
           label={`${meta.noun} ${periodLabel(mode, anchor, to)}`} onClose={() => setPrinting(false)} />
       ) : null}
 

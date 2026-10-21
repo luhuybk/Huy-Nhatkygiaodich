@@ -1370,6 +1370,20 @@
 .cap-card-cut { border-top-color: var(--loss); }
 .cap-card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .cap-card-name { font-size: 15px; }
+/* Màu nhận diện mảng: viền trái + chấm cạnh tên. Viền trên vẫn để báo sụt vốn. */
+.cap-card.has-mk, .cap-rp-card.has-mk, .cap-tile.has-mk { border-left: 4px solid var(--mk); }
+.cap-mk-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--mk); margin-right: 7px; vertical-align: 1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk) 22%, transparent); }
+.cap-move { display: inline-flex; gap: 2px; }
+.cap-move .row-btn:disabled { opacity: .25; cursor: default; }
+.cap-colors { display: flex; flex-wrap: wrap; gap: 7px; }
+.cap-color { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); transition: transform .1s; }
+.cap-color:hover { transform: scale(1.12); }
+.cap-color.is-on { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface) inset; }
+.cap-color-none { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--text-dim);
+  border: 1px dashed var(--border); }
+.cap-color-none.is-on { border: 2px solid var(--text); color: var(--text); }
 .cap-card-sub { font-size: 12px; color: var(--text-dim); flex: 1; min-width: 0; }
 .cap-tiers { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: auto; }
 .cap-tiers th { white-space: nowrap; }
@@ -1741,6 +1755,28 @@ body.printing-trades { overflow: hidden; }
 .print-log { border-left: 3px solid #111; padding: 2px 0 2px 8px; break-inside: avoid; }
 .print-log-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
 .print-log p { margin: 2px 0 0; white-space: pre-wrap; }
+/* Tờ chi tiết lệnh: cao tự do như trang tổng kết — ghi chú dài thì sang tờ sau, không cắt. */
+.print-detail { font-size: 12px; }
+.print-detail-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 9px; }
+.print-detail-kpis > div { border: 1.5px solid #111; border-radius: 6px; padding: 5px 8px; display: flex; flex-direction: column; gap: 1px; }
+.print-detail-kpis span { font-size: 10.5px; color: #555; }
+.print-detail-kpis b { font-size: 17px; }
+.print-detail-body { flex: 1; display: grid; grid-template-columns: minmax(0, 42fr) minmax(0, 58fr); gap: 14px; min-height: 0; }
+.print-detail-facts { display: flex; flex-direction: column; gap: 8px; }
+.print-kv th { width: 34%; background: #f2f2f2; font-weight: 600; white-space: nowrap; }
+.print-kv td { overflow-wrap: anywhere; }
+.print-pillars th { width: auto; }
+.print-pillars td { letter-spacing: 1px; white-space: nowrap; }
+.print-detail-notes { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.print-note { border-left: 3px solid #111; padding: 1px 0 1px 8px; break-inside: avoid; }
+.print-note > b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #333; margin-bottom: 1px; }
+.print-note-text { white-space: pre-wrap; line-height: 1.42; overflow-wrap: anywhere; }
+.print-note-text ul, .print-note-text ol { margin: 0; padding-left: 18px; white-space: normal; }
+/* Chỗ còn lại kẻ dòng để ghi tay khi lật lại xem. */
+.print-handwrite { flex: 1; min-height: 22mm; border: 1px solid #bbb; border-radius: 6px; padding: 4px 8px; position: relative;
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 23px, #d6d6d6 23px, #d6d6d6 24px);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-handwrite span { font-size: 10.5px; color: #888; background: #fff; padding: 0 4px; }
 
 @media print {
   @page { size: A4 landscape; margin: 7mm; }
@@ -1756,6 +1792,7 @@ body.printing-trades { overflow: hidden; }
     break-inside: avoid; }
   /* Ngắt TRƯỚC mỗi tờ (trừ tờ đầu) thay vì sau: ngắt sau tờ cuối đẻ thêm một trang trắng. */
   .print-sheet + .print-sheet { break-before: page; page-break-before: always; }
+  .print-detail { height: auto; min-height: 185mm; overflow: visible; break-inside: auto; }
   .print-img img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 

@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import {
-  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, marketDrawdown, marketRStats, marketsMissingNextPick,
-  marketTierList, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
+  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
+  marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
 
@@ -120,6 +120,14 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
           <input className="input mono" value={holdText} onChange={(e) => setHoldText(e.target.value)} placeholder="VD: 0,3" />
         </Field>
       </div>
+      <Field label="Màu nhận diện" hint="Tô viền trái thẻ và chấm cạnh tên — ở đây, ở Tổng quan và bảng phong độ R">
+        <div className="cap-colors">
+          <button type="button" className={`cap-color cap-color-none ${!m.color ? "is-on" : ""}`} onClick={() => set("color")("")} title="Không tô màu"><X size={12} /></button>
+          {MARKET_COLORS.map((c) => (
+            <button key={c} type="button" className={`cap-color ${m.color === c ? "is-on" : ""}`} style={{ background: c }} onClick={() => set("color")(c)} title={c} />
+          ))}
+        </div>
+      </Field>
       <label className="mc-check cap-side-check">
         <input type="checkbox" checked={!!m.side} onChange={(e) => set("side")(e.target.checked)} />
         <span>Tài khoản phụ (trade nhẹ, VD crypto, hàng hóa) — vốn ước lượng, không tính vào hệ số cấp, không nhắc chọn mức hằng tuần</span>
@@ -152,7 +160,7 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
   );
 }
 
-function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, startEditing }) {
+function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, startEditing }) {
   const [editing, setEditing] = useState(!!startEditing);
   const now = pickedTier(plan, market.id, weeks.now);
   const next = pickedTier(plan, market.id, weeks.next);
@@ -168,14 +176,18 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
     );
   }
   return (
-    <div className={`cap-card cap-card-${dd.level}`}>
+    <div className={`cap-card cap-card-${dd.level} ${market.color ? "has-mk" : ""}`} style={marketColorStyle(market)}>
       <div className="cap-card-head">
-        <b className="cap-card-name">{market.name}</b>
+        <b className="cap-card-name">{market.color ? <span className="cap-mk-dot" /> : null}{market.name}</b>
         <span className="cap-card-sub mono">
           {market.side ? "ước lượng " : ""}{fmtMoney(market.allocated, "USD")}
           {market.currency !== "USD" ? ` ≈ ${fmtMoney(market.allocated * market.rate, market.currency)}` : ""}
         </span>
-        <button type="button" className="row-btn" onClick={() => setEditing(true)} title="Sửa mảng"><Pencil size={13} /></button>
+        <span className="cap-move">
+          <button type="button" className="row-btn" disabled={!onMove.canLeft} onClick={() => onMove(-1)} title="Dời sang trái"><ChevronLeft size={13} /></button>
+          <button type="button" className="row-btn" disabled={!onMove.canRight} onClick={() => onMove(1)} title="Dời sang phải"><ChevronRight size={13} /></button>
+        </span>
+        <button type="button" className="row-btn" onClick={() => setEditing(true)} title="Sửa mảng (đổi tên, màu, mức rủi ro…)"><Pencil size={13} /></button>
       </div>
 
       <table className="cap-tiers">
@@ -307,9 +319,9 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
             w4: `Về cầm chừng khi ≤ ${fmtRVN(rule.holdM)}`,
           };
           return (
-            <div key={m.id} className={`cap-rp-card cap-rp-act-${action}`}>
+            <div key={m.id} className={`cap-rp-card cap-rp-act-${action} ${m.color ? "has-mk" : ""}`} style={marketColorStyle(m)}>
               <div className="cap-rp-card-head">
-                <b className="cap-rp-card-name">{m.name}</b>
+                <b className="cap-rp-card-name">{m.color ? <span className="cap-mk-dot" /> : null}{m.name}</b>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className="cap-rp-verdict">{verdict}</span>
                 <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
@@ -418,13 +430,18 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
     setNewId(m.id);
     patch({ markets: [...plan.markets, m] });
   };
-  const card = (m) => (
-    <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
-      onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
-      onSave={saveMarket} onDelete={() => deleteMarket(m.id)} />
-  );
   const mainMarkets = plan.markets.filter((m) => !m.side);
   const sideMarkets = plan.markets.filter((m) => m.side);
+  const card = (m, i, group) => {
+    const onMove = (dir) => onChange(moveMarket(plan, m.id, dir));
+    onMove.canLeft = i > 0;
+    onMove.canRight = i < group.length - 1;
+    return (
+      <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
+        onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
+        onSave={saveMarket} onDelete={() => deleteMarket(m.id)} onMove={onMove} />
+    );
+  };
 
   return (
     <div>
@@ -506,10 +523,10 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
           const isHold = pct !== null && pct === m.holdTier;
           const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
           return (
-            <button type="button" key={m.id} onClick={onOpen}
-              className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""}`}>
+            <button type="button" key={m.id} onClick={onOpen} style={marketColorStyle(m)}
+              className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""} ${m.color ? "has-mk" : ""}`}>
               <span className="cap-tile-head">
-                <span className="cap-tile-name">{m.name}</span>
+                <span className="cap-tile-name">{m.color ? <span className="cap-mk-dot" /> : null}{m.name}</span>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className={`cap-tile-status cap-tile-status-${dd.level}`}>{DD_LABEL[dd.level]}</span>
               </span>

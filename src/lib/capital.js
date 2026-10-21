@@ -35,7 +35,31 @@ export function emptyCapitalMarket() {
     side: false,
     // Luật gợi ý mức tuần sau theo phong độ R — mỗi mảng một bộ riêng.
     rRule: { ...R_RULE_DEFAULT },
+    // Màu nhận diện của mảng (viền trái + chấm cạnh tên) — rỗng là không tô.
+    color: "",
   };
+}
+
+// Bảng màu cho mảng — cùng bộ với nhóm tình trạng thị trường để cả app một tông.
+export const MARKET_COLORS = ["#5b9cf5", "#2fb5a3", "#4caf7d", "#d8c94a", "#e0a64e", "#ff8a65", "#e0615a", "#c879e0", "#a3a9e8", "#8d9198"];
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+// Style gắn vào thẻ / ô của mảng: CSS đọc biến --mk, không có màu thì không đặt gì.
+export function marketColorStyle(m) {
+  return m && m.color ? { "--mk": m.color } : undefined;
+}
+
+// Dời mảng sang trái / phải (dir = -1 / 1) — chỉ đổi chỗ với mảng kề bên CÙNG nhóm (chính / phụ),
+// vì hai nhóm hiện ở hai lưới riêng.
+export function moveMarket(plan, id, dir) {
+  const list = [...plan.markets];
+  const i = list.findIndex((m) => m.id === id);
+  if (i < 0) return plan;
+  let j = i + dir;
+  while (j >= 0 && j < list.length && !!list[j].side !== !!list[i].side) j += dir;
+  if (j < 0 || j >= list.length) return plan;
+  [list[i], list[j]] = [list[j], list[i]];
+  return { ...plan, markets: list };
 }
 
 // Bảng mẫu dựng đúng theo sheet đang dùng — mở tab lần đầu là thấy ngay con số quen, chỉ còn
@@ -89,6 +113,7 @@ export function normalizeCapitalPlan(raw) {
       holdTier: num(m.holdTier, 0) > 0 ? num(m.holdTier, 0) : null,
       side: !!m.side,
       rRule: normalizeRRule(m.rRule),
+      color: HEX_COLOR.test(m.color || "") ? m.color : "",
     })),
     picks: raw.picks && typeof raw.picks === "object" && !Array.isArray(raw.picks) ? raw.picks : {},
   };
