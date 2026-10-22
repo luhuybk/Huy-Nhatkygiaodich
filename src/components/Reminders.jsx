@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
-import { PlusCircle, Pencil, Check, Bell, BellRing, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
+import { PlusCircle, Pencil, Check, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
 import { ConfirmButton, Field, editOnDouble } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
@@ -66,23 +66,6 @@ export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
         <button type="button" className="btn btn-primary" onClick={submit}>{r.id ? "Cập nhật" : "Thêm nhắc nhở"}</button>
       </div>
     </div>
-  );
-}
-
-export function ReminderBell({ reminders, onOpen }) {
-  const ts = todayStr();
-  const dueList = useMemo(() => reminders.filter((r) => reminderDueToday(r, ts)), [reminders, ts]);
-
-  return (
-    <button
-      type="button"
-      className={`bell-btn ${dueList.length ? "bell-btn-active" : ""}`}
-      onClick={onOpen}
-      title={dueList.length ? `${dueList.length} thông báo cần làm hôm nay` : "Thông báo"}
-    >
-      {dueList.length ? <BellRing size={17} /> : <Bell size={17} />}
-      {dueList.length ? <span className="bell-badge">{dueList.length}</span> : null}
-    </button>
   );
 }
 

@@ -14,11 +14,7 @@ import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
   shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor } from "./lib/helpers.js";
-import { ReminderBell, RemindersPage } from "./components/Reminders.jsx";
-import { PrinciplesSection } from "./components/Principles.jsx";
-import { ResourceManager } from "./components/Resources.jsx";
-import { NotesSection } from "./components/Notes.jsx";
-import { SettingsSection } from "./components/Settings.jsx";
+import { ReminderBell } from "./components/ReminderBell.jsx";
 import { SloganBar, useStickyTab } from "./components/ui.jsx";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
 import { normalizeJourneyLog } from "./lib/journeyLog.js";
@@ -46,6 +42,12 @@ const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx
 const SetupErrorsPage = lazy(() => import("./components/SetupErrors.jsx").then((m) => ({ default: m.SetupErrorsPage })));
 const CapitalPlanPage = lazy(() => import("./components/CapitalPlan.jsx").then((m) => ({ default: m.CapitalPlanPage })));
 const JourneyLogSection = lazy(() => import("./components/JourneyLog.jsx").then((m) => ({ default: m.JourneyLogSection })));
+// Các trang ít mở — tải khi bấm tới, cho lần mở app nhẹ hơn.
+const RemindersPage = lazy(() => import("./components/Reminders.jsx").then((m) => ({ default: m.RemindersPage })));
+const PrinciplesSection = lazy(() => import("./components/Principles.jsx").then((m) => ({ default: m.PrinciplesSection })));
+const ResourceManager = lazy(() => import("./components/Resources.jsx").then((m) => ({ default: m.ResourceManager })));
+const NotesSection = lazy(() => import("./components/Notes.jsx").then((m) => ({ default: m.NotesSection })));
+const SettingsSection = lazy(() => import("./components/Settings.jsx").then((m) => ({ default: m.SettingsSection })));
 const HealthCheckPage = lazy(() => import("./components/HealthCheck.jsx").then((m) => ({ default: m.HealthCheckPage })));
 
 const NAV_GROUPS = [

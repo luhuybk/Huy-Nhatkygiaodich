@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
@@ -49,6 +49,22 @@ function scrollBoxTo(box, top) {
   requestAnimationFrame(step);
 }
 
+// Cuộn tới một mục của form (tính chừa thanh tiến độ ghim ở đỉnh) — dùng chung cho mục lục bên
+// phải và thanh dưới đáy ở màn hẹp.
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const box = el.closest(".body");
+  if (!box) { el.scrollIntoView(); return; }
+  const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - TOC_SCROLL_OFFSET;
+  scrollBoxTo(box, Math.max(0, top));
+}
+
+// Ảnh của lệnh để xem nhanh. Khoá theo cả link: link đổi thì thử tải lại thay vì giữ trạng thái
+// "lỗi" của link cũ.
+const quickShots = (trade) => tradeImageShots(trade).map((s) => ({ ...s, key: `${s.key}|${s.link || ""}|${s.image || ""}` }));
+const rrText = (rr) => (rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`);
+
 function FormToc({ trade, sections }) {
   const progress = tradeSectionProgress(trade);
   const [active, setActive] = useState(sections[0].id);
@@ -78,22 +94,17 @@ function FormToc({ trade, sections }) {
   }, [sections]);
 
   const go = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
+    if (!document.getElementById(id)) return;
     clicked.current = Date.now() + 700;
     setActive(id);
-    const box = el.closest(".body");
-    if (!box) { el.scrollIntoView(); return; }
-    const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - TOC_SCROLL_OFFSET;
-    scrollBoxTo(box, Math.max(0, top));
+    scrollToSection(id);
   };
 
   // RR thực ghim ở đầu mục lục — khỏi kéo lên mục Quản trị vốn mỗi lần muốn xem.
   // Kèm tên lệnh (mã · Buy/Sell · ngày vào) để biết đang sửa lệnh nào mà khỏi kéo lên đầu form.
   const { rr, outcome } = computeResult(trade);
-  // Ảnh chụp xem nhanh ngay cạnh form — dán nhầm link TradingView của ảnh này sang ô kia là thấy
-  // liền. Khoá theo cả link: link đổi thì thử tải lại thay vì giữ trạng thái "lỗi" của link cũ.
-  const shots = tradeImageShots(trade).map((s) => ({ ...s, key: `${s.key}|${s.link || ""}|${s.image || ""}` }));
+  // Ảnh chụp xem nhanh ngay cạnh form — dán nhầm link TradingView của ảnh này sang ô kia là thấy liền.
+  const shots = quickShots(trade);
   const symbol = canonicalSymbol(trade.symbol) || "";
   const dateBits = (trade.entryDate || "").split("-");
   const entryDay = dateBits.length === 3 ? `${dateBits[2]}/${dateBits[1]}` : "";
@@ -108,7 +119,7 @@ function FormToc({ trade, sections }) {
             {entryDay && <span className="form-toc-rr-date mono">{entryDay}</span>}
           </span>
           <span className="form-toc-rr-label">RR thực</span>
-          <b className="mono">{rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`}</b>
+          <b className="mono">{rrText(rr)}</b>
           <span className="form-toc-rr-hint">{rr === null ? "Chưa có Lãi/Lỗ" : outcome === "win" ? "Lệnh thắng" : outcome === "loss" ? "Lệnh thua" : "Hoà vốn"} · mục 2 →</span>
         </button>
       </div>
@@ -138,6 +149,90 @@ function FormToc({ trade, sections }) {
         </div>
       ) : null}
     </nav>
+  );
+}
+
+// Màn hẹp (laptop nhỏ, điện thoại) không đủ chỗ cho cột mục lục bên phải — thay bằng thanh dính
+// đáy: mã + hướng, RR thực, số mục còn thiếu (bấm mở mục lục), ảnh chụp và nút Lưu. Màn rộng thì
+// CSS ẩn thanh này đi vì cột mục lục đã có đủ.
+function FormBottomBar({ trade, sections, onSave }) {
+  const [panel, setPanel] = useState(null); // "toc" | "shots" | null
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!panel) return undefined;
+    const onDown = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (e.target.closest && e.target.closest(".shot-lightbox")) return;
+      setPanel(null);
+    };
+    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".shot-lightbox")) setPanel(null); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown, { passive: true });
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [panel]);
+  const progress = tradeSectionProgress(trade);
+  const completion = tradeCompletion(trade);
+  const left = completion.total - completion.done;
+  const { rr, outcome } = computeResult(trade);
+  const shots = quickShots(trade);
+  const symbol = canonicalSymbol(trade.symbol) || "";
+  const toggle = (p) => setPanel((cur) => (cur === p ? null : p));
+  const jump = (id) => { setPanel(null); scrollToSection(id); };
+  return (
+    <div className="form-bbar" ref={ref}>
+      {panel === "toc" ? (
+        <div className="form-bbar-panel">
+          <div className="form-bbar-panel-head"><b>Các mục</b><button type="button" className="row-btn" onClick={() => setPanel(null)}><X size={15} /></button></div>
+          <ul className="form-bbar-toc">
+            {sections.map((sec) => {
+              const p = progress.get(sec.id) || { missing: 0, total: 0 };
+              return (
+                <li key={sec.id}>
+                  <button type="button" onClick={() => jump(sec.id)} className={p.missing ? "is-missing" : ""}>
+                    <span className="form-toc-num">{sec.num}</span>
+                    <span className="form-bbar-toc-label">{sec.title}</span>
+                    {p.missing ? <span className="form-toc-count">{p.missing}</span> : p.total ? <CheckCircle2 size={13} className="form-toc-done" /> : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {panel === "shots" ? (
+        <div className="form-bbar-panel">
+          <div className="form-bbar-panel-head"><b>Ảnh chụp · {shots.length}</b><button type="button" className="row-btn" onClick={() => setPanel(null)}><X size={15} /></button></div>
+          <ShotGallery shots={shots} compact />
+        </div>
+      ) : null}
+      <div className="form-bbar-row">
+        <span className="form-bbar-trade">
+          <b className={symbol ? "" : "is-empty"}>{symbol || "Chưa có mã"}</b>
+          <span className={`dir-pill ${trade.direction}`}>{trade.direction === "buy" ? "Buy" : "Sell"}</span>
+        </span>
+        <button type="button" className={`form-bbar-rr ${outcome === "win" ? "is-win" : outcome === "loss" ? "is-loss" : ""}`}
+          onClick={() => jump("sec-2")} title="RR thực — bấm để tới mục Quản trị vốn">
+          <small>RR</small><b className="mono">{rrText(rr)}</b>
+        </button>
+        <button type="button" className={`form-bbar-btn ${panel === "toc" ? "is-on" : ""} ${left ? "has-missing" : ""}`} onClick={() => toggle("toc")}
+          title="Mở mục lục — bấm một mục để nhảy tới">
+          <ListChecks size={14} /> {left ? <><span className="form-bbar-xs-hide">Còn </span>{left}</> : "Đủ"}
+        </button>
+        {shots.length ? (
+          <button type="button" className={`form-bbar-btn ${panel === "shots" ? "is-on" : ""}`} onClick={() => toggle("shots")} title="Xem nhanh ảnh chụp">
+            <ImageIcon size={14} /> {shots.length}
+          </button>
+        ) : null}
+        <button type="button" className="btn btn-primary form-bbar-save" onClick={onSave} title={`Lưu giao dịch (${SAVE_KEY})`}>
+          <Save size={14} className="form-bbar-xs-hide" /> Lưu <kbd className="kbd-hint">{SAVE_KEY}</kbd>
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -966,6 +1061,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
           <Save size={15} /> Lưu giao dịch <kbd className="kbd-hint">{SAVE_KEY}</kbd>
         </button>
       </div>
+      <FormBottomBar trade={t} sections={sections} onSave={submit} />
       </div>
       <FormToc trade={t} sections={sections} />
     </div>
