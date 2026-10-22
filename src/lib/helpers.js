@@ -3935,3 +3935,26 @@ export function applyLessonFilters(items, filters) {
     return true;
   });
 }
+
+// Gom mọi ảnh của một lệnh theo đúng thứ tự diễn biến: vào lệnh → trong lệnh → thoát lệnh.
+// Ảnh "trong lệnh" trước đây chỉ nằm trong form, ngoài bảng và ô chi tiết đều không thấy.
+export function tradeImageShots(t) {
+  const shots = [];
+  if (t.entryImage || t.entryLink) shots.push({ key: "entry", label: "Vào lệnh", image: t.entryImage, link: t.entryLink });
+  (t.inTradeImages || []).forEach((img, i) => {
+    if (img && (img.image || img.link)) shots.push({ key: `in-${i}`, label: `Trong lệnh ${i + 1}`, image: img.image, link: img.link });
+  });
+  partialExitsOf(t).forEach((row, i) => {
+    if (row.image || row.link) shots.push({ key: `part-${i}`, label: `Chốt bớt lần ${i + 1}`, image: row.image, link: row.link });
+  });
+  if (t.exitImage || t.exitLink) shots.push({ key: "exit", label: "Thoát lệnh", image: t.exitImage, link: t.exitLink });
+  (t.mistakeImages || []).forEach((img, i) => {
+    if (img && (img.image || img.link)) shots.push({ key: `mis-${i}`, label: `Lỗi ${i + 1}`, image: img.image, link: img.link });
+  });
+  reviewEntries(t).forEach((e, n) => {
+    (e.images || []).forEach((img, i) => {
+      if (img && (img.image || img.link)) shots.push({ key: `lr-${e.id}-${i}`, label: `Nhìn lại lần ${n + 1}${e.date ? ` · ${e.date}` : ""}`, image: img.image, link: img.link });
+    });
+  });
+  return shots;
+}

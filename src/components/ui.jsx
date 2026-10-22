@@ -87,7 +87,7 @@ export function CellImagePreview({ image, link, title }) {
 // Ảnh chart thật trong chi tiết lệnh, thay cho biểu tượng link. Link TradingView đổi sang PNG;
 // `loading="lazy"` + chỉ hiện trong ô chi tiết nên mở lệnh nào mới tải ảnh lệnh đó (~0,2 MB/ảnh),
 // danh sách Nhật ký không nặng thêm. Bấm ảnh để xem to; link gốc vẫn mở được.
-export function ShotGallery({ shots }) {
+export function ShotGallery({ shots, compact }) {
   const [open, setOpen] = useState(null);
   const [failed, setFailed] = useState(() => new Set());
   useEffect(() => {
@@ -98,7 +98,7 @@ export function ShotGallery({ shots }) {
   }, [open]);
   return (
     <>
-      <div className="shot-grid">
+      <div className={`shot-grid ${compact ? "shot-grid-compact" : ""}`}>
         {shots.map((s) => {
           const src = s.image || imageFromLink(s.link);
           const ok = src && !failed.has(s.key);

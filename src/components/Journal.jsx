@@ -10,7 +10,7 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewEntries, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewEntries, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -245,28 +245,6 @@ function FilteredSummary({ list, total, resources, selected }) {
   );
 }
 
-// Gom mọi ảnh của một lệnh theo đúng thứ tự diễn biến: vào lệnh → trong lệnh → thoát lệnh.
-// Ảnh "trong lệnh" trước đây chỉ nằm trong form, ngoài bảng và ô chi tiết đều không thấy.
-function tradeImageShots(t) {
-  const shots = [];
-  if (t.entryImage || t.entryLink) shots.push({ key: "entry", label: "Vào lệnh", image: t.entryImage, link: t.entryLink });
-  (t.inTradeImages || []).forEach((img, i) => {
-    if (img && (img.image || img.link)) shots.push({ key: `in-${i}`, label: `Trong lệnh ${i + 1}`, image: img.image, link: img.link });
-  });
-  partialExitsOf(t).forEach((row, i) => {
-    if (row.image || row.link) shots.push({ key: `part-${i}`, label: `Chốt bớt lần ${i + 1}`, image: row.image, link: row.link });
-  });
-  if (t.exitImage || t.exitLink) shots.push({ key: "exit", label: "Thoát lệnh", image: t.exitImage, link: t.exitLink });
-  (t.mistakeImages || []).forEach((img, i) => {
-    if (img && (img.image || img.link)) shots.push({ key: `mis-${i}`, label: `Lỗi ${i + 1}`, image: img.image, link: img.link });
-  });
-  reviewEntries(t).forEach((e, n) => {
-    (e.images || []).forEach((img, i) => {
-      if (img && (img.image || img.link)) shots.push({ key: `lr-${e.id}-${i}`, label: `Nhìn lại lần ${n + 1}${e.date ? ` · ${e.date}` : ""}`, image: img.image, link: img.link });
-    });
-  });
-  return shots;
-}
 
 export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setupErrors, skills, onClose, onEdit, onDelete, onUpdate }) {
   if (!trade) return null;

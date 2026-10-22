@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown } from "lucide-react";
-import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, StarRating } from "./ui.jsx";
+import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating } from "./ui.jsx";
+import { clearDraft, draftKey, pruneDrafts, readDraft, sameTradeContent, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill } from "../lib/helpers.js";
+import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, untelexSymbol, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
 // Chừa chỗ cho thanh tiến độ ghim ở đỉnh, không thì tiêu đề mục nhảy vào đúng chỗ bị che.
 const TOC_SCROLL_OFFSET = 78;
+
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
+const SAVE_KEY = IS_MAC ? "⌘S" : "Ctrl+S";
+const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const ddmmhh = (ms) => { const d = new Date(ms); return `${hhmm(ms)} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
 
 // Tự tween thay vì dùng behavior:"smooth" — trình duyệt trong app nuốt luôn tuỳ chọn đó
 // (đo được: scrollTo smooth không nhúc nhích, auto thì chạy), nên bấm mục lục sẽ không có
@@ -85,6 +91,9 @@ function FormToc({ trade, sections }) {
   // RR thực ghim ở đầu mục lục — khỏi kéo lên mục Quản trị vốn mỗi lần muốn xem.
   // Kèm tên lệnh (mã · Buy/Sell · ngày vào) để biết đang sửa lệnh nào mà khỏi kéo lên đầu form.
   const { rr, outcome } = computeResult(trade);
+  // Ảnh chụp xem nhanh ngay cạnh form — dán nhầm link TradingView của ảnh này sang ô kia là thấy
+  // liền. Khoá theo cả link: link đổi thì thử tải lại thay vì giữ trạng thái "lỗi" của link cũ.
+  const shots = tradeImageShots(trade).map((s) => ({ ...s, key: `${s.key}|${s.link || ""}|${s.image || ""}` }));
   const symbol = canonicalSymbol(trade.symbol) || "";
   const dateBits = (trade.entryDate || "").split("-");
   const entryDay = dateBits.length === 3 ? `${dateBits[2]}/${dateBits[1]}` : "";
@@ -122,6 +131,12 @@ function FormToc({ trade, sections }) {
           );
         })}
       </ul>
+      {shots.length ? (
+        <div className="form-toc-shots">
+          <span className="form-toc-title">Ảnh chụp · {shots.length}</span>
+          <ShotGallery shots={shots} compact />
+        </div>
+      ) : null}
     </nav>
   );
 }
@@ -377,6 +392,61 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   useEffect(() => () => { if (onDirtyChange) onDirtyChange(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
+
+  // ——— Nháp tự lưu ———
+  // Lệnh chưa có trong danh sách = lệnh mới (dùng chung ô nháp "new").
+  const draftRef = useRef(null);
+  if (!draftRef.current) {
+    const isNew = !(trades || []).some((x) => x && x.id === startRef.current.id);
+    draftRef.current = { key: draftKey(startRef.current.id, isNew), done: false };
+  }
+  const [pendingDraft, setPendingDraft] = useState(null);
+  const [draftInfo, setDraftInfo] = useState(null); // { at, ok }
+  const isDirty = (x) => { const a = startRef.current; return Object.keys({ ...a, ...x }).some((k) => a[k] !== x[k]); };
+  const latestT = useRef(t);
+  latestT.current = t;
+  // Mở form: có nháp khác với lệnh đang mở thì hỏi. Đọc trong effect (không phải lúc render) để
+  // form cũ vừa đóng kịp ghi nháp của nó trước.
+  useEffect(() => {
+    pruneDrafts();
+    const d = readDraft(draftRef.current.key);
+    if (d && !sameTradeContent(d.trade, startRef.current)) setPendingDraft(d);
+    else if (d) clearDraft(draftRef.current.key);
+  }, []);
+  // Ghi nháp sau mỗi lần sửa (chờ 0,7 giây gõ yên). Đang hỏi khôi phục thì chưa ghi gì — không
+  // thì nháp cũ bị ghi đè trước khi kịp chọn.
+  useEffect(() => {
+    if (pendingDraft || draftRef.current.done) return undefined;
+    if (!isDirty(t)) { clearDraft(draftRef.current.key); setDraftInfo(null); return undefined; }
+    const timer = setTimeout(() => {
+      const ok = writeDraft(draftRef.current.key, t);
+      setDraftInfo({ at: Date.now(), ok });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [t, pendingDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Đóng tab / rời form giữa lúc chờ 0,7 giây: ghi ngay bản mới nhất.
+  useEffect(() => {
+    const flush = () => {
+      const r = draftRef.current;
+      if (!r.done && !pendingDraft && isDirty(latestT.current)) writeDraft(r.key, latestT.current);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => { window.removeEventListener("pagehide", flush); flush(); };
+  }, [pendingDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+  const restoreDraft = () => {
+    setT(migrateReviewFields(pendingDraft.trade));
+    setPendingDraft(null);
+  };
+  const discardDraft = () => {
+    clearDraft(draftRef.current.key);
+    setPendingDraft(null);
+  };
+  const cancel = () => {
+    if (isDirty(t) && !window.confirm("Bỏ các thay đổi chưa lưu của lệnh này? (Bản nháp tự lưu cũng bị xoá.)")) return;
+    draftRef.current.done = true;
+    clearDraft(draftRef.current.key);
+    onCancel();
+  };
   const missing = (key) => isFieldMissing(t, key);
   // Khoá memo theo SỐ mục checklist chứ không theo cả object resources: object đó có thể là
   // một tham chiếu mới mỗi lần render, mà `sections` lại nằm trong deps của effect bắt cuộn
@@ -442,17 +512,51 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const submit = () => {
     if (!t.symbol.trim()) {
       setFormError("Vui lòng nhập Symbol trước khi lưu (đây là trường bắt buộc duy nhất, các mục khác điền được bao nhiêu tùy bạn).");
+      // Lưu bằng phím tắt thì có thể đang ở cuối form — đưa thẳng về ô Symbol.
+      const input = document.querySelector('#sec-1 input[list="symbol-suggestions"]');
+      if (input) { input.scrollIntoView({ block: "center" }); input.focus(); }
       return;
     }
     setFormError("");
+    draftRef.current.done = true;
+    clearDraft(draftRef.current.key);
     // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn". Symbol dịch ngược
     // Chuẩn hoá thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
     onSave(clearBrokerFilled({ ...t, symbol: canonicalSymbol(t.symbol, knownSymbols) }));
   };
 
+  // ⌘S / Ctrl+S (hoặc ⌘Enter) lưu lệnh. Rời ô đang gõ trước để các ô chỉ chốt giá trị lúc rời
+  // ô (Symbol chuẩn hoá, ô số) kịp cập nhật, rồi mới lưu ở nhịp sau.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.shiftKey || !(e.metaKey || e.ctrlKey)) return;
+      const k = String(e.key || "").toLowerCase();
+      if (!(k === "s" || e.code === "KeyS" || k === "enter")) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      const el = document.activeElement;
+      if (el && typeof el.blur === "function" && el !== document.body) el.blur();
+      setTimeout(() => submitRef.current(), 0);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="trade-form-layout">
       <div className="trade-form">
+      {pendingDraft ? (
+        <div className="draft-banner">
+          <History size={16} />
+          <span>
+            Có <b>bản nháp chưa lưu</b> của {pendingDraft.trade.symbol ? <b>{pendingDraft.trade.symbol}</b> : "lệnh này"} lúc {ddmmhh(pendingDraft.savedAt)} — lần trước thoát ra khi đang ghi dở.
+          </span>
+          <button type="button" className="btn btn-primary" onClick={restoreDraft}>Khôi phục nháp</button>
+          <button type="button" className="btn btn-ghost" onClick={discardDraft}>Bỏ nháp</button>
+        </div>
+      ) : null}
       <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky />
       {t.brokerFilled ? (
@@ -841,8 +945,15 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
 
       {formError ? <p className="error-text form-error">{formError}</p> : null}
       <div className="form-actions">
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
-        <button type="button" className="btn btn-primary" onClick={submit}><Save size={15} /> Lưu giao dịch</button>
+        {draftInfo ? (
+          <span className={`draft-status ${draftInfo.ok ? "" : "draft-status-bad"}`}>
+            {draftInfo.ok ? `Nháp tự lưu lúc ${hhmm(draftInfo.at)}` : "Không lưu được nháp trên trình duyệt này"}
+          </span>
+        ) : null}
+        <button type="button" className="btn btn-ghost" onClick={cancel}>Hủy</button>
+        <button type="button" className="btn btn-primary" onClick={submit} title={`Lưu giao dịch (${SAVE_KEY})`}>
+          <Save size={15} /> Lưu giao dịch <kbd className="kbd-hint">{SAVE_KEY}</kbd>
+        </button>
       </div>
       </div>
       <FormToc trade={t} sections={sections} />

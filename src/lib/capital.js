@@ -5,7 +5,7 @@
 //
 // Lưu ở khoá `capitalPlan`. Bot Telegram (sl-reminder) đọc khoá này để nhắc chọn mức tuần sau —
 // sửa cách tính sụt vốn ở đây thì sửa luôn bên đó, không thì tin nhắn và app nói hai con số.
-import { accountFamily, computeResult, dateKey, shiftDate, todayStr, uid, weekStart } from "./helpers.js";
+import { accountColor, accountFamily, computeResult, dateKey, shiftDate, todayStr, uid, weekStart } from "./helpers.js";
 
 export const DD_WARN_DEFAULT = 8;
 export const DD_CUT_DEFAULT = 12;
@@ -44,9 +44,20 @@ export function emptyCapitalMarket() {
 export const MARKET_COLORS = ["#5b9cf5", "#2fb5a3", "#4caf7d", "#d8c94a", "#e0a64e", "#ff8a65", "#e0615a", "#c879e0", "#a3a9e8", "#8d9198"];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
+// Màu của mảng: chọn riêng thì dùng màu đó, không thì lấy màu của tài khoản đầu tiên gắn vào
+// mảng (màu đặt ở tab Tài khoản) — để US Stock ở Nhật ký, Báo cáo tuần và Phân bổ vốn cùng một màu
+// mà không phải chọn hai nơi. Chưa gắn tài khoản nào thì không tô.
+export function marketColor(m, accounts) {
+  if (!m) return "";
+  if (m.color) return m.color;
+  const acc = (accounts || []).find((a) => a && (m.accountIds || []).includes(a.id));
+  return acc ? accountColor(acc.name, accounts) : "";
+}
+
 // Style gắn vào thẻ / ô của mảng: CSS đọc biến --mk, không có màu thì không đặt gì.
-export function marketColorStyle(m) {
-  return m && m.color ? { "--mk": m.color } : undefined;
+export function marketColorStyle(m, accounts) {
+  const c = marketColor(m, accounts);
+  return c ? { "--mk": c } : undefined;
 }
 
 // Dời mảng sang trái / phải (dir = -1 / 1) — chỉ đổi chỗ với mảng kề bên CÙNG nhóm (chính / phụ),

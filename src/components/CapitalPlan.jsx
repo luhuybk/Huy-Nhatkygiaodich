@@ -4,7 +4,7 @@ import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import {
-  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
+  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
@@ -120,9 +120,13 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
           <input className="input mono" value={holdText} onChange={(e) => setHoldText(e.target.value)} placeholder="VD: 0,3" />
         </Field>
       </div>
-      <Field label="Màu nhận diện" hint="Tô viền trái thẻ và chấm cạnh tên — ở đây, ở Tổng quan và bảng phong độ R">
+      <Field label="Màu nhận diện" hint={`Tô viền trái thẻ và chấm cạnh tên. "Theo tài khoản" = dùng màu của tài khoản gắn với mảng (đặt ở tab Tài khoản) — cùng màu với Nhật ký, Báo cáo tuần`}>
         <div className="cap-colors">
-          <button type="button" className={`cap-color cap-color-none ${!m.color ? "is-on" : ""}`} onClick={() => set("color")("")} title="Không tô màu"><X size={12} /></button>
+          <button type="button" className={`cap-color-auto ${!m.color ? "is-on" : ""}`} onClick={() => set("color")("")}
+            title="Dùng màu của tài khoản gắn với mảng">
+            {marketColor({ ...m, color: "" }, accounts) ? <span className="cap-color-dot" style={{ background: marketColor({ ...m, color: "" }, accounts) }} /> : <X size={12} />}
+            Theo tài khoản
+          </button>
           {MARKET_COLORS.map((c) => (
             <button key={c} type="button" className={`cap-color ${m.color === c ? "is-on" : ""}`} style={{ background: c }} onClick={() => set("color")(c)} title={c} />
           ))}
@@ -167,6 +171,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
   const safest = safestTier(market);
   const safestIsHold = safest !== null && safest === market.holdTier;
   const linked = accounts.filter((a) => market.accountIds.includes(a.id));
+  const mk = marketColor(market, accounts);
   if (editing) {
     return (
       <div className="cap-card">
@@ -176,9 +181,9 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
     );
   }
   return (
-    <div className={`cap-card cap-card-${dd.level} ${market.color ? "has-mk" : ""}`} style={marketColorStyle(market)}>
+    <div className={`cap-card cap-card-${dd.level} ${mk ? "has-mk" : ""}`} style={marketColorStyle(market, accounts)}>
       <div className="cap-card-head">
-        <b className="cap-card-name">{market.color ? <span className="cap-mk-dot" /> : null}{market.name}</b>
+        <b className="cap-card-name">{mk ? <span className="cap-mk-dot" /> : null}{market.name}</b>
         <span className="cap-card-sub mono">
           {market.side ? "ước lượng " : ""}{fmtMoney(market.allocated, "USD")}
           {market.currency !== "USD" ? ` ≈ ${fmtMoney(market.allocated * market.rate, market.currency)}` : ""}
@@ -319,9 +324,9 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
             w4: `Về cầm chừng khi ≤ ${fmtRVN(rule.holdM)}`,
           };
           return (
-            <div key={m.id} className={`cap-rp-card cap-rp-act-${action} ${m.color ? "has-mk" : ""}`} style={marketColorStyle(m)}>
+            <div key={m.id} className={`cap-rp-card cap-rp-act-${action} ${marketColor(m, accounts) ? "has-mk" : ""}`} style={marketColorStyle(m, accounts)}>
               <div className="cap-rp-card-head">
-                <b className="cap-rp-card-name">{m.color ? <span className="cap-mk-dot" /> : null}{m.name}</b>
+                <b className="cap-rp-card-name">{marketColor(m, accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</b>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className="cap-rp-verdict">{verdict}</span>
                 <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
@@ -523,10 +528,10 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
           const isHold = pct !== null && pct === m.holdTier;
           const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
           return (
-            <button type="button" key={m.id} onClick={onOpen} style={marketColorStyle(m)}
-              className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""} ${m.color ? "has-mk" : ""}`}>
+            <button type="button" key={m.id} onClick={onOpen} style={marketColorStyle(m, resources.accounts)}
+              className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""} ${marketColor(m, resources.accounts) ? "has-mk" : ""}`}>
               <span className="cap-tile-head">
-                <span className="cap-tile-name">{m.color ? <span className="cap-mk-dot" /> : null}{m.name}</span>
+                <span className="cap-tile-name">{marketColor(m, resources.accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</span>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className={`cap-tile-status cap-tile-status-${dd.level}`}>{DD_LABEL[dd.level]}</span>
               </span>
