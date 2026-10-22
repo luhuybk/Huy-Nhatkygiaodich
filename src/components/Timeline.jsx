@@ -5,7 +5,7 @@ import {
   TASK_KINDS, taskKind, emptyTaskDurations, taskMinutes, applyTaskPatch, timelineSources,
   buildDayTimeline, buildWeekTimeline, timelineConflicts, fmtDuration, minutesToHhmm, hhmmToMinutes, snapMinutes, openTradeCounter,
   weekdayCodeFromNumber, todayChecklist, setTaskDone, markSetupCheckDone, todayStr,
-  skipKey, toggleSkip, daysOfHour,
+  skipKey, skipStatus, toggleSkip, daysOfHour,
 } from "../lib/helpers.js";
 
 // Trục ngang luôn dừng ở mốc giờ tròn, và luôn rộng ít nhất 4 tiếng để một ngày
@@ -311,7 +311,10 @@ function SkipGrid({ src, onChange }) {
 
 function SourceRow({ src, onMinutes, onSkip }) {
   const [open, setOpen] = useState(false);
-  const skipped = src.skip.length;
+  // Chỉ đếm ô đang có tác dụng. Ô "ngủ" (thứ / giờ đã tắt) báo riêng — trước đây đếm gộp nên
+  // dòng tóm tắt ghi "bỏ 2 ô" trong khi bảng chỉ hiện 1, và không ai biết ô kia nằm đâu.
+  const st = skipStatus({ skip: src.skip, hours: src.hours, activeDays: src.activeDays });
+  const skipped = st.live.length;
   return (
     <div className="tl-src-item">
       <div className={`tl-src ${src.enabled ? "" : "tl-src-off"}`}>
@@ -319,6 +322,11 @@ function SourceRow({ src, onMinutes, onSkip }) {
         <span className="field-hint tl-src-meta" style={{ margin: 0 }}>
           {src.hours.length ? src.hours.join(", ") : "chưa đặt giờ"} · {src.activeDays.length ? src.activeDays.join(" ") : "không ngày nào"}
           {skipped ? <b className="tl-src-skip"> · bỏ {skipped} ô</b> : null}
+          {st.dormant.length ? (
+            <span className="tl-src-dormant" title={`Ô bỏ của thứ / giờ đang tắt — chỉ có tác dụng lại khi bật lại: ${st.dormant.map((k) => k.replace("@", " ")).join(", ")}`}>
+              {" "}· {st.dormant.length} ô bỏ đang ngủ ({st.dormant.map((k) => k.replace("@", " ")).join(", ")})
+            </span>
+          ) : null}
         </span>
         {src.canSkip && src.hours.length ? (
           <button type="button" className={`tl-src-skip-btn ${open ? "tl-src-skip-btn-on" : ""}`}

@@ -11,6 +11,7 @@
 // - Gom các thay đổi trong cùng một nhịp (VD đổi nhóm + tab con cùng lúc) thành một bước.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readLocalUi, writeLocalUi } from "./helpers.js";
+import { discardActiveDraft } from "./tradeDraft.js";
 
 const tabs = new Map(); // khoá → { value, set, allowed }
 const memory = new Map(); // giá trị gần nhất của tab không "sticky" — quay lại trang vẫn đúng tab
@@ -122,6 +123,8 @@ export function useBackNav({ view, setView, viewingTrade, setViewingTrade, editi
         window.history.go(h.pos - pos);
         return;
       }
+      // Đã đồng ý bỏ thay đổi thì bỏ luôn nháp tự lưu.
+      if (cur.view === "form" && st.tjView !== "form" && formDirtyRef.current) discardActiveDraft();
       // Form không còn lệnh nào để sửa (đã lưu / huỷ) thì Forward vào đó là form trống — về Nhật ký.
       const nextView = st.tjView === "form" && !cur.editing ? "journal" : st.tjView;
       const trade = st.tjTrade ? (cur.trades || []).find((x) => x.id === st.tjTrade) || null : null;

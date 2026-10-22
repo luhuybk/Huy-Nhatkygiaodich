@@ -1223,6 +1223,30 @@ export function pruneSkip(list, hours, activeDays) {
   });
 }
 
+// Sửa ô giờ của thẻ lịch (VD "10, 17" → "10, 17:30"): ô lẻ đã bỏ đi theo giờ mới thay vì nằm lại
+// ở mốc không còn tồn tại. Số mốc giữ nguyên thì đổi theo vị trí; thêm / bớt mốc thì giữ những
+// ô có giờ vẫn còn.
+export function migrateSkipHours(list, oldHours, newHours) {
+  const cur = Array.isArray(list) ? list : [];
+  const from = oldHours || [];
+  const to = newHours || [];
+  if (from.length !== to.length) return cur.filter((k) => to.includes(String(k).split("@")[1]));
+  const map = new Map(from.map((h, i) => [h, to[i]]));
+  return [...new Set(cur.map((k) => {
+    const [d, h] = String(k).split("@");
+    return map.has(h) ? skipKey(d, map.get(h)) : k;
+  }))].sort();
+}
+
+// Ô lẻ chia hai loại: đang có tác dụng, và đang "ngủ" vì thứ / giờ của nó đã tắt — ô ngủ sống
+// lại khi bật lại đúng thứ đó (VD tắt CN rồi bật T7: ô "CN@17:30" thôi tác dụng, thứ 7 chạy đủ).
+export function skipStatus(x) {
+  const days = Array.isArray(x && x.activeDays) ? x.activeDays : WEEKDAY_CODES;
+  const all = skipListOf(x);
+  const live = pruneSkip(all, (x && x.hours) || [], days);
+  return { live, dormant: all.filter((k) => !live.includes(k)) };
+}
+
 // Những thứ mà một mốc giờ thật sự chạy — đã trừ các ô lẻ đã bỏ.
 export function daysOfHour(x, hour) {
   const days = Array.isArray(x && x.activeDays) ? x.activeDays : WEEKDAY_CODES;

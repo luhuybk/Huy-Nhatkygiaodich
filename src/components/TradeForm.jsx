@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown } from "lucide-react";
 import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating } from "./ui.jsx";
-import { clearDraft, draftKey, pruneDrafts, readDraft, sameTradeContent, writeDraft } from "../lib/tradeDraft.js";
+import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
@@ -398,7 +398,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const draftRef = useRef(null);
   if (!draftRef.current) {
     const isNew = !(trades || []).some((x) => x && x.id === startRef.current.id);
-    draftRef.current = { key: draftKey(startRef.current.id, isNew), done: false };
+    draftRef.current = { key: draftKey(startRef.current.id, isNew), done: false, wrote: false };
   }
   const [pendingDraft, setPendingDraft] = useState(null);
   const [draftInfo, setDraftInfo] = useState(null); // { at, ok }
@@ -408,18 +408,29 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   // Mở form: có nháp khác với lệnh đang mở thì hỏi. Đọc trong effect (không phải lúc render) để
   // form cũ vừa đóng kịp ghi nháp của nó trước.
   useEffect(() => {
+    const r = draftRef.current;
+    setActiveDraft(r);
     pruneDrafts();
-    const d = readDraft(draftRef.current.key);
-    if (d && !sameTradeContent(d.trade, startRef.current)) setPendingDraft(d);
-    else if (d) clearDraft(draftRef.current.key);
+    const d = readDraft(r.key);
+    if (d && !sameTradeContent(mergeDraft(startRef.current, d), startRef.current)) setPendingDraft(d);
+    else if (d) clearDraft(r.key);
+    return () => releaseActiveDraft(r);
   }, []);
   // Ghi nháp sau mỗi lần sửa (chờ 0,7 giây gõ yên). Đang hỏi khôi phục thì chưa ghi gì — không
   // thì nháp cũ bị ghi đè trước khi kịp chọn.
   useEffect(() => {
-    if (pendingDraft || draftRef.current.done) return undefined;
-    if (!isDirty(t)) { clearDraft(draftRef.current.key); setDraftInfo(null); return undefined; }
+    const r = draftRef.current;
+    if (pendingDraft || r.done) return undefined;
+    // Sửa rồi hoàn tác về y như lúc mở thì xoá nháp. Chỉ xoá nháp DO FORM NÀY GHI: lúc mới mở,
+    // effect này chạy cùng nhịp với effect đọc nháp (pendingDraft chưa kịp có) — xoá bừa ở đây là
+    // mất luôn nháp cũ đang chờ người dùng chọn khôi phục.
+    if (!isDirty(t)) {
+      if (r.wrote) { clearDraft(r.key); r.wrote = false; setDraftInfo(null); }
+      return undefined;
+    }
     const timer = setTimeout(() => {
-      const ok = writeDraft(draftRef.current.key, t);
+      const ok = writeDraft(r.key, t, startRef.current);
+      r.wrote = ok;
       setDraftInfo({ at: Date.now(), ok });
     }, 700);
     return () => clearTimeout(timer);
@@ -428,13 +439,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   useEffect(() => {
     const flush = () => {
       const r = draftRef.current;
-      if (!r.done && !pendingDraft && isDirty(latestT.current)) writeDraft(r.key, latestT.current);
+      if (!r.done && !pendingDraft && isDirty(latestT.current)) writeDraft(r.key, latestT.current, startRef.current);
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
   }, [pendingDraft]); // eslint-disable-line react-hooks/exhaustive-deps
   const restoreDraft = () => {
-    setT(migrateReviewFields(pendingDraft.trade));
+    setT((prev) => migrateReviewFields(mergeDraft(prev, pendingDraft)));
     setPendingDraft(null);
   };
   const discardDraft = () => {

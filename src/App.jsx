@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
 import { useBackNav } from "./lib/useBackNav.js";
+import { discardActiveDraft } from "./lib/tradeDraft.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
@@ -538,7 +539,10 @@ function AppShell({ onSignOut, userEmail }) {
   // Việt hay bàn phím khác kiểu không làm lệch phím.
   const newTradeRef = useRef(null);
   newTradeRef.current = () => {
-    if (view === "form" && formDirtyRef.current && !window.confirm("Lệnh đang sửa chưa lưu. Bỏ các thay đổi và mở lệnh mới?")) return;
+    if (view === "form" && formDirtyRef.current) {
+      if (!window.confirm("Lệnh đang sửa chưa lưu. Bỏ các thay đổi và mở lệnh mới?")) return;
+      discardActiveDraft();
+    }
     setViewingTrade(null);
     setMobileNavOpen(false);
     startNew();

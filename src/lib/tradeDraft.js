@@ -20,9 +20,10 @@ export function readDraft(key) {
 }
 
 // Trả false khi không ghi được (hết chỗ, trình duyệt chặn) — form báo cho người dùng biết.
-export function writeDraft(key, trade) {
+// `base` = lệnh lúc mở form: khôi phục chỉ đè những trường đã sửa so với nó (xem mergeDraft).
+export function writeDraft(key, trade, base) {
   try {
-    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), trade }));
+    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), trade, base: base || null }));
     return true;
   } catch {
     return false;
@@ -50,4 +51,32 @@ export function pruneDrafts() {
 export function sameTradeContent(a, b) {
   const strip = (x) => { const { id: _i, createdAt: _c, ...rest } = x || {}; return rest; };
   try { return JSON.stringify(strip(a)) === JSON.stringify(strip(b)); } catch { return false; }
+}
+
+const same = (a, b) => { try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; } };
+
+// Khôi phục nháp lên lệnh hiện tại: chỉ lấy những trường NHÁP ĐÃ SỬA so với lúc mở form.
+// Trường nháp không đụng tới thì giữ bản đang lưu — lỡ sau đó lệnh được sửa ở nơi khác (bot
+// Telegram, tick ô trong chi tiết lệnh, máy khác) thì không bị nháp cũ đè mất. Nháp đời đầu
+// chưa có `base` thì đành thay cả lệnh.
+export function mergeDraft(current, draft) {
+  if (!draft || !draft.trade) return current;
+  if (!draft.base) return { ...draft.trade, id: current.id };
+  const out = { ...current };
+  Object.keys({ ...draft.trade, ...draft.base }).forEach((k) => {
+    if (k === "id") return;
+    if (!same(draft.trade[k], draft.base[k])) out[k] = draft.trade[k];
+  });
+  return out;
+}
+
+// Form đang mở đăng ký ở đây, để chỗ khác (⌘E mở lệnh mới, nút Back) báo "người dùng đã đồng ý
+// bỏ thay đổi" — khi đó xoá luôn nháp, khỏi lần sau hỏi khôi phục thứ vừa cố ý bỏ.
+let active = null;
+export function setActiveDraft(ref) { active = ref; }
+export function releaseActiveDraft(ref) { if (active === ref) active = null; }
+export function discardActiveDraft() {
+  if (!active) return;
+  active.done = true;
+  clearDraft(active.key);
 }

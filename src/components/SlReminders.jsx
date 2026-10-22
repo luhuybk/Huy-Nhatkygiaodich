@@ -9,7 +9,7 @@ import { LifeHubExport } from "./Timeline.jsx";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
-  looksTelexed, mergeSymbolList, mutedFillDays, parseHoursInput,
+  looksTelexed, mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
   watchIsAuto, watchLiveSymbols, watchScheduleHours,
@@ -118,7 +118,12 @@ function AccountScheduleCards({ schedules, resources, onUpdate, trades, onTf, se
                 defaultValue={(sched.hours && sched.hours.length ? sched.hours : SL_REMINDER_DEFAULT_HOURS).join(", ")}
                 placeholder={auto ? "Giờ cho lệnh khung W" : "9 12 15 18 21"}
                 title={auto ? "Chỉ dùng cho lệnh mà khung không tự tính được (W, M15, chưa ghi khung)" : "Giờ nhắc, giờ Việt Nam — gõ tắt \"9 14 20\" được"}
-                onBlur={(e) => onUpdate(acc, { hours: parseHoursInput(e.target.value) })} />
+                onBlur={(e) => {
+                  const hours = parseHoursInput(e.target.value);
+                  const patch = { hours };
+                  if (Array.isArray(sched.skip) && sched.skip.length) patch.skip = migrateSkipHours(sched.skip, sched.hours, hours);
+                  onUpdate(acc, patch);
+                }} />
               )}
               <DayChips days={sched.activeDays} onToggle={(d) => onUpdate(acc, { activeDays: toggleIn(sched.activeDays, d) })} />
             </div>

@@ -2189,3 +2189,4 @@ button.nt-check:hover { filter: brightness(1.25); }
 .shot-grid-compact .shot-card figcaption { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shot-grid-compact .shot-thumb { border-radius: 6px; }
 .shot-grid-compact .shot-thumb-link { font-size: 10.5px; gap: 3px; }
+.tl-src-dormant { color: var(--pending); font-style: italic; }
