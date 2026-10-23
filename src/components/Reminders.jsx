@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { PlusCircle, Pencil, Check, Clock, Send, CalendarClock, CalendarCheck, ListTodo, Settings2 } from "lucide-react";
-import { ConfirmButton, Field, editOnDouble } from "./ui.jsx";
+import { ConfirmButton, Field, editOnDouble, useAutoFocus } from "./ui.jsx";
 import { REMINDER_FREQS, WEEKDAY_LABEL, WEEKDAY_ORDER } from "../lib/constants.js";
 import { buildWeekTimeline, emptyReminder, openTradeCounter, reminderDueToday, reminderScheduleLabel, todayStr, uid } from "../lib/helpers.js";
 import { NotifySettingsPanel, PlansPanel } from "./SlReminders.jsx";
@@ -17,8 +17,10 @@ export function ReminderForm({ initial, onSave, onCancel, telegramReady }) {
     setError("");
     onSave({ ...r, id: r.id || uid() });
   };
+  const boxRef = useRef(null);
+  useAutoFocus(boxRef);
   return (
-    <div className="reminder-form">
+    <div className="reminder-form" ref={boxRef}>
       <Field label="Nội dung nhắc nhở">
         <input className="input" data-autocap value={r.title} onChange={(e) => set("title")(e.target.value)} placeholder="VD: Cập nhật đường cong vốn" />
       </Field>

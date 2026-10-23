@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
-import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating } from "./ui.jsx";
+import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
@@ -510,6 +510,12 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     if (d && !sameTradeContent(mergeDraft(startRef.current, d), startRef.current)) setPendingDraft(d);
     else if (d) clearDraft(r.key);
     return () => releaseActiveDraft(r);
+  }, []);
+  // Lệnh mới: con trỏ nằm sẵn ở ô Symbol (chỉ khi ô còn trống — lệnh nhập từ file môi giới
+  // hay bot Telegram đã có mã thì để yên).
+  useEffect(() => {
+    const id = setTimeout(() => focusFirstField(document.getElementById("sec-1")), 0);
+    return () => clearTimeout(id);
   }, []);
   // Ghi nháp sau mỗi lần sửa (chờ 0,7 giây gõ yên). Đang hỏi khôi phục thì chưa ghi gì — không
   // thì nháp cũ bị ghi đè trước khi kịp chọn.

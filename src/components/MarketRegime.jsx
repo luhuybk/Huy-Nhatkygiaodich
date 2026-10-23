@@ -229,6 +229,9 @@ function CloneStates({ regime, regimes, onClone }) {
 }
 
 function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange }) {
+  // Vừa bấm Thêm chỉ số / Thêm trạng thái thì con trỏ nằm sẵn ở ô tên của mục mới.
+  const [focusId, setFocusId] = useState(null);
+  const addRegime = () => { const r = emptyRegime(); setFocusId(r.id); onChange([...regimes, r]); };
   const update = (id, patch) => onChange(regimes.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const owner = (accId, selfId) => regimes.find((r) => r.id !== selfId && (r.accountIds || []).includes(accId));
   const toggleAccount = (r, accId) => {
@@ -262,7 +265,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
         <div key={r.id} className="account-form regime-card">
           <div className="regime-card-head">
             <Field label="Tên chỉ số">
-              <CommitInput value={r.name} onCommit={(v) => update(r.id, { name: v })} placeholder="VD: S&P 500, VN-Index" />
+              <CommitInput value={r.name} autoFocus={r.id === focusId} onCommit={(v) => update(r.id, { name: v })} placeholder="VD: S&P 500, VN-Index" />
             </Field>
             <ConfirmButton onConfirm={() => onChange(regimes.filter((x) => x.id !== r.id))} className="btn btn-ghost" icon={Trash2} label="Xoá chỉ số" />
           </div>
@@ -288,7 +291,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
                 {inGroup.map((s, i) => (
                   <div key={s.id} className="regime-state-edit">
                     <div className="regime-cond-row">
-                      <CommitInput value={s.label} placeholder="VD: Trên EMA9 · nhưng dưới EMA21" onCommit={(v) => patchState(r, s.id, { label: v })} />
+                      <CommitInput value={s.label} autoFocus={s.id === focusId} placeholder="VD: Trên EMA9 · nhưng dưới EMA21" onCommit={(v) => patchState(r, s.id, { label: v })} />
                       <select className="input regime-tone-select" value={s.tone || "neutral"} onChange={(e) => patchState(r, s.id, { tone: e.target.value })} title="Chuyển sang nhóm khác">
                         {groups.map((x) => <option key={x.id} value={x.id}>{x.icon} {x.label}</option>)}
                       </select>
@@ -311,7 +314,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
                     </div>
                   </div>
                 ))}
-                <button type="button" className="btn btn-ghost btn-xs regime-add-state" onClick={() => setStates(r, [...(r.states || []), emptyState(g.id)])}>
+                <button type="button" className="btn btn-ghost btn-xs regime-add-state" onClick={() => { const s = emptyState(g.id); setFocusId(s.id); setStates(r, [...(r.states || []), s]); }}>
                   <Plus size={13} /> Thêm trạng thái {g.label}
                 </button>
               </div>
@@ -319,7 +322,7 @@ function RegimeSettings({ regimes, groups, accounts, onChange, onGroupsChange })
           })}
         </div>
       ))}
-      <button type="button" className="btn btn-ghost" onClick={() => onChange([...regimes, emptyRegime()])}><Plus size={14} /> Thêm chỉ số</button>
+      <button type="button" className="btn btn-ghost" onClick={addRegime}><Plus size={14} /> Thêm chỉ số</button>
     </div>
   );
 }

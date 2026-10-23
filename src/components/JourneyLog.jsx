@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
-import { ConfirmButton, Field, useStickyTab, NoteText, editOnDouble } from "./ui.jsx";
+import { ConfirmButton, Field, useStickyTab, NoteText, editOnDouble, useAutoFocus } from "./ui.jsx";
 import { dateKey, emptyLesson, symbolSearchKey, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
@@ -88,6 +88,8 @@ function Composer({ draft, setDraft, tags, trades, editing, onSave, onCancel, bo
   const toggleTrade = (id) => setDraft((p) => ({ ...p, tradeIds: (p.tradeIds || []).includes(id) ? p.tradeIds.filter((x) => x !== id) : [...(p.tradeIds || []), id] }));
   const canSave = !!String(draft.text || "").trim();
   const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSave) { e.preventDefault(); onSave(); } };
+  // Bấm Ghi log là gõ được ngay vào ô nội dung.
+  useAutoFocus(boxRef);
   return (
     <div className={`account-form jl-composer ${editing ? "jl-composer-edit" : ""}`} ref={boxRef}>
       <div className="jl-composer-top">

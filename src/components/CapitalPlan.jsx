@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, X } from "lucide-react";
-import { ConfirmButton, Field, MoneyInput } from "./ui.jsx";
+import { ConfirmButton, Field, MoneyInput, useAutoFocus } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import {
@@ -78,6 +78,9 @@ function DrawdownBar({ plan, dd, market }) {
 
 function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
   const [m, setM] = useState(market);
+  // Mảng vừa bấm Thêm: tên còn trống nên con trỏ nằm sẵn ở ô Tên mảng.
+  const boxRef = useRef(null);
+  useAutoFocus(boxRef);
   const [tierText, setTierText] = useState(market.tiers.map((x) => String(x).replace(".", ",")).join("  "));
   const [holdText, setHoldText] = useState(market.holdTier ? String(market.holdTier).replace(".", ",") : "");
   const set = (k) => (v) => setM((prev) => ({ ...prev, [k]: v }));
@@ -94,7 +97,7 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
     });
   };
   return (
-    <div className="cap-editor">
+    <div className="cap-editor" ref={boxRef}>
       <div className="grid-2">
         <Field label="Tên mảng"><input className="input" value={m.name} onChange={(e) => set("name")(e.target.value)} placeholder="VD: US Stock" /></Field>
         <Field label="Tiền của mảng">

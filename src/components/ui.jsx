@@ -790,7 +790,31 @@ export function SloganBar({ slogan, onChange, onNavigate }) {
   );
 }
 
+// Mở form thêm mới là gõ được ngay, khỏi phải rê chuột bấm vào ô đầu tiên. Chỉ đặt con trỏ khi ô
+// chữ ĐẦU TIÊN còn trống — tức là form thêm mới; mở form sửa thì ô đó đã có chữ nên để yên, không
+// vô tình gõ đè. Ô có `data-autofocus` thì được ưu tiên. Bỏ qua trên điện thoại / máy tính bảng:
+// bật bàn phím ảo lên che nửa form khi mới chỉ định xem là khó chịu.
+const TEXT_FIELDS = "input:not([type]), input[type=text], input[type=search], input[type=number], input[type=url], textarea";
+export function focusFirstField(root) {
+  if (!root) return;
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return;
+  const active = document.activeElement;
+  if (active && active !== document.body && root.contains(active)) return;
+  const usable = (el) => el && !el.disabled && !el.readOnly && el.offsetParent !== null;
+  const el = [...root.querySelectorAll("[data-autofocus]")].find(usable)
+    || [...root.querySelectorAll(TEXT_FIELDS)].find(usable);
+  if (el && !el.value) el.focus({ preventScroll: true });
+}
+export function useAutoFocus(ref) {
+  useEffect(() => {
+    const t = setTimeout(() => focusFirstField(ref.current), 0);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 export function FormModal({ title, onClose, children }) {
+  const bodyRef = useRef(null);
+  useAutoFocus(bodyRef);
   return (
     <div className="modal-backdrop">
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -798,7 +822,7 @@ export function FormModal({ title, onClose, children }) {
           <h3 style={{ margin: 0 }}>{title}</h3>
           <button type="button" className="row-btn" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className="modal-body" ref={bodyRef}>{children}</div>
       </div>
     </div>
   );
