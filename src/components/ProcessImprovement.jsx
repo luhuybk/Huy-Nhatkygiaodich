@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { Plus } from "lucide-react";
-import { ChartCard, ConfirmButton, DangerConfirmButton, Field, FormModal, MultiChipSelect, NoteText } from "./ui.jsx";
+import { Pencil, Plus } from "lucide-react";
+import { ChartCard, ConfirmButton, DangerConfirmButton, Field, FormModal, MultiChipSelect, NoteText, editOnDouble } from "./ui.jsx";
 import { CATEGORY_COLORS, GRID, MUTED, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { emptyProcessImprovement, uid } from "../lib/helpers.js";
 
@@ -103,12 +103,15 @@ export function ProcessImprovementSection({ items, avoidPrinciples, onChange }) 
       <div className="resource-list" style={{ marginTop: 16 }}>
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có đánh giá tuần nào. Thêm đánh giá đầu tiên nhé.</p> : null}
         {sorted.map((n) => (
-          <div key={n.id} className="note-card" onClick={() => openEdit(n)}>
+          // Thẻ đã hiện đủ nội dung nên bấm một lần không làm gì — bấm đúp (hoặc bút chì) mới mở form sửa,
+          // để bấm nhầm khi đang đọc không bật form lên.
+          <div key={n.id} className="note-card" title="Bấm đúp để sửa" onDoubleClick={editOnDouble(() => openEdit(n))}>
             <div className="note-head">
               <span className="note-type">Tuần {n.weekStart || "—"}</span>
               {(n.violatedPrinciples || []).length ? (
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--loss)" }}>{n.violatedPrinciples.length} vi phạm</span>
               ) : null}
+              <span style={{ marginLeft: "auto" }}><button type="button" className="row-btn" aria-label="Sửa" onClick={() => openEdit(n)}><Pencil size={13} /></button></span>
               <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
             </div>
             {n.doneWell ? <p className="note-content"><strong>Làm tốt:</strong> <NoteText text={n.doneWell} /></p> : null}

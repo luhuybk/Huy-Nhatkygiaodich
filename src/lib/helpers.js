@@ -747,6 +747,28 @@ export function symbolFixPlan(trades, resources) {
   };
 }
 
+// Setup miss / skip / biến thể / bài học cũng có ô Symbol — đổi theo cùng lúc với lệnh, không thì
+// "USDCHF" cũ ở đó và "USD/CHF" mới vẫn là hai mã khác nhau khi tìm kiếm.
+export const SYMBOL_FIX_LISTS = [
+  { key: "missed", label: "setup bị miss" },
+  { key: "skipped", label: "setup bị skip" },
+  { key: "variants", label: "setup biến thể" },
+  { key: "lessons", label: "bài học" },
+];
+export function symbolFixLists(lists) {
+  return SYMBOL_FIX_LISTS.map((d) => {
+    let count = 0;
+    const next = ((lists && lists[d.key]) || []).map((n) => {
+      if (!n || !n.symbol) return n;
+      const to = canonicalSymbol(n.symbol, []);
+      if (!to || to === n.symbol) return n;
+      count += 1;
+      return { ...n, symbol: to };
+    });
+    return { ...d, count, next };
+  }).filter((d) => d.count);
+}
+
 // Chữ gõ tìm mã khớp bất kể dấu "/" hay cách: "cadchf" tìm ra "CAD/CHF" và ngược lại.
 export const symbolSearchKey = (s) => untelexSymbol(s).replace(/[^A-Z0-9]/g, "");
 
@@ -3808,7 +3830,8 @@ export const WATCH_FILTERS = [
 
 export function applyMissSkipFilters(items, filters, dateField) {
   return items.filter((n) => {
-    if (filters.q && !(n.symbol || "").toLowerCase().includes(filters.q.toLowerCase())) return false;
+    // "usdchf" tìm ra cả "USD/CHF" lẫn bản ghi cũ "USDCHF" — như ô tìm ở Nhật ký.
+    if (filters.q && !symbolSearchKey(n.symbol).includes(symbolSearchKey(filters.q))) return false;
     if (filters.timeframe && n.timeframe !== filters.timeframe) return false;
     if (filters.setup && n.setup !== filters.setup) return false;
     if (filters.reason && n.reason !== filters.reason) return false;
@@ -3947,7 +3970,9 @@ export function applyLessonFilters(items, filters) {
   return items.filter((n) => {
     if (filters.q) {
       const q = filters.q.toLowerCase();
-      if (!(n.symbol || "").toLowerCase().includes(q) && !(n.content || "").toLowerCase().includes(q) && !(n.title || "").toLowerCase().includes(q)) return false;
+      const k = symbolSearchKey(filters.q);
+      const symHit = k && symbolSearchKey(n.symbol).includes(k);
+      if (!symHit && !(n.content || "").toLowerCase().includes(q) && !(n.title || "").toLowerCase().includes(q)) return false;
     }
     if (filters.category && !(n.categories || []).includes(filters.category)) return false;
     if (filters.level) {

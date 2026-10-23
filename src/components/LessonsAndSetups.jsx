@@ -1,9 +1,9 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange, Printer } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, clickOrDouble } from "./ui.jsx";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, SymbolInput, clickOrDouble } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, canonicalSymbol } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -108,8 +108,8 @@ function MissSkipCards({ groups, dateField, mode, onView, onEdit, onRemove }) {
               const shots = lessonAttachments(n).filter((a) => a.image || a.link);
               return (
                 <article key={n.id} className={`var-card ms-card ${watchState(n) === "pending" ? "ms-card-watch" : ""}`}
-                  role="button" tabIndex={0} title="Bấm để xem ảnh · bút chì để sửa"
-                  onClick={() => onView(n)}
+                  role="button" tabIndex={0} title="Bấm để xem ảnh · bấm đúp để sửa"
+                  onClick={(e) => clickOrDouble(e, () => onView(n), () => onEdit(n))}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(n); }
@@ -169,6 +169,7 @@ function MissSkipCards({ groups, dateField, mode, onView, onEdit, onRemove }) {
 // Bấm thẻ thì mở khung xem: ảnh chart thật (link TradingView đổi sang PNG như ở chi tiết lệnh),
 // lý do, ghi chú, review. Trước đây bấm là vào thẳng form sửa, còn ảnh chỉ là biểu tượng phải rê
 // chuột mới hiện — trên điện thoại không rê chuột được nên coi như không xem được ảnh.
+// Dùng chung cho Biến thể: không có lý do / theo dõi / review thì các dòng đó tự ẩn, thêm mô tả.
 function MissSkipDetail({ item: n, dateField, kindLabel, onEdit, onRemove, onClose }) {
   const shots = lessonAttachments(n).filter((a) => a && (a.image || a.link))
     .map((a, i) => ({ key: `${i}|${a.link || ""}|${a.image || ""}`, label: `Ảnh ${i + 1}`, image: a.image, link: a.link }));
@@ -189,6 +190,7 @@ function MissSkipDetail({ item: n, dateField, kindLabel, onEdit, onRemove, onClo
       {shots.length ? <ShotGallery shots={shots} /> : (
         <p className="empty-note" style={{ padding: "14px 0" }}>Chưa có ảnh — bấm Sửa để dán link TradingView.</p>
       )}
+      {n.desc ? <p className="var-card-desc" style={{ marginTop: 12 }}>{n.desc}</p> : null}
       {n.note ? <p className="var-card-note ms-card-note" style={{ marginTop: 12 }}><NoteText text={n.note} /></p> : null}
       {n.reviewNote || n.reviewDate ? (
         <p className="var-card-note ms-card-note ms-card-review" style={{ marginTop: 10 }}>
@@ -220,6 +222,8 @@ export function MissedSetupsSection({ items, resources, onChange }) {
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  // Mã đã dùng ở đâu đó thì giữ đúng cách viết đó khi chuẩn hoá ô Symbol.
+  const knownSymbols = useMemo(() => [...resources.symbols, ...items.map((n) => n.symbol)], [resources.symbols, items]);
   const [viewId, setViewId] = useState(null);
   const [printing, setPrinting] = useState(false);
   const viewing = viewId ? items.find((n) => n.id === viewId) : null;
@@ -229,7 +233,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
     setError("");
-    const payload = { ...form, id: form.id || uid() };
+    const payload = { ...form, symbol: canonicalSymbol(form.symbol, knownSymbols), id: form.id || uid() };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
@@ -260,9 +264,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-miss" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
-                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
-              <datalist id="symbol-suggestions-miss">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+              <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-miss" />
             </Field>
             <Field label="Ngày miss">
               <input type="date" className="input" value={form.missDate} onChange={(e) => setF("missDate")(e.target.value)} />
@@ -343,6 +345,8 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  // Mã đã dùng ở đâu đó thì giữ đúng cách viết đó khi chuẩn hoá ô Symbol.
+  const knownSymbols = useMemo(() => [...resources.symbols, ...items.map((n) => n.symbol)], [resources.symbols, items]);
   const [viewId, setViewId] = useState(null);
   const [printing, setPrinting] = useState(false);
   const viewing = viewId ? items.find((n) => n.id === viewId) : null;
@@ -352,7 +356,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
     setError("");
-    const payload = { ...form, id: form.id || uid() };
+    const payload = { ...form, symbol: canonicalSymbol(form.symbol, knownSymbols), id: form.id || uid() };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
@@ -383,9 +387,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-skip" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
-                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
-              <datalist id="symbol-suggestions-skip">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+              <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-skip" />
             </Field>
             <Field label="Ngày skip">
               <input type="date" className="input" value={form.skipDate} onChange={(e) => setF("skipDate")(e.target.value)} />
@@ -466,13 +468,17 @@ export function SetupVariantsSection({ items, resources, onChange }) {
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  // Mã đã dùng ở đâu đó thì giữ đúng cách viết đó khi chuẩn hoá ô Symbol.
+  const knownSymbols = useMemo(() => [...resources.symbols, ...items.map((n) => n.symbol)], [resources.symbols, items]);
+  const [viewId, setViewId] = useState(null);
+  const viewing = viewId ? items.find((n) => n.id === viewId) : null;
   const openNew = () => { setForm(emptyVariant()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setViewId(null); setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptyVariant()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
     setError("");
-    const payload = { ...form, id: form.id || uid() };
+    const payload = { ...form, symbol: canonicalSymbol(form.symbol, knownSymbols), id: form.id || uid() };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
@@ -504,9 +510,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
         <FormModal title={form.id ? "Sửa setup biến thể" : "Thêm setup biến thể"} onClose={closeModal}>
           <div className="grid-3">
             <Field label="Symbol">
-              <input className="input" list="symbol-suggestions-variant" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
-                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
-              <datalist id="symbol-suggestions-variant">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+              <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-variant" />
             </Field>
             <Field label="Ngày">
               <input type="date" className="input" value={form.variantDate} onChange={(e) => setF("variantDate")(e.target.value)} />
@@ -535,6 +539,10 @@ export function SetupVariantsSection({ items, resources, onChange }) {
           </div>
         </FormModal>
       ) : null}
+      {viewing && !modalOpen ? (
+        <MissSkipDetail item={viewing} dateField="variantDate" kindLabel="Biến thể"
+          onEdit={openEdit} onRemove={remove} onClose={() => setViewId(null)} />
+      ) : null}
       <MissSkipFilterPanel items={items} filters={filters} setFilters={setFilters} resources={resources} dateKeyLabel="Ngày" />
       {shown === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có biến thể nào khớp bộ lọc.</p> : (
         <div className="var-groups">
@@ -547,11 +555,11 @@ export function SetupVariantsSection({ items, resources, onChange }) {
               </h4>
               <div className="var-grid">
                 {g.list.map((n) => (
-                  <article key={n.id} className="var-card" role="button" tabIndex={0}
-                    onClick={() => openEdit(n)}
+                  <article key={n.id} className="var-card" role="button" tabIndex={0} title="Bấm để xem ảnh · bấm đúp để sửa"
+                    onClick={(e) => clickOrDouble(e, () => setViewId(n.id), () => openEdit(n))}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
-                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(n); }
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewId(n.id); }
                     }}>
                     {lessonAttachments(n).some((a) => a.image || a.link) ? (
                       <div className="var-card-shots" onClick={(e) => e.stopPropagation()}>
@@ -722,6 +730,8 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
     return next;
   });
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  // Mã đã dùng ở đâu đó thì giữ đúng cách viết đó khi chuẩn hoá ô Symbol.
+  const knownSymbols = useMemo(() => [...resources.symbols, ...trades.map((t) => t.symbol), ...items.map((n) => n.symbol)], [resources.symbols, trades, items]);
   const tradeItems = useMemo(
     () => trades.map((t) => ({ id: t.id, name: `${t.symbol || "—"} · ${t.entryDate || "—"}` })),
     [trades]
@@ -733,7 +743,7 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
     if (!form.content.trim()) { setError("Nhập nội dung bài học trước đã."); return; }
     setError("");
     const cleanedImages = (form.images || []).filter((it) => (it.link && it.link.trim()) || it.image);
-    const payload = { ...form, id: form.id || uid(), images: cleanedImages, link: "", image: "" };
+    const payload = { ...form, symbol: canonicalSymbol(form.symbol, knownSymbols), id: form.id || uid(), images: cleanedImages, link: "", image: "" };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
@@ -759,9 +769,7 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
             </Field>
             <Field label="Symbol (tùy chọn)">
-              <input className="input" list="symbol-suggestions-lesson" value={form.symbol} onChange={(e) => setF("symbol")(e.target.value.toUpperCase())}
-                onBlur={() => { if (looksTelexed(form.symbol)) setF("symbol")(untelexSymbol(form.symbol)); }} placeholder="VD: XAUUSD, HPG..." />
-              <datalist id="symbol-suggestions-lesson">{resources.symbols.map((s) => <option key={s} value={s} />)}</datalist>
+              <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-lesson" />
             </Field>
           </div>
           <Field label="Danh mục bài học" hint="Có thể chọn nhiều danh mục cùng lúc">
@@ -823,7 +831,8 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
                     const isOpen = expanded.has(n.id);
                     return (
                       <article key={n.id} className={`var-card lsn-card lsn-card-lv${g.level}`} role="button" tabIndex={0}
-                        onClick={() => openEdit(n)}
+                        title="Bấm để mở nội dung · bấm đúp để sửa"
+                        onClick={(e) => clickOrDouble(e, () => toggleExpand(n.id), () => openEdit(n))}
                         onKeyDown={(e) => {
                           if (e.target !== e.currentTarget) return;
                           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(n); }

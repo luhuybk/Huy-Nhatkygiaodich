@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Filter, HardDrive, ShieldCheck, Stethoscope, Wand2 } from "lucide-react";
 import { DangerConfirmButton, StatCard } from "./ui.jsx";
-import { dateKey, journalHealth, symbolFixPlan } from "../lib/helpers.js";
+import { dateKey, journalHealth, symbolFixLists, symbolFixPlan } from "../lib/helpers.js";
 import { collectImagePaths, listStoredImages, deleteStoredImages } from "../lib/storage.js";
 
 const MAX_LISTED = 60;
@@ -52,11 +52,13 @@ function CheckRow({ check, trades, onOpenTrade, onGoToJournal }) {
 
 // Mã viết chưa chuẩn: lệnh cũ "CADCHF" và lệnh mới "CAD/CHF" là cùng một cặp — đổi hết về một cách viết
 // để tìm kiếm, bộ lọc, gợi ý mã đều thống nhất. Xem trước từng cặp cũ → mới, bấm hai lần mới đổi.
-function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange }) {
+function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange, lists, onChangeLists }) {
   const plan = useMemo(() => symbolFixPlan(trades, resources), [trades, resources]);
+  const others = useMemo(() => (onChangeLists ? symbolFixLists(lists) : []), [lists, onChangeLists]);
+  const otherCount = others.reduce((n, d) => n + d.count, 0);
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState("");
-  if (!plan.tradeCount && !plan.symbols) {
+  if (!plan.tradeCount && !plan.symbols && !otherCount) {
     return done ? <p className="health-ok"><ShieldCheck size={16} /><span>{done}</span></p> : null;
   }
   const apply = () => {
@@ -65,22 +67,25 @@ function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange }) {
     const changed = (trades || []).filter((t) => to.has(t.id)).map((t) => ({ ...t, symbol: to.get(t.id) }));
     if (changed.length) onUpdateTrades(changed);
     if (plan.symbols) onResourcesChange({ ...resources, symbols: plan.symbols });
-    setDone(`Đã đổi ${changed.length} lệnh${plan.symbols ? " và gộp danh sách symbol" : ""}.`);
+    others.forEach((d) => onChangeLists[d.key](d.next));
+    const extra = others.map((d) => `${d.count} ${d.label}`).join(", ");
+    setDone(`Đã đổi ${changed.length} lệnh${extra ? `, ${extra}` : ""}${plan.symbols ? " và gộp danh sách symbol" : ""}.`);
   };
   return (
     <div className="health-row health-warn">
       <div className="health-head" onClick={() => setOpen((v) => !v)}>
         {open ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
         <span className="health-label">Mã viết chưa chuẩn (VD CADCHF thay vì CAD/CHF)</span>
-        <span className="health-count health-count-warn">{plan.tradeCount}</span>
+        <span className="health-count health-count-warn">{plan.tradeCount + otherCount}</span>
         <span onClick={(e) => e.stopPropagation()}>
           <DangerConfirmButton label={<><Wand2 size={12} /> Đổi hết về cách viết chuẩn</>}
-            confirmLabel={`Bấm lần nữa: đổi ${plan.tradeCount} lệnh`} onConfirm={apply} />
+            confirmLabel={`Bấm lần nữa: đổi ${plan.tradeCount} lệnh${otherCount ? ` + ${otherCount} mục khác` : ""}`} onConfirm={apply} />
         </span>
       </div>
       <p className="health-hint">
         Cặp hai đồng tiền chính viết thành XXX/YYY, mã khác viết hoa, gõ Telex thì dịch ngược — như ô Symbol
-        lúc lưu lệnh mới. Chỉ đổi tên mã, không đụng gì khác của lệnh.
+        lúc lưu lệnh mới. Chỉ đổi tên mã, không đụng gì khác của lệnh. Setup miss / skip / biến thể và bài học
+        cũng được đổi theo.
         {plan.symbols ? " Danh sách symbol trong Tài nguyên cũng được gộp các mã trùng." : ""}
       </p>
       {open ? (
@@ -88,6 +93,7 @@ function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange }) {
           {plan.groups.map((g) => (
             <p key={`${g.from}→${g.to}`} className="health-stale mono">{g.from} → <b>{g.to}</b> · {g.ids.length} lệnh</p>
           ))}
+          {others.map((d) => <p key={d.key} className="health-stale">{d.count} {d.label}</p>)}
         </div>
       ) : null}
     </div>
@@ -191,7 +197,7 @@ function ImageCleanup({ allData }) {
   );
 }
 
-export function HealthCheckPage({ trades, resources, setupErrors, skills, filterPresets, allData, onOpenTrade, onGoToJournal, onUpdateTrades, onResourcesChange }) {
+export function HealthCheckPage({ trades, resources, setupErrors, skills, filterPresets, allData, onOpenTrade, onGoToJournal, onUpdateTrades, onResourcesChange, symbolLists, onChangeSymbolLists }) {
   const h = useMemo(
     () => journalHealth(trades, resources, setupErrors, filterPresets, skills),
     [trades, resources, setupErrors, filterPresets, skills]
@@ -238,7 +244,7 @@ export function HealthCheckPage({ trades, resources, setupErrors, skills, filter
         <CheckRow key={c.id} check={c} trades={trades} onOpenTrade={onOpenTrade} onGoToJournal={onGoToJournal} />
       ))}
 
-      {onUpdateTrades ? <SymbolFix trades={trades} resources={resources} onUpdateTrades={onUpdateTrades} onResourcesChange={onResourcesChange} /> : null}
+      {onUpdateTrades ? <SymbolFix trades={trades} resources={resources} onUpdateTrades={onUpdateTrades} onResourcesChange={onResourcesChange} lists={symbolLists} onChangeLists={onChangeSymbolLists} /> : null}
 
       {h.stale.length ? (
         <div className="health-row health-warn">

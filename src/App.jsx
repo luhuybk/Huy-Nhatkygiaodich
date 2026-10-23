@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
 import { useBackNav } from "./lib/useBackNav.js";
 import { discardActiveDraft } from "./lib/tradeDraft.js";
@@ -331,6 +331,11 @@ function AppShell({ onSignOut, userEmail }) {
   const persistMissedSetups = useCallback(async (next) => { setMissedSetups(next); noteSave("missedSetups", next, await safeSet("missedSetups", next)); }, []);
   const persistSkippedSetups = useCallback(async (next) => { setSkippedSetups(next); noteSave("skippedSetups", next, await safeSet("skippedSetups", next)); }, []);
   const persistSetupVariants = useCallback(async (next) => { setSetupVariants(next); noteSave("setupVariants", next, await safeSet("setupVariants", next)); }, []);
+  // Công cụ "Mã viết chưa chuẩn" (trang Kiểm tra) đổi mã cả ở các danh sách này, không chỉ ở lệnh.
+  const symbolListSavers = useMemo(() => ({ missed: persistMissedSetups, skipped: persistSkippedSetups, variants: persistSetupVariants, lessons: persistLessons }),
+    [persistMissedSetups, persistSkippedSetups, persistSetupVariants, persistLessons]);
+  const symbolLists = useMemo(() => ({ missed: missedSetups, skipped: skippedSetups, variants: setupVariants, lessons }),
+    [missedSetups, skippedSetups, setupVariants, lessons]);
   const persistReminders = useCallback(async (next) => { setReminders(next); noteSave("reminders", next, await safeSet("reminders", next)); }, []);
   const persistCapitalAccounts = useCallback(async (next) => { setCapitalAccounts(next); noteSave("capitalAccounts", next, await safeSet("capitalAccounts", next)); }, []);
   const persistCapitalEntries = useCallback(async (next) => { setCapitalEntries(next); noteSave("capitalEntries", next, await safeSet("capitalEntries", next)); }, []);
@@ -861,6 +866,8 @@ function AppShell({ onSignOut, userEmail }) {
                 <HealthCheckPage trades={trades} resources={resources} setupErrors={setupErrors} skills={skills}
                   filterPresets={filterPresets} allData={allData} onOpenTrade={setViewingTrade}
                   onUpdateTrades={handleUpdateTrades} onResourcesChange={handleResourcesChange}
+                  symbolLists={symbolLists}
+                  onChangeSymbolLists={symbolListSavers}
                   onGoToJournal={(f) => { persistUiSettings({ ...uiSettings, journalFilters: f }); setView("journal"); }} />
               ) :
               view === "principles" ? <PrinciplesSection principles={principles} onChange={persistPrinciples} /> :

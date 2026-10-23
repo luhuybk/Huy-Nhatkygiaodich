@@ -1,6 +1,6 @@
-import { Fragment, useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useMemo, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
-import { cleanFilters, formatVN, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
+import { canonicalSymbol, cleanFilters, formatVN, looksTelexed, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
 export { accountColor };
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
@@ -491,6 +491,29 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
       </div>
       {err ? <span className="error-text">{err}</span> : null}
     </div>
+  );
+}
+
+// Ô Symbol dùng chung cho mọi form ngoài form lệnh (miss, skip, biến thể, bài học): rời ô là tự
+// chuẩn hoá y như ô Symbol của lệnh — "usdchf" → "USD/CHF", gõ Telex thì dịch ngược, mã đã từng
+// dùng thì theo đúng cách viết cũ. Không sửa lúc đang gõ: bộ gõ tiếng Việt còn giữ chữ trong bộ nhớ.
+export function SymbolInput({ value, onChange, known, listId, placeholder = "VD: XAUUSD, HPG..." }) {
+  const knownSet = useMemo(() => new Set((known || []).filter(Boolean).map((x) => String(x).toUpperCase())), [known]);
+  // Gợi ý theo cách viết chuẩn: bản ghi cũ "USDCHF" không được mọc thêm một gợi ý thứ hai cạnh "USD/CHF".
+  const options = useMemo(() => [...new Set([...knownSet].map((x) => canonicalSymbol(x, knownSet)).filter(Boolean))].sort(), [knownSet]);
+  const fix = () => canonicalSymbol(value, knownSet);
+  return (
+    <>
+      <input className="input" list={listId} value={value || ""} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        onBlur={() => { const c = fix(); if (c !== value) onChange(c); }} />
+      {looksTelexed(value) ? (
+        <span className="field-hint telex-note">
+          Bộ gõ tiếng Việt đang bật — rời ô này sẽ tự sửa thành <b className="mono">{fix()}</b>.
+        </span>
+      ) : null}
+      <datalist id={listId}>{options.map((x) => <option key={x} value={x} />)}</datalist>
+    </>
   );
 }
 
