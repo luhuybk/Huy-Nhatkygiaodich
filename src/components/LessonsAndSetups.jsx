@@ -1,13 +1,14 @@
 import { useState, useMemo, Suspense, lazy } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
-import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange } from "lucide-react";
-import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, clickOrDouble } from "./ui.jsx";
+import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange, Printer } from "lucide-react";
+import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, clickOrDouble } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
 import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, looksTelexed, untelexSymbol } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
 const TradingPlanSection = lazy(() => import("./TradingPlans.jsx").then((m) => ({ default: m.TradingPlanSection })));
+const PrintMissSkip = lazy(() => import("./PrintMissSkip.jsx").then((m) => ({ default: m.PrintMissSkip })));
 
 // `showWatch` chỉ bật ở Bị miss / Bị skip. Biến thể không có khái niệm theo dõi, hiện ô lọc
 // đó ở đấy chỉ tổ khiến người dùng tưởng mình quên đánh dấu.
@@ -83,7 +84,7 @@ function GroupByPicker({ value, onChange }) {
 // Miss và Skip có cùng hình dạng dữ liệu nên dùng chung một thẻ. Bảng cũ 10 cột rộng 818px,
 // trên điện thoại phải cuộn ngang gần 480px mới thấy hai cột cuối — mà hai cột cuối lại đúng
 // là "Review" và "Theo dõi", thứ đáng nhìn nhất. Thẻ đưa chúng lên ngay đầu.
-function MissSkipCards({ groups, dateField, mode, onEdit, onRemove }) {
+function MissSkipCards({ groups, dateField, mode, onView, onEdit, onRemove }) {
   const meta = GROUP_MODES.find((m) => m.id === mode) || GROUP_MODES[0];
   const HeadIcon = meta.icon;
   const [open, setOpen] = useState(() => new Set());
@@ -107,11 +108,11 @@ function MissSkipCards({ groups, dateField, mode, onEdit, onRemove }) {
               const shots = lessonAttachments(n).filter((a) => a.image || a.link);
               return (
                 <article key={n.id} className={`var-card ms-card ${watchState(n) === "pending" ? "ms-card-watch" : ""}`}
-                  role="button" tabIndex={0}
-                  onClick={() => onEdit(n)}
+                  role="button" tabIndex={0} title="Bấm để xem ảnh · bút chì để sửa"
+                  onClick={() => onView(n)}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
-                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEdit(n); }
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onView(n); }
                   }}>
                   {shots.length ? (
                     <div className="var-card-shots" onClick={(e) => e.stopPropagation()}>
@@ -165,14 +166,65 @@ function MissSkipCards({ groups, dateField, mode, onEdit, onRemove }) {
   );
 }
 
+// Bấm thẻ thì mở khung xem: ảnh chart thật (link TradingView đổi sang PNG như ở chi tiết lệnh),
+// lý do, ghi chú, review. Trước đây bấm là vào thẳng form sửa, còn ảnh chỉ là biểu tượng phải rê
+// chuột mới hiện — trên điện thoại không rê chuột được nên coi như không xem được ảnh.
+function MissSkipDetail({ item: n, dateField, kindLabel, onEdit, onRemove, onClose }) {
+  const shots = lessonAttachments(n).filter((a) => a && (a.image || a.link))
+    .map((a, i) => ({ key: `${i}|${a.link || ""}|${a.image || ""}`, label: `Ảnh ${i + 1}`, image: a.image, link: a.link }));
+  const dir = REVIEW_DIRECTIONS.find((d) => d.id === n.reviewDirection);
+  return (
+    <FormModal title={`${n.symbol || "—"}${n.timeframe ? ` · ${n.timeframe}` : ""} · ${n[dateField] || "chưa ghi ngày"}`} onClose={onClose}>
+      <div className="ms-detail-tags">
+        <span className="note-type">{kindLabel}</span>
+        {n.setup ? <span className="ms-card-setup">{n.setup}</span> : null}
+        {n.reason ? <span className="note-type">Lý do: {n.reason}</span> : null}
+        {n.watch ? (
+          <span className={`watch-badge ${n.watchDone ? "watch-badge-done" : ""}`}>
+            <Eye size={12} /> {n.watchDone ? "Đã theo dõi" : "Cần theo dõi"}
+          </span>
+        ) : null}
+        {dir ? <span className={`outcome-pill ${dir.tone || ""}`} style={{ fontSize: 11 }}>{dir.label}</span> : null}
+      </div>
+      {shots.length ? <ShotGallery shots={shots} /> : (
+        <p className="empty-note" style={{ padding: "14px 0" }}>Chưa có ảnh — bấm Sửa để dán link TradingView.</p>
+      )}
+      {n.note ? <p className="var-card-note ms-card-note" style={{ marginTop: 12 }}><NoteText text={n.note} /></p> : null}
+      {n.reviewNote || n.reviewDate ? (
+        <p className="var-card-note ms-card-note ms-card-review" style={{ marginTop: 10 }}>
+          <b>Review{n.reviewDate ? ` · ${n.reviewDate}` : ""}:</b> <NoteText text={n.reviewNote || "—"} />
+        </p>
+      ) : null}
+      <div className="form-actions" style={{ marginTop: 14 }}>
+        <DangerConfirmButton label="Xóa" confirmLabel="Bấm lần nữa để xóa" onConfirm={() => { onRemove(n.id); onClose(); }} />
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Đóng</button>
+        <button type="button" className="btn btn-primary" onClick={() => onEdit(n)}><Pencil size={14} /> Sửa</button>
+      </div>
+    </FormModal>
+  );
+}
+
+// Nút In ở đầu mục: in đúng danh sách đang lọc. Trang in nặng (thư viện PDF, ảnh) nên chỉ tải khi bấm.
+function MissSkipPrint({ kind, items, filters, onClose }) {
+  const label = filters.from || filters.to ? `${filters.from || "…"} → ${filters.to || "…"}` : "";
+  return (
+    <Suspense fallback={null}>
+      <PrintMissSkip kind={kind} items={items} label={label} onClose={onClose} />
+    </Suspense>
+  );
+}
+
 export function MissedSetupsSection({ items, resources, onChange }) {
   const [form, setForm] = useState(emptyMissed());
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const [viewId, setViewId] = useState(null);
+  const [printing, setPrinting] = useState(false);
+  const viewing = viewId ? items.find((n) => n.id === viewId) : null;
   const openNew = () => { setForm(emptyMissed()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setViewId(null); setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptyMissed()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
@@ -193,8 +245,17 @@ export function MissedSetupsSection({ items, resources, onChange }) {
     <div>
       <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại những setup bạn nhận ra nhưng không vào lệnh — để sau này xem lại có nên tối ưu quy trình không.</p>
-        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị miss</button>
+        <span className="section-head-actions">
+          <button type="button" className="btn btn-ghost" disabled={!filtered.length} onClick={() => setPrinting(true)}
+            title="In / tải PDF những setup đang hiện (theo bộ lọc)"><Printer size={15} /> In / PDF</button>
+          <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị miss</button>
+        </span>
       </div>
+      {viewing && !modalOpen ? (
+        <MissSkipDetail item={viewing} dateField="missDate" kindLabel="Bị miss"
+          onEdit={openEdit} onRemove={remove} onClose={() => setViewId(null)} />
+      ) : null}
+      {printing ? <MissSkipPrint kind="missed" items={filtered} filters={filters} onClose={() => setPrinting(false)} /> : null}
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal}>
           <div className="grid-3">
@@ -269,7 +330,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
       ) : (
         <>
           <GroupByPicker value={groupBy} onChange={pickGroup} />
-          <MissSkipCards groups={groups} dateField="missDate" mode={groupBy} onEdit={openEdit} onRemove={remove} />
+          <MissSkipCards groups={groups} dateField="missDate" mode={groupBy} onView={(n) => setViewId(n.id)} onEdit={openEdit} onRemove={remove} />
         </>
       )}
     </div>
@@ -282,8 +343,11 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const [viewId, setViewId] = useState(null);
+  const [printing, setPrinting] = useState(false);
+  const viewing = viewId ? items.find((n) => n.id === viewId) : null;
   const openNew = () => { setForm(emptySkipped()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const openEdit = (n) => { setViewId(null); setForm({ ...n, images: lessonAttachments(n).length ? lessonAttachments(n) : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setForm(emptySkipped()); setError(""); };
   const save = () => {
     if (!form.symbol.trim()) { setError("Nhập symbol trước đã."); return; }
@@ -304,8 +368,17 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
     <div>
       <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại những lệnh bạn chủ động bỏ qua (skip) dù đã cân nhắc — kèm review sau vài ngày để xem hướng lệnh diễn biến ra sao, giúp đánh giá quyết định skip có đúng không.</p>
-        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị skip</button>
+        <span className="section-head-actions">
+          <button type="button" className="btn btn-ghost" disabled={!filtered.length} onClick={() => setPrinting(true)}
+            title="In / tải PDF những setup đang hiện (theo bộ lọc)"><Printer size={15} /> In / PDF</button>
+          <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm setup bị skip</button>
+        </span>
       </div>
+      {viewing && !modalOpen ? (
+        <MissSkipDetail item={viewing} dateField="skipDate" kindLabel="Bị skip"
+          onEdit={openEdit} onRemove={remove} onClose={() => setViewId(null)} />
+      ) : null}
+      {printing ? <MissSkipPrint kind="skipped" items={filtered} filters={filters} onClose={() => setPrinting(false)} /> : null}
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal}>
           <div className="grid-3">
@@ -380,7 +453,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
       ) : (
         <>
           <GroupByPicker value={groupBy} onChange={pickGroup} />
-          <MissSkipCards groups={groups} dateField="skipDate" mode={groupBy} onEdit={openEdit} onRemove={remove} />
+          <MissSkipCards groups={groups} dateField="skipDate" mode={groupBy} onView={(n) => setViewId(n.id)} onEdit={openEdit} onRemove={remove} />
         </>
       )}
     </div>

@@ -466,7 +466,7 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
                 {linkPreviewFailed ? (
                   <p className="link-preview-fallback">Không xem trước được ảnh này (trang có thể chặn nhúng ảnh) — bấm để mở link gốc.</p>
                 ) : (
-                  <img src={link} alt={label} onError={() => setLinkPreviewFailed(true)} />
+                  <img src={imageFromLink(link) || link} alt={label} onError={() => setLinkPreviewFailed(true)} />
                 )}
               </div>
             ) : null}

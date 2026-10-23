@@ -2241,3 +2241,9 @@ button.nt-check:hover { filter: brightness(1.25); }
 @media (max-width: 640px) {
   .completion-bar-sticky::before { left: -16px; right: -16px; }
 }
+
+/* Setup miss / skip: nút In cạnh nút Thêm, khung xem chi tiết có ảnh. */
+.section-head-actions { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.section-head-actions .btn { white-space: nowrap; }
+@media (max-width: 720px) { .section-head-actions .btn { flex: 1; justify-content: center; } }
+.ms-detail-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
