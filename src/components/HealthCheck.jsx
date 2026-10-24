@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Filter, HardDrive, ShieldCheck, Stethoscope,
 import { DangerConfirmButton, StatCard } from "./ui.jsx";
 import { dateKey, journalHealth, symbolFixLists, symbolFixPlan } from "../lib/helpers.js";
 import { collectImagePaths, listStoredImages, deleteStoredImages } from "../lib/storage.js";
+import { buildLinkIndex, linkDuplicates } from "../lib/linkIndex.js";
 
 const MAX_LISTED = 60;
 
@@ -94,6 +95,44 @@ function SymbolFix({ trades, resources, onUpdateTrades, onResourcesChange, lists
             <p key={`${g.from}→${g.to}`} className="health-stale mono">{g.from} → <b>{g.to}</b> · {g.ids.length} lệnh</p>
           ))}
           {others.map((d) => <p key={d.key} className="health-stale">{d.count} {d.label}</p>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Link ảnh dán trùng giữa các lệnh / setup — thường là dán nhầm. Chỉ liệt kê, không tự sửa: chỉ người
+// dùng biết chỗ nào đúng. Chỗ nào là lệnh thì bấm để mở lệnh đó ra sửa.
+function LinkDupCheck({ allData, trades, onOpenTrade }) {
+  const groups = useMemo(() => linkDuplicates(buildLinkIndex(allData)), [allData.trades, allData.missedSetups, allData.skippedSetups, allData.setupVariants, allData.lessons, allData.problemLogs, allData.newsLogs, allData.setupLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [open, setOpen] = useState(false);
+  const byId = useMemo(() => new Map((trades || []).map((t) => [t.id, t])), [trades]);
+  if (!groups.length) return null;
+  return (
+    <div className="health-row health-warn">
+      <div className="health-head" onClick={() => setOpen((v) => !v)}>
+        {open ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
+        <span className="health-label">Link ảnh dán trùng ở nhiều chỗ</span>
+        <span className="health-count health-count-warn">{groups.length}</span>
+      </div>
+      <p className="health-hint">
+        Cùng một link TradingView nằm ở hai chỗ thường là dán nhầm — VD ảnh thoát lệnh lại là ảnh vào lệnh, hay ảnh của
+        lệnh khác. Bấm vào lệnh để mở ra sửa. Bài học dùng lại ảnh của chính lệnh nó gắn vào thì không tính.
+      </p>
+      {open ? (
+        <div className="health-list">
+          {groups.slice(0, MAX_LISTED).map((g) => (
+            <div key={g.key} className="health-dup">
+              <a className="health-dup-link mono" href={g.link} target="_blank" rel="noopener noreferrer">{g.link}</a>
+              {g.entries.map((e) => {
+                const t = e.tradeId ? byId.get(e.tradeId) : null;
+                const text = <><b>{e.place}</b> · {e.part}</>;
+                return t && onOpenTrade ? (
+                  <button key={`${e.owner}|${e.part}`} type="button" className="health-trade" onClick={() => onOpenTrade(t)}>{text}</button>
+                ) : <p key={`${e.owner}|${e.part}`} className="health-stale">{text}</p>;
+              })}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
@@ -245,6 +284,8 @@ export function HealthCheckPage({ trades, resources, setupErrors, skills, filter
       ))}
 
       {onUpdateTrades ? <SymbolFix trades={trades} resources={resources} onUpdateTrades={onUpdateTrades} onResourcesChange={onResourcesChange} lists={symbolLists} onChangeLists={onChangeSymbolLists} /> : null}
+
+      <LinkDupCheck allData={allData} trades={trades} onOpenTrade={onOpenTrade} />
 
       {h.stale.length ? (
         <div className="health-row health-warn">

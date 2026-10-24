@@ -1,9 +1,10 @@
-import { Fragment, useState, useEffect, useMemo, useRef } from "react";
+import { Fragment, createContext, useCallback, useContext, useId, useState, useEffect, useMemo, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
 import { canonicalSymbol, cleanFilters, formatVN, looksTelexed, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
 export { accountColor };
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
+import { linkKey, linkUsedElsewhere } from "../lib/linkIndex.js";
 import { isRuleLine, parseItem } from "../lib/listContinue.js";
 
 // State sống qua lúc component bị gỡ (rời trang sang form sửa lệnh rồi quay lại) nhưng mất khi
@@ -427,7 +428,59 @@ export function MoneyInput({ value, onChange, placeholder, className }) {
   );
 }
 
+// Báo link ảnh dán trùng. App cấp chỉ mục mọi link đã lưu (LinkIndexProvider); mỗi form bọc trong
+// LinkScope để (1) không tự báo trùng với chính bản ghi đang sửa và (2) bắt được hai ô trong cùng
+// form dán cùng một link — VD ảnh vào lệnh dán luôn vào ô thoát lệnh — ngay cả khi chưa lưu.
+const LinkIndexContext = createContext(null);
+export const LinkIndexProvider = LinkIndexContext.Provider;
+const LinkScopeContext = createContext(null);
+export function LinkScope({ owner, children }) {
+  const slots = useRef(new Map());
+  const [ver, setVer] = useState(0);
+  const set = useCallback((id, key) => {
+    const m = slots.current;
+    if ((m.get(id) || "") === key) return;
+    if (key) m.set(id, key); else m.delete(id);
+    setVer((v) => v + 1);
+  }, []);
+  const owners = Array.isArray(owner) ? owner.join("|") : owner || "";
+  const value = useMemo(() => ({ owners: owners.split("|").filter(Boolean), slots: slots.current, set, ver }), [owners, set, ver]);
+  return <LinkScopeContext.Provider value={value}>{children}</LinkScopeContext.Provider>;
+}
+function useLinkDup(link) {
+  const index = useContext(LinkIndexContext);
+  const scope = useContext(LinkScopeContext);
+  const id = useId();
+  const key = linkKey(link);
+  const set = scope ? scope.set : null;
+  useEffect(() => { if (set) set(id, key); }, [set, id, key]);
+  useEffect(() => () => { if (set) set(id, ""); }, [set, id]);
+  if (!key) return null;
+  const inForm = scope ? [...scope.slots.entries()].some(([k, v]) => k !== id && v === key) : false;
+  // Không có LinkScope thì không biết bản ghi nào đang sửa — báo trùng lúc đó dễ báo nhầm với chính nó.
+  const others = scope ? linkUsedElsewhere(index, key, scope.owners) : [];
+  return inForm || others.length ? { inForm, others } : null;
+}
+const MAX_DUP_SHOWN = 2;
+function LinkDupNote({ dup }) {
+  const shown = dup.others.slice(0, MAX_DUP_SHOWN);
+  const more = dup.others.length - shown.length;
+  return (
+    <span className="imglink-dup">
+      <AlertCircle size={13} />
+      <span>
+        {dup.inForm ? <b>Trùng với một ô ảnh khác ngay trong form này. </b> : null}
+        {shown.length ? (
+          <>Link này đã có ở {shown.map((e, i) => <Fragment key={`${e.owner}|${e.part}`}>{i ? ", " : ""}<b>{e.place}</b> ({e.part})</Fragment>)}{more ? ` và ${more} chỗ khác` : ""}. </>
+        ) : null}
+        Kiểm tra lại nếu không cố ý.
+      </span>
+    </span>
+  );
+}
+
 export function ImageOrLink({ link, image, onLinkChange, onImageChange, label }) {
+  const dup = useLinkDup(link);
   const [err, setErr] = useState("");
   const [linkPreviewFailed, setLinkPreviewFailed] = useState(false);
   const [hoverPreview, setHoverPreview] = useState(false);
@@ -489,6 +542,7 @@ export function ImageOrLink({ link, image, onLinkChange, onImageChange, label })
           </div>
         ) : null}
       </div>
+      {dup ? <LinkDupNote dup={dup} /> : null}
       {err ? <span className="error-text">{err}</span> : null}
     </div>
   );
@@ -812,7 +866,8 @@ export function useAutoFocus(ref) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-export function FormModal({ title, onClose, children }) {
+// `linkOwner`: bản ghi form đang sửa (VD "missed:<id>") — để ô dán link không báo trùng với chính nó.
+export function FormModal({ title, onClose, children, linkOwner }) {
   const bodyRef = useRef(null);
   useAutoFocus(bodyRef);
   return (
@@ -822,7 +877,7 @@ export function FormModal({ title, onClose, children }) {
           <h3 style={{ margin: 0 }}>{title}</h3>
           <button type="button" className="row-btn" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="modal-body" ref={bodyRef}>{children}</div>
+        <div className="modal-body" ref={bodyRef}>{linkOwner ? <LinkScope owner={linkOwner}>{children}</LinkScope> : children}</div>
       </div>
     </div>
   );

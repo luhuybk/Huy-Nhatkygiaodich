@@ -24,6 +24,15 @@ let schedule = () => {};
 
 const okValue = (v, allowed) => v !== undefined && v !== null && (!allowed || allowed.includes(v));
 
+// Nhảy thẳng tới một tab con (ô Tìm nhanh): trang đang mở thì đổi tab ngay; chưa mở thì ghi sẵn để
+// trang mở ra là đúng tab đó.
+export function openNavTab(key, value) {
+  const t = tabs.get(key);
+  if (t) { userTabChange = true; t.set(value); return; }
+  memory.set(key, value);
+  writeLocalUi(key, value);
+}
+
 // Thay cho useState / useStickyTab của tab con. sticky: nhớ qua lần tải trang (localStorage, như
 // useStickyTab); allowed: danh sách giá trị hợp lệ (giá trị cũ không còn hợp lệ thì về mặc định).
 export function useNavTab(key, fallback, opts = {}) {

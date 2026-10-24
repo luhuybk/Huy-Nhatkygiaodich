@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
-import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, focusFirstField } from "./ui.jsx";
+import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
@@ -658,6 +658,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
 
   return (
     <div className="trade-form-layout">
+      {/* Ô dán link báo khi link đã nằm ở lệnh / setup khác, hoặc hai ô trong lệnh này dán cùng một link. */}
+      <LinkScope owner={`trade:${t.id}`}>
       <div className="trade-form">
       {pendingDraft ? (
         <div className="draft-banner">
@@ -1069,6 +1071,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       </div>
       <FormBottomBar trade={t} sections={sections} onSave={submit} />
       </div>
+      </LinkScope>
       <FormToc trade={t} sections={sections} />
     </div>
   );

@@ -261,7 +261,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
       ) : null}
       {printing ? <MissSkipPrint kind="missed" items={filtered} filters={filters} onClose={() => setPrinting(false)} /> : null}
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa setup bị miss" : "Thêm setup bị miss"} onClose={closeModal} linkOwner={`missed:${form.id || "new"}`}>
           <div className="grid-3">
             <Field label="Symbol">
               <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-miss" />
@@ -384,7 +384,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
       ) : null}
       {printing ? <MissSkipPrint kind="skipped" items={filtered} filters={filters} onClose={() => setPrinting(false)} /> : null}
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa setup bị skip" : "Thêm setup bị skip"} onClose={closeModal} linkOwner={`skipped:${form.id || "new"}`}>
           <div className="grid-3">
             <Field label="Symbol">
               <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-skip" />
@@ -507,7 +507,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm biến thể</button>
       </div>
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa setup biến thể" : "Thêm setup biến thể"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa setup biến thể" : "Thêm setup biến thể"} onClose={closeModal} linkOwner={`variant:${form.id || "new"}`}>
           <div className="grid-3">
             <Field label="Symbol">
               <SymbolInput value={form.symbol} onChange={setF("symbol")} known={knownSymbols} listId="symbol-suggestions-variant" />
@@ -763,7 +763,8 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm bài học</button>
       </div>
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa bài học" : "Thêm bài học"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa bài học" : "Thêm bài học"} onClose={closeModal}
+          linkOwner={[`lesson:${form.id || "new"}`, form.tradeId ? `trade:${form.tradeId}` : ""]}>
           <div className="grid-2">
             <Field label="Ngày">
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
@@ -956,7 +957,7 @@ export function ProblemLogSection({ items, onChange }) {
       </div>
       <ProblemLogFilterPanel filters={filters} setFilters={setFilters} />
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal} linkOwner={`problem:${form.id || "new"}`}>
           <Field label="Ngày">
             <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
           </Field>
@@ -1073,7 +1074,8 @@ export function SetupLibrarySection({ items, onChange }) {
       {variantForm ? (
         // key riêng cho từng hộp: ba hộp nằm cùng một chỗ, không có key thì React dùng lại hộp đang
         // mở (VD đang xem setup → bấm Thêm biến thể) và con trỏ không tự vào ô Tên.
-        <FormModal key="variant" title={variantForm.index === -1 ? "Thêm biến thể" : "Sửa biến thể"} onClose={closeVariantModal}>
+        <FormModal key="variant" title={variantForm.index === -1 ? "Thêm biến thể" : "Sửa biến thể"} onClose={closeVariantModal}
+          linkOwner={`setuplib:${variantForm.parentId}:${variantForm.data.id || (variantForm.index === -1 ? "new" : variantForm.index)}`}>
           <Field label="Tên biến thể" required>
             <input className="input" value={variantForm.data.name} onChange={(e) => setVariantField("name")(e.target.value)} placeholder="VD: RB - A" />
           </Field>
@@ -1094,7 +1096,7 @@ export function SetupLibrarySection({ items, onChange }) {
           </div>
         </FormModal>
       ) : form ? (
-        <FormModal key="main" title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeMainModal}>
+        <FormModal key="main" title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeMainModal} linkOwner={`setuplib:${form.id || "new"}`}>
           <Field label="Tên Setup" required>
             <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: RB - Range Breakout" />
           </Field>
@@ -1245,7 +1247,7 @@ export function NewsLogSection({ items, onChange }) {
       </div>
       <NewsLogFilterPanel filters={filters} setFilters={setFilters} />
       {modalOpen ? (
-        <FormModal title={form.id ? "Sửa tin tức" : "Ghi nhận tin tức mới"} onClose={closeModal}>
+        <FormModal title={form.id ? "Sửa tin tức" : "Ghi nhận tin tức mới"} onClose={closeModal} linkOwner={`news:${form.id || "new"}`}>
           <div className="grid-2">
             <Field label="Ngày">
               <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />

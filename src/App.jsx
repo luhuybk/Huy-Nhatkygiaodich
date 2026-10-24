@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
-import { useBackNav } from "./lib/useBackNav.js";
+import { openNavTab, useBackNav } from "./lib/useBackNav.js";
+import { QuickJump } from "./components/QuickJump.jsx";
 import { discardActiveDraft } from "./lib/tradeDraft.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
   Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown, Scale,
-  NotebookPen, Globe2,
+  NotebookPen, Globe2, Search,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
@@ -15,7 +16,8 @@ import {
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
   shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor } from "./lib/helpers.js";
 import { ReminderBell } from "./components/ReminderBell.jsx";
-import { SloganBar, useStickyTab } from "./components/ui.jsx";
+import { LinkIndexProvider, SloganBar, useStickyTab } from "./components/ui.jsx";
+import { buildLinkIndex } from "./lib/linkIndex.js";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
 import { normalizeJourneyLog } from "./lib/journeyLog.js";
 import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
@@ -104,6 +106,7 @@ function LazyFallback() {
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
 const NEW_TRADE_KEY = IS_MAC ? "⌘E" : "Ctrl+E";
 const NEW_TRADE_KEY_ALT = IS_MAC ? "⌘K" : "Ctrl+K";
+const QUICK_JUMP_KEY = IS_MAC ? "⌘J" : "Ctrl+J";
 
 function AppShell({ onSignOut, userEmail }) {
   const [loading, setLoading] = useState(true);
@@ -569,6 +572,33 @@ function AppShell({ onSignOut, userEmail }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Ô nhảy nhanh: phím / (khi không gõ trong ô nào) hoặc ⌘J / Ctrl+J ở mọi nơi.
+  const [quickOpen, setQuickOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.isComposing || e.repeat) return;
+      const el = e.target;
+      const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      const cmdJ = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (String(e.key).toLowerCase() === "j" || e.code === "KeyJ");
+      const slash = e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing;
+      if (!cmdJ && !slash) return;
+      e.preventDefault();
+      setQuickOpen((v) => (cmdJ ? !v : true));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const quickGo = (key, tab) => {
+    setViewingTrade(null);
+    if (tab) openNavTab(tab[0], tab[1]);
+    goTo(key);
+  };
+  const quickFilterSymbol = (sym) => {
+    setViewingTrade(null);
+    persistUiSettings({ ...uiSettings, journalFilters: { q: sym } });
+    goTo("journal");
+  };
+
   // Sửa nhiều lệnh cùng lúc (điền phí sàn hàng loạt): gọi handleSaveTrade nhiều lần sẽ chỉ
   // giữ lại lần cuối, vì lần nào cũng dựng danh sách mới từ cùng một `trades` cũ.
   const handleUpdateTrades = (list) => {
@@ -708,6 +738,11 @@ function AppShell({ onSignOut, userEmail }) {
 
   const palette = THEME_PRESETS[uiSettings.mode] || THEME_PRESETS.dark;
   const accentHex = ACCENT_PRESETS[uiSettings.accent] || ACCENT_PRESETS.gold;
+  // Thanh trạng thái của điện thoại (khi cài app lên màn hình chính) theo màu nền giao diện sáng / tối.
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", palette.bg);
+  }, [palette.bg]);
   // Mọi kho dữ liệu có thể chứa đường dẫn ảnh. Quét ảnh mồ côi đi sâu toàn bộ object này, nên
   // thiếu MỘT kho ở đây là ảnh đang dùng bị coi là mồ côi — thêm state mới thì thêm cả vào đây.
   const allData = {
@@ -721,6 +756,12 @@ function AppShell({ onSignOut, userEmail }) {
     backups,
   };
 
+  // Mọi link ảnh đã lưu — ô dán link trong form dò ở đây để báo dán trùng.
+  const linkIndex = useMemo(
+    () => buildLinkIndex({ trades, missedSetups, skippedSetups, setupVariants, lessons, problemLogs, newsLogs, setupLibrary }),
+    [trades, missedSetups, skippedSetups, setupVariants, lessons, problemLogs, newsLogs, setupLibrary]
+  );
+
   const cssVars = {
     "--bg": palette.bg, "--surface": palette.surface, "--surface-2": palette.surface2, "--border": palette.border,
     "--text": palette.text, "--text-dim": palette.textDim, "--win": palette.win, "--loss": palette.loss,
@@ -733,6 +774,7 @@ function AppShell({ onSignOut, userEmail }) {
   };
 
   return (
+    <LinkIndexProvider value={linkIndex}>
     <div className="app" style={cssVars}>
       <SloganBar slogan={uiSettings.journeySlogan} onChange={(next) => persistUiSettings({ ...uiSettings, journeySlogan: next })} onNavigate={() => goTo("principles")} />
       <div className="app-shell">
@@ -781,6 +823,9 @@ function AppShell({ onSignOut, userEmail }) {
               <Menu size={18} />
             </button>
             <span className="mobile-brand-name">Nhật Ký Giao Dịch</span>
+            <button type="button" className="quick-jump-btn" onClick={() => setQuickOpen(true)} title={`Tìm nhanh trang hoặc mã (/ hoặc ${QUICK_JUMP_KEY})`}>
+              <Search size={15} /> <span className="quick-jump-text">Tìm nhanh</span> <kbd className="kbd-hint">/</kbd>
+            </button>
             <div className="open-risk-row">
               {openRiskBadges.length === 0 ? (
                 <span className="field-hint">Không có lệnh đang mở</span>
@@ -923,7 +968,13 @@ function AppShell({ onSignOut, userEmail }) {
           />
         </Suspense>
       ) : null}
+      {quickOpen ? (
+        <QuickJump navGroups={NAV_GROUPS} trades={trades} newTradeKey={NEW_TRADE_KEY} onClose={() => setQuickOpen(false)}
+          onGo={quickGo} onOpenTrade={(t) => { setMobileNavOpen(false); setViewingTrade(t); }} onFilterSymbol={quickFilterSymbol}
+          onNewTrade={() => newTradeRef.current()} />
+      ) : null}
     </div>
+    </LinkIndexProvider>
   );
 }
 
