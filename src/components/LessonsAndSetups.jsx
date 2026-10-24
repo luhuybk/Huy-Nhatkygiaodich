@@ -1071,7 +1071,9 @@ export function SetupLibrarySection({ items, onChange }) {
       </div>
 
       {variantForm ? (
-        <FormModal title={variantForm.index === -1 ? "Thêm biến thể" : "Sửa biến thể"} onClose={closeVariantModal}>
+        // key riêng cho từng hộp: ba hộp nằm cùng một chỗ, không có key thì React dùng lại hộp đang
+        // mở (VD đang xem setup → bấm Thêm biến thể) và con trỏ không tự vào ô Tên.
+        <FormModal key="variant" title={variantForm.index === -1 ? "Thêm biến thể" : "Sửa biến thể"} onClose={closeVariantModal}>
           <Field label="Tên biến thể" required>
             <input className="input" value={variantForm.data.name} onChange={(e) => setVariantField("name")(e.target.value)} placeholder="VD: RB - A" />
           </Field>
@@ -1092,7 +1094,7 @@ export function SetupLibrarySection({ items, onChange }) {
           </div>
         </FormModal>
       ) : form ? (
-        <FormModal title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeMainModal}>
+        <FormModal key="main" title={form.id ? "Sửa setup" : "Thêm setup mới"} onClose={closeMainModal}>
           <Field label="Tên Setup" required>
             <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: RB - Range Breakout" />
           </Field>
@@ -1112,7 +1114,7 @@ export function SetupLibrarySection({ items, onChange }) {
           </div>
         </FormModal>
       ) : viewing ? (
-        <FormModal title={viewing.name} onClose={() => setViewingId(null)}>
+        <FormModal key="view" title={viewing.name} onClose={() => setViewingId(null)}>
           <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
             {viewing.image || viewing.link ? (
               <a href={viewing.image || viewing.link} target="_blank" rel="noopener noreferrer">

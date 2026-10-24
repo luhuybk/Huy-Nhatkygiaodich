@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { ResourceListEditor } from "./Resources.jsx";
