@@ -432,7 +432,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
 
   return (
     <div className="account-form">
-      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu Exness</h3>
+      <h3 className="block-title" style={{ marginTop: 0 }}>Đối chiếu file sàn</h3>
       <p className="field-hint">
         Sàn cho xuất lịch sử giao dịch ra CSV theo khoảng thời gian. Thả vào đây cả loạt file của
         nhiều tài khoản một lượt để soi xem có lệnh nào đã đánh mà quên ghi nhật ký không — sàn là
@@ -441,7 +441,7 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
       </p>
 
       <Field label="File CSV từ sàn"
-        hint="Chọn được nhiều file cùng lúc. Tài khoản của từng file được đoán theo symbol đã từng đánh — sai thì chọn lại ở thẻ bên dưới.">
+        hint="Chọn được nhiều file cùng lúc. Tài khoản của từng file được đoán theo symbol đã từng đánh — sai thì chọn lại ở thẻ bên dưới. Đọc được file Exness xuất ra, và file tự làm (VD ThinkMarkets) có cột Symbol, Huong (Mua/Ban), Ngay mo, Ngay dong, Loi/Lo — ghi “(gio VN)” trong tên cột nếu giờ là giờ Việt Nam.">
         <input ref={fileRef} type="file" accept=".csv,text/csv" multiple className="input"
           onChange={(e) => addFiles(e.target.files)} />
       </Field>

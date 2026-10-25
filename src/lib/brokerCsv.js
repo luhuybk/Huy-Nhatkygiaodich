@@ -38,24 +38,43 @@ export function parseCsv(text) {
 }
 
 // Mỗi sàn đặt tên cột một kiểu — nhận theo nhiều tên để khỏi phải sửa code mỗi lần đổi sàn.
+// Tên tiếng Việt (có dấu hay không dấu đều được) là cho file tự làm: ThinkMarkets không cho tải
+// lịch sử, nên file là bảng chép tay / nhờ AI chép lại, cột kiểu "Ngay mo (gio VN)", "Huong".
 const FIELD_ALIASES = {
-  ticket: ["ticket", "order", "deal", "position", "position_id", "id"],
-  openAt: ["opening_time_utc", "opening_time", "open_time", "time", "open"],
-  closeAt: ["closing_time_utc", "closing_time", "close_time", "close"],
-  type: ["type", "side", "direction"],
-  lots: ["lots", "volume", "size"],
+  ticket: ["ticket", "order", "deal", "position", "position_id", "id", "ma_lenh", "so_lenh", "so_ve"],
+  openAt: ["opening_time_utc", "opening_time", "open_time", "time", "open", "ngay_mo", "gio_mo", "thoi_gian_mo", "ngay_vao", "gio_vao"],
+  closeAt: ["closing_time_utc", "closing_time", "close_time", "close", "ngay_dong", "gio_dong", "thoi_gian_dong", "ngay_ra"],
+  type: ["type", "side", "direction", "huong", "chieu", "loai_lenh"],
+  lots: ["lots", "volume", "size", "so_luong", "khoi_luong", "lot"],
   originalSize: ["original_position_size", "original_size", "position_size", "original_volume"],
-  symbol: ["symbol", "instrument", "pair"],
-  openPrice: ["opening_price", "open_price", "price_open"],
-  closePrice: ["closing_price", "close_price", "price_close"],
-  commission: ["commission", "commissions", "fee"],
-  swap: ["swap", "swaps", "rollover"],
-  profit: ["profit", "pnl", "net_profit", "result"],
-  closeReason: ["close_reason", "reason", "comment"],
+  symbol: ["symbol", "instrument", "pair", "ma_giao_dich", "san_pham"],
+  openPrice: ["opening_price", "open_price", "price_open", "gia_mo", "gia_vao"],
+  closePrice: ["closing_price", "close_price", "price_close", "gia_dong", "gia_ra"],
+  commission: ["commission", "commissions", "fee", "phi", "hoa_hong", "phi_giao_dich"],
+  swap: ["swap", "swaps", "rollover", "phi_qua_dem", "qua_dem"],
+  profit: ["profit", "pnl", "net_profit", "result", "loi_lo", "loi_lo_rong", "lai_lo", "lai_lo_rong", "ket_qua"],
+  closeReason: ["close_reason", "reason", "comment", "ly_do_dong"],
 };
 
+// "Ngày mở (giờ VN)" → "ngay_mo": bỏ dấu, bỏ phần trong ngoặc, còn lại nối bằng "_".
+function normHeader(h) {
+  return String(h || "").trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+    .replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+// Múi giờ của cột thời gian, đọc từ chính tên cột: Exness ghi UTC; file tự làm thường ghi giờ
+// Việt Nam ("gio VN", "UTC+7"). Không nói gì thì coi là UTC như trước.
+function headerOffset(h) {
+  const s = String(h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/gio\s*vn|\bvn\b|viet\s*nam|ict\b/.test(s)) return "+07:00";
+  const m = /(?:utc|gmt)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?/.exec(s);
+  if (m) return `${m[1]}${m[2].padStart(2, "0")}:${m[3] || "00"}`;
+  return "Z";
+}
+
 function headerIndex(headers) {
-  const norm = headers.map((h) => String(h || "").trim().toLowerCase().replace(/\s+/g, "_"));
+  const norm = headers.map(normHeader);
   const idx = {};
   Object.entries(FIELD_ALIASES).forEach(([field, names]) => {
     const at = norm.findIndex((h) => names.includes(h));
@@ -66,8 +85,9 @@ function headerIndex(headers) {
 
 function num(v) {
   if (v === "" || v === null || v === undefined) return null;
-  // "1 234,56" (định dạng châu Âu) và "1,234.56" đều phải ra cùng một số.
-  const s = String(v).trim().replace(/\s/g, "");
+  // "1 234,56" (định dạng châu Âu) và "1,234.56" đều phải ra cùng một số. Chữ kèm theo số
+  // ("-4.94 (tam tinh)", "$12.5") bỏ đi.
+  const s = String(v).replace(/\(.*?\)/g, "").replace(/[^0-9.,+-]/g, "");
   const normalized = s.includes(",") && !s.includes(".") ? s.replace(",", ".") : s.replace(/,/g, "");
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
@@ -77,12 +97,20 @@ function pad(n) { return String(n).padStart(2, "0"); }
 
 // Sàn ghi giờ UTC còn nhật ký ghi giờ máy bạn — lệch 7 tiếng là đủ để một lệnh mở 23h
 // (giờ VN) bị tính sang hôm trước, nên phải quy đổi trước khi so ngày.
-function parseUtc(v) {
+function parseUtc(v, offset = "Z") {
   const s = String(v || "").trim();
   if (!s) return null;
   const iso = s.includes("T") ? s : s.replace(" ", "T");
-  const d = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+  const d = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}${offset}`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Hướng lệnh về đúng hai giá trị app dùng: "Mua" / "Long" là buy, "Bán" / "Short" là sell.
+function normType(v) {
+  const s = String(v || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/^(buy|mua|long)/.test(s)) return "buy";
+  if (/^(sell|ban|short)/.test(s)) return "sell";
+  return s;
 }
 
 export function localDate(d) {
@@ -146,9 +174,11 @@ export function parseBrokerCsv(text) {
     return { rows: [], error: "Không tìm thấy cột thời gian mở lệnh và tên symbol — file này có đúng là CSV sàn xuất ra không?" };
   }
   const get = (r, f) => (idx[f] === undefined ? "" : r[idx[f]]);
+  const openOffset = headerOffset(rows[0][idx.openAt]);
+  const closeOffset = idx.closeAt === undefined ? openOffset : headerOffset(rows[0][idx.closeAt]);
   const out = [];
   rows.slice(1).forEach((r, i) => {
-    const openAt = parseUtc(get(r, "openAt"));
+    const openAt = parseUtc(get(r, "openAt"), openOffset);
     const symbol = String(get(r, "symbol") || "").trim();
     if (!openAt || !symbol) return;
     const profit = num(get(r, "profit"));
@@ -160,8 +190,8 @@ export function parseBrokerCsv(text) {
       key: `${get(r, "ticket") || "row"}#${i}`,
       ticket: String(get(r, "ticket") || "").trim(),
       openAt,
-      closeAt: parseUtc(get(r, "closeAt")),
-      type: String(get(r, "type") || "").trim().toLowerCase(),
+      closeAt: parseUtc(get(r, "closeAt"), closeOffset),
+      type: normType(get(r, "type")),
       lots: num(get(r, "lots")),
       // Khối lượng ban đầu của vị thế. Nhỏ hơn lots nghĩa là dòng này chỉ đóng một phần —
       // JNJ đóng 0.41/0.83 lot là chốt bớt 49%, lệnh vẫn còn chạy chứ chưa hề kết thúc.
