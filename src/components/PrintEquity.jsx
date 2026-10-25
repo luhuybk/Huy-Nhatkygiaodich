@@ -232,7 +232,7 @@ export function EquityPage({ title, from, to, monthly, trades, resources, ledger
                   {x.list.length ? x.list.map((y, i) => (
                     <span key={y.t.id} className="print-day-trade">
                       {i ? " · " : ""}<i style={{ background: accountColor(y.t.account, accounts) }} />
-                      <b>{y.t.symbol || "—"}</b> {y.t.direction === "sell" ? "S" : "B"} {y.r.rr !== null && Number.isFinite(y.r.rr) ? fmtR(y.r.rr) : "chưa có R"}
+                      <b>{y.t.symbol || "—"}</b> ({y.t.direction === "sell" ? "S" : "B"} {y.r.rr !== null && Number.isFinite(y.r.rr) ? fmtR(y.r.rr) : "chưa có R"})
                     </span>
                   )) : <span className="print-dim">không đóng lệnh nào</span>}
                 </td>
