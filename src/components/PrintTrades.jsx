@@ -10,6 +10,7 @@ import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "..
 import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
 import { NoteText } from "./ui.jsx";
 import { exportPdf } from "../lib/exportPdf.js";
+import { EquityPage } from "./PrintEquity.jsx";
 
 const ACTION_LABEL = { up: "▲ tăng", down: "▼ hạ", same: "= giữ", none: "—" };
 
@@ -431,8 +432,10 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
 
 // Trang xem trước bản in, phủ toàn màn hình. Bấm In là gọi hộp thoại in của trình duyệt —
 // chọn máy Canon ở đó; khổ A4 ngang và lề đã đặt sẵn bằng @page.
-export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
+export function PrintTrades({ trades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
   const [book, setBook] = useState("closed");
+  // Trang đường cong vốn chỉ có nghĩa với tổng kết theo kỳ, không với Sổ nhìn lại / Sổ lỗi.
+  const [withEquity, setWithEquity] = useState(true);
   const [allMarked, setAllMarked] = useState(false);
   const [withCover, setWithCover] = useState(true);
   const [withDetail, setWithDetail] = useState(true);
@@ -465,7 +468,8 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
   const toggle = (id) => setSkip((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
   const title = book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`;
-  const pages = list.reduce((n, t) => n + 2 + (withDetail ? 1 : 0) + mistakeShots(t).length, 0) + (withCover ? 1 : 0);
+  const equityOn = book === "closed" && withEquity;
+  const pages = list.reduce((n, t) => n + 2 + (withDetail ? 1 : 0) + mistakeShots(t).length, 0) + (withCover ? 1 : 0) + (equityOn ? 1 : 0);
   const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
   const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}.pdf`;
   const download = async () => {
@@ -496,6 +500,11 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
           ) : null}
           {book === "errors" ? (
             <label className="print-opt"><input type="checkbox" checked={withMistakeShots} onChange={(e) => setWithMistakeShots(e.target.checked)} /> Kèm ảnh lỗi</label>
+          ) : null}
+          {book === "closed" ? (
+            <label className="print-opt" title="Trang đầu: R cộng dồn theo ngày, đường cong vốn từng tài khoản, diễn biến từng ngày">
+              <input type="checkbox" checked={withEquity} onChange={(e) => setWithEquity(e.target.checked)} /> Kèm trang đường cong vốn
+            </label>
           ) : null}
           <label className="print-opt"><input type="checkbox" checked={withCover} onChange={(e) => setWithCover(e.target.checked)} /> Kèm trang tổng kết</label>
           <label className="print-opt" title="Mỗi lệnh thêm một tờ ghi đủ số liệu và ghi chú, đứng trước hai tờ ảnh">
@@ -534,6 +543,9 @@ export function PrintTrades({ trades, resources, capitalPlan, journeyLog, setupE
         </p>
       </div>
       <div className="print-pages" ref={pagesRef}>
+        {equityOn ? (
+          <EquityPage title={`ĐƯỜNG CONG VỐN ${noun}`} from={from} to={to} monthly={mode === "month"} trades={trades} resources={resources} ledger={ledger} />
+        ) : null}
         {withCover ? (
           <Cover title={title} from={from} to={to} list={list} trades={trades} resources={resources}
             capitalPlan={capitalPlan} journeyLog={journeyLog} book={book} allMarked={allMarked} weekly={mode !== "month"} errors={setupErrors} />

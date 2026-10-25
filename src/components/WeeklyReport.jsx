@@ -59,7 +59,7 @@ function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
   );
 }
 
-export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, setupErrors, skills }) {
+export function WeeklyReportPage({ trades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills }) {
   const [mode, setMode] = useState(() => (readLocalUi("reportMode", "week") === "month" ? "month" : "week"));
   const [anchor, setAnchor] = useState(() => periodStart(mode, todayStr()));
   const [printing, setPrinting] = useState(false);
@@ -128,7 +128,7 @@ export function WeeklyReportPage({ trades, resources, capitalPlan, journeyLog, s
         </button>
       </div>
       {printing ? (
-        <PrintTrades trades={trades} resources={resources} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
+        <PrintTrades trades={trades} resources={resources} ledger={ledger} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
           label={`${meta.noun} ${periodLabel(mode, anchor, to)}`} onClose={() => setPrinting(false)} />
       ) : null}
 
