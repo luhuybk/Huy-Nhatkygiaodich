@@ -297,7 +297,7 @@ function Cover({ title, from, to, list, trades, capitalTrades, resources, capita
       // Sụt vốn / mức vốn tuần sau là của cả tài khoản — lọc nhóm tài sản (VD chỉ Hàng hóa) thì vẫn phải
       // tính đủ các lệnh FX đánh chung tài khoản, không thì gợi ý tăng/giảm mức vốn sai.
       const dd = marketDrawdown(capitalPlan, m, capitalTrades, resources);
-      const stats = marketRStats(m, capitalTrades, accounts, to);
+      const stats = marketRStats(m, capitalTrades, accounts, to, capitalPlan);
       return {
         m, names: [...marketAccountNames(m, accounts)],
         now: pickedTier(capitalPlan, m.id, from).pct,

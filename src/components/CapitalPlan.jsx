@@ -3,6 +3,7 @@ import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, P
 import { ConfirmButton, Field, MoneyInput, useAutoFocus } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
+import { ASSET_GROUPS } from "../lib/assetGroups.js";
 import {
   capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
@@ -18,6 +19,7 @@ const weekLabel = (start) => {
   end.setDate(end.getDate() + 6);
   return `${ddmm(start)} – ${String(end.getDate()).padStart(2, "0")}/${String(end.getMonth() + 1).padStart(2, "0")}`;
 };
+const groupLabels = (keys) => ASSET_GROUPS.filter((g) => keys.includes(g.key)).map((g) => g.label).join(", ");
 const numOr = (v, d) => { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : d; };
 
 // Ô số chỉ ghi khi rời ô — gõ "50000" không thành 5 lần lưu lên máy chủ.
@@ -86,6 +88,8 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
   const set = (k) => (v) => setM((prev) => ({ ...prev, [k]: v }));
   const tiers = sortTiers(tierText.split(/[\s;]+/).map((x) => x.replace(",", ".")).filter(Boolean));
   const toggleAccount = (id) => set("accountIds")(m.accountIds.includes(id) ? m.accountIds.filter((x) => x !== id) : [...m.accountIds, id]);
+  const groups = m.assetGroups || [];
+  const toggleGroup = (key) => set("assetGroups")(groups.includes(key) ? groups.filter((x) => x !== key) : [...groups, key]);
   const save = () => {
     const defaultTier = tiers.includes(Number(m.defaultTier)) ? Number(m.defaultTier) : tiers[Math.floor((tiers.length - 1) / 2)];
     onSave({
@@ -156,6 +160,17 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
               <span>{a.name} <small className="field-hint">{a.currency}</small></span>
             </label>
           )) : <span className="field-hint">Chưa có tài khoản nào — thêm ở tab Tài khoản.</span>}
+        </div>
+      </Field>
+      <Field label="Chỉ tính nhóm tài sản (tùy chọn)"
+        hint="Bỏ trống = mọi lệnh của các tài khoản trên. Đánh dấu Hàng hóa + Crypto và gắn cả ba tài khoản Trading thì lệnh vàng, dầu, crypto ở tài khoản nào cũng gợi ý rủi ro theo vốn của mảng này; mảng FX của từng tài khoản tự bỏ các lệnh đó ra khỏi sụt vốn và phong độ R.">
+        <div className="cap-accounts">
+          {ASSET_GROUPS.filter((g) => g.key !== "other").map((g) => (
+            <label key={g.key} className="mc-check cap-account">
+              <input type="checkbox" checked={groups.includes(g.key)} onChange={() => toggleGroup(g.key)} />
+              <span>{g.label}</span>
+            </label>
+          ))}
         </div>
       </Field>
       <div className="cap-editor-foot">
@@ -234,6 +249,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
       <div className="cap-card-foot field-hint">
         <span>Đã nạp: <b className="mono">{fmtMoney(market.deposited, market.currency)}</b></span>
         <span>{linked.length ? `Tài khoản: ${linked.map((a) => a.name).join(", ")}` : "Chưa gắn tài khoản"}</span>
+        {(market.assetGroups || []).length ? <span>Chỉ tính: {groupLabels(market.assetGroups)}</span> : null}
       </div>
     </div>
   );
@@ -279,7 +295,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
   const accounts = resources.accounts || [];
   const ranges = rWindowRanges(today);
   const rows = useMemo(() => [...plan.markets.filter((m) => !m.side), ...plan.markets.filter((m) => m.side)].map((m) => {
-    const stats = marketRStats(m, trades, accounts, today);
+    const stats = marketRStats(m, trades, accounts, today, plan);
     return { m, stats, s: suggestNextTier(plan, m, stats, dds[m.id], today), next: pickedTier(plan, m.id, weeks.next) };
   }), [plan, trades, accounts, dds, today, weeks.next]);
   const pending = rows.filter((r) => r.s && r.s.action !== "none" && !(r.next.explicit && r.next.pct === r.s.pct));
@@ -494,7 +510,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
       <p className="field-hint" style={{ marginTop: 12 }}>
         <Scale size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
         Sụt vốn tính trên vốn phân chia cộng lãi/lỗ các lệnh đã đóng từ ngày bắt đầu, không phải tiền đã nạp.
-        Mảng nhiều tài khoản thì mỗi tài khoản một đường riêng và báo theo tài khoản tệ nhất.
+        Mảng gắn nhiều tài khoản thì chúng dùng chung vốn, chung một đường. Mảng có chọn nhóm tài sản thì chỉ tính lệnh của nhóm đó.
       </p>
 
       <PickReminderCard settings={slReminderSettings} onChange={onSlReminderSettingsChange} />
@@ -510,7 +526,7 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
   const rows = useMemo(() => (plan ? plan.markets.map((m) => {
     const p = pickedTier(plan, m.id, week);
     const dd = marketDrawdown(plan, m, trades, resources);
-    const stats = marketRStats(m, trades, resources.accounts || [], today);
+    const stats = marketRStats(m, trades, resources.accounts || [], today, plan);
     return { m, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd, stats, sug: suggestNextTier(plan, m, stats, dd, today) };
   }) : []), [plan, trades, resources, week, today]);
   if (!plan || !rows.length) return null;
@@ -581,7 +597,7 @@ export function RiskTierChips({ options, dd, plan, riskAmount, onPick }) {
   return (
     <div className="cap-chips">
       <div className="cap-chips-head">
-        <span><b>{market.name}</b> · tuần này {fmtPctVN(picked.pct)}</span>
+        <span><b>{market.name}</b>{(market.assetGroups || []).length ? <small className="field-hint"> ({groupLabels(market.assetGroups)})</small> : null} · tuần này {fmtPctVN(picked.pct)}</span>
         {dd ? (
           <span className={`cap-chips-dd cap-chips-dd-${dd.level === "ok" && dd.lossStreak >= 2 ? "warn" : dd.level}`}>
             Sụt {fmtPctVN(dd.pct, 1)}{dd.level === "cut" ? " — nên giảm risk" : dd.level === "warn" ? " — cảnh báo" : dd.lossStreak >= 2 ? "" : " ✓"}

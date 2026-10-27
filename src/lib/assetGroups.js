@@ -20,18 +20,23 @@ const FX_CCY = new Set([
 ]);
 // Mã Exness (XAUUSD, XNGUSD, USOIL…), tên gọi thường và mã hợp đồng tương lai (GC, CL… kèm tháng).
 const COMMODITY = /^(XAU|XAG|XPT|XPD|XCU|XAL|XNI|XPB|XZN|XNG|XBR|XTI|USOIL|UKOIL|WTI|BRENT|NGAS|NATGAS|GOLD|SILVER|COPPER|PLATINUM|PALLADIUM|COCOA|COFFEE|SUGAR|CORN|WHEAT|SOYBEAN|COTTON)/;
-const COMMODITY_FUT = /^(GC|SI|HG|CL|NG|PL|PA|ZC|ZW|ZS|KC|CC|SB|CT|MGC|MCL)([FGHJKMNQUVXZ]\d{1,2})?$/;
+// Mã tương lai chỉ nhận khi có kèm tháng ("CLZ5", "GCG26"): mã trơn 2–3 chữ trùng mã cổ phiếu Mỹ
+// (CL Colgate, ES Eversource, CC Chemours, PL Planet Labs…) nên để phần cổ phiếu nhận.
+const COMMODITY_FUT = /^(GC|SI|HG|CL|NG|PL|PA|ZC|ZW|ZS|KC|CC|SB|CT|MGC|MCL)[FGHJKMNQUVXZ]\d{1,2}$/;
 const INDEX = /^(US30|US100|US500|US2000|USTEC|NAS100|NDX|SPX|SP500|SPX500|DJ30|DJI|UK100|FTSE|DE30|DE40|GER30|GER40|DAX|FR40|CAC40|EU50|STOXX50|ESTX50|JP225|JPN225|NIKKEI|HK50|HSI|AUS200|ASX200|CN50|CHINA50|IN50|VIX|DXY|USDX)/;
-const INDEX_FUT = /^(ES|NQ|YM|RTY|MES|MNQ|MYM)([FGHJKMNQUVXZ]\d{1,2})?$/;
-const CRYPTO = /^(BTC|ETH|XRP|LTC|SOL|ADA|DOGE|BNB|DOT|AVAX|LINK|TRX|XLM|BCH|SHIB|TON)(USD|USDT|USDC|EUR|JPY|BTC)?$/;
+const INDEX_FUT = /^(ES|NQ|YM|RTY|MES|MNQ|MYM)[FGHJKMNQUVXZ]\d{1,2}$/;
+const CRYPTO = /^(BTC|ETH|XRP|LTC|SOL|ADA|DOGE|BNB|DOT|AVAX|LINK|TRX|XLM|BCH|SHIB|TON)(USD|USDT|USDC|EUR|JPY|BTC)?M?$/;
 // Mã cổ phiếu: 1–5 chữ, có thể kèm đuôi sàn ("NVDA.US", "BRK-B").
 const STOCK = /^[A-Z]{1,5}([.\-][A-Z]{1,3})?$/;
+
+// "VNĐ" gõ có dấu ở tab Tài khoản vẫn là VND.
+const isVnd = (currency) => String(currency || "").trim().toUpperCase().replace(/Đ/g, "D") === "VND";
 
 export function assetGroupOfSymbol(symbol, currency) {
   const s = canonicalSymbol(symbol || "", []);
   if (!s) return "other";
   // Tài khoản VNĐ chỉ có cổ phiếu Việt Nam — xét trước, vì có mã VN trùng chữ hàng hóa ("OIL" của PV Oil).
-  if (currency === "VND") return "vn";
+  if (isVnd(currency)) return "vn";
   const compact = s.replace(/[^A-Z0-9]/g, "");
   if (COMMODITY.test(compact) || COMMODITY_FUT.test(compact)) return "commodity";
   if (INDEX.test(compact) || INDEX_FUT.test(compact)) return "index";

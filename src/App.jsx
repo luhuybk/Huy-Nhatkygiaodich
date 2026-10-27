@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from "react";
 import { supabase } from "./supabaseClient.js";
 import { openNavTab, useBackNav } from "./lib/useBackNav.js";
+import { AssetMatrixPage } from "./components/AssetMatrix.jsx";
 import { QuickJump } from "./components/QuickJump.jsx";
 import { discardActiveDraft } from "./lib/tradeDraft.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
-  Wallet, Hash, Grid3x3, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
+  Wallet, Hash, Grid3x3, Grid2x2, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
   Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown, Scale,
   NotebookPen, Globe2, Search,
 } from "lucide-react";
@@ -67,6 +68,7 @@ const NAV_GROUPS = [
     label: "Phân tích", items: [
       { key: "analysis", label: "Phân tích", icon: LineChartIcon },
       { key: "tradeanalysis", label: "Phân tích lệnh", icon: Target },
+      { key: "assetmatrix", label: "Khung × Nhóm tài sản", icon: Grid2x2 },
       { key: "symbolperf", label: "Hiệu suất Symbol", icon: Hash },
       { key: "setupperf", label: "Hiệu suất Setup", icon: Star },
       { key: "structureperf", label: "Phân tích ĐCT", icon: Ruler },
@@ -479,6 +481,17 @@ function AppShell({ onSignOut, userEmail }) {
     const r = renameInList(trades, ["account"], fromName, toName);
     if (r.changed) await persistTrades(r.items);
   }, [trades, persistTrades]);
+  // Chuyển lệnh của một tài khoản sang nhiều tài khoản theo khung của từng lệnh ({ "H4": "Trading - Ngắn", … }).
+  const handleMoveTradesBy = useCallback(async (fromName, byTimeframe) => {
+    let changed = false;
+    const next = trades.map((t) => {
+      const to = t.account === fromName ? byTimeframe[t.timeframe || ""] : "";
+      if (!to) return t;
+      changed = true;
+      return { ...t, account: to };
+    });
+    if (changed) await persistTrades(next);
+  }, [trades, persistTrades]);
 
   const handleSaveTrade = (t) => {
     const exists = trades.some((x) => x.id === t.id);
@@ -870,6 +883,7 @@ function AppShell({ onSignOut, userEmail }) {
               ) :
               view === "analysis" ? <Analysis trades={trades} resources={resources} onViewTrade={startEdit} /> :
               view === "tradeanalysis" ? <TradeAnalysisPage trades={trades} resources={resources} /> :
+              view === "assetmatrix" ? <AssetMatrixPage trades={trades} resources={resources} capitalPlan={capitalPlan} /> :
               view === "symbolperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="symbol" onViewTrade={startEdit} /> :
               view === "setupperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="setup" onViewTrade={startEdit} /> :
               view === "structureperf" ? <DimensionPerformance trades={trades} resources={resources} dimension="structure" onViewTrade={startEdit} /> :
@@ -881,8 +895,8 @@ function AppShell({ onSignOut, userEmail }) {
               view === "marketregime" ? <MarketRegimePage trades={trades} resources={resources} onResourcesChange={handleResourcesChange} onOpenTrade={setViewingTrade} /> :
               view === "mistakecost" ? <MistakeCostPage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "accounts" ? (
-                <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades}
-                  onAccountsChange={handleAccountsChange} onMoveTrades={handleMoveTrades} onLedgerChange={persistLedger}
+                <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades} timeframes={resources.timeframes}
+                  onAccountsChange={handleAccountsChange} onMoveTrades={handleMoveTrades} onMoveTradesBy={handleMoveTradesBy} onLedgerChange={persistLedger}
                   fxRates={resources.fxRates} onFxRatesChange={(next) => persistResources({ ...resources, fxRates: next })} />
               ) :
               view === "capitalplan" ? (

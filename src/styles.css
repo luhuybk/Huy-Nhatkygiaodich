@@ -2309,3 +2309,31 @@ button.nt-check:hover { filter: brightness(1.25); }
 .print-acct-stats { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11.5px; margin-top: 2px; }
 .print-days tr.is-empty td { color: #888; }
 .print-equity svg text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+
+/* Ma trận Khung × Nhóm tài sản */
+.amx-wrap { overflow-x: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.amx { width: 100%; border-collapse: collapse; font-size: 13px; }
+.amx th, .amx td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 0; text-align: center; }
+.amx th:last-child, .amx td:last-child { border-right: 0; }
+.amx tr:last-child th, .amx tr:last-child td { border-bottom: 0; }
+.amx thead th { padding: 8px 10px; font-weight: 600; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.amx-row { text-align: left !important; padding: 8px 12px !important; white-space: nowrap; font-weight: 600; }
+.amx-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.amx-total { background: color-mix(in srgb, var(--muted) 7%, transparent); }
+.amx-foot th, .amx-foot td { border-top: 2px solid var(--border); }
+.amx-btn { all: unset; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; min-width: 108px; padding: 8px 10px; cursor: pointer; }
+.amx-btn:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.amx-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.amx-btn b { font-size: 15px; }
+.amx-btn small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.amx-sub { opacity: .85; }
+.amx-on { box-shadow: inset 0 0 0 2px var(--accent); }
+.amx-empty { color: var(--muted); display: block; padding: 8px; }
+
+/* Khung của tài khoản + chia lệnh theo khung khi xóa tài khoản */
+.acct-tf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.acct-tf-default { opacity: .75; font-size: 10px; }
+.acct-tf-split { flex-basis: 100%; display: grid; gap: 6px; margin-top: 4px; }
+.acct-tf-split-row { display: grid; grid-template-columns: 130px 70px minmax(0, 240px); gap: 8px; align-items: center; }
+.acct-tf-split-tf { font-weight: 600; white-space: nowrap; }
+@media (max-width: 560px) { .acct-tf-split-row { grid-template-columns: 1fr auto; } .acct-tf-split-row select { grid-column: 1 / -1; } }

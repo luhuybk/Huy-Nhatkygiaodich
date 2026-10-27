@@ -220,7 +220,7 @@ export function ConfirmButton({ onConfirm, icon: Icon = Trash2, className = "row
   );
 }
 
-export function DangerConfirmButton({ label, confirmLabel, onConfirm }) {
+export function DangerConfirmButton({ label, confirmLabel, onConfirm, disabled }) {
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     if (!confirming) return;
@@ -228,7 +228,7 @@ export function DangerConfirmButton({ label, confirmLabel, onConfirm }) {
     return () => clearTimeout(t);
   }, [confirming]);
   return (
-    <button type="button" className={`btn ${confirming ? "btn-danger" : "btn-ghost"}`}
+    <button type="button" className={`btn ${confirming ? "btn-danger" : "btn-ghost"}`} disabled={disabled}
       onClick={() => { if (confirming) { onConfirm(); setConfirming(false); } else setConfirming(true); }}>
       {confirming ? confirmLabel : label}
     </button>

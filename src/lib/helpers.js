@@ -2098,6 +2098,22 @@ export function accountOpenRisk(account, ledger, trades, scope) {
   return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length, money, unmeasured, balance, currency: sc.currency };
 }
 
+// Khung thời gian của một tài khoản (tài khoản đặt theo khung: Ngắn = H3/H4, Trung = H8…). Ghi ở tab
+// Tài khoản thì dùng đúng thứ tự đó, khung đầu là mặc định. Chưa ghi thì đoán theo các lệnh đã có của
+// tài khoản, khung của lệnh gần nhất đứng đầu — `configured` false để form chỉ tự điền chứ không
+// cảnh báo "lệch khung".
+export function accountTimeframes(account, trades) {
+  if (!account) return { list: [], configured: false };
+  const own = (account.timeframes || []).filter(Boolean);
+  if (own.length) return { list: own, configured: true };
+  const seen = [];
+  (trades || [])
+    .filter((t) => t && t.account === account.name && t.timeframe)
+    .sort((a, b) => `${b.entryDate || ""} ${b.entryTime || ""}`.localeCompare(`${a.entryDate || ""} ${a.entryTime || ""}`))
+    .forEach((t) => { if (!seen.includes(t.timeframe)) seen.push(t.timeframe); });
+  return { list: seen, configured: false };
+}
+
 // Tài khoản gốc = không thuộc nhóm nào, HOẶC thuộc một nhóm đã bị xóa. Vế sau quan trọng:
 // thiếu nó thì tài khoản mồ côi rơi khỏi mọi tổng cộng và biến mất khỏi trang Tài khoản.
 export function rootAccounts(accounts) {

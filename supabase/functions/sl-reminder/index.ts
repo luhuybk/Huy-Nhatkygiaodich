@@ -329,7 +329,7 @@ function toUSD(amount: number, currency: string | undefined, fxRates: Record<str
 type CapMarket = {
   id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
   tiers?: number[]; defaultTier?: number; accountIds?: string[]; holdTier?: number | null; side?: boolean;
-  rRule?: Partial<Record<CapRuleKey, number>>;
+  rRule?: Partial<Record<CapRuleKey, number>>; assetGroups?: string[];
 };
 type CapRuleKey = "downW1" | "downW2" | "holdM" | "upW1" | "upM" | "minUp";
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
@@ -371,13 +371,52 @@ function capFamily(accounts: CapAccount[], m: CapMarket) {
   return names;
 }
 
+// Nhóm tài sản theo mã — bản chép của assetGroupOfSymbol trong src/lib/assetGroups.js (sửa bên đó
+// thì sửa luôn ở đây). Chỉ dùng để chia lệnh giữa các mảng: mảng "Hàng hóa" chỉ nhận nhóm hàng hóa /
+// crypto dù gắn chung tài khoản với mảng FX.
+const CAP_FX_CCY = new Set(["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD", "SGD", "HKD", "CNH", "MXN", "ZAR", "TRY",
+  "SEK", "NOK", "DKK", "PLN", "HUF", "CZK", "THB", "INR", "ILS", "KRW", "TWD", "BRL", "AED", "SAR"]);
+function capAssetGroup(symbol: unknown, currency: string | undefined) {
+  if (String(currency || "").trim().toUpperCase().replace(/Đ/g, "D") === "VND") return "vn";
+  const s = String(symbol || "").trim().toUpperCase();
+  const c = s.replace(/[^A-Z0-9]/g, "");
+  if (!c) return "other";
+  if (/^(XAU|XAG|XPT|XPD|XCU|XAL|XNI|XPB|XZN|XNG|XBR|XTI|USOIL|UKOIL|WTI|BRENT|NGAS|NATGAS|GOLD|SILVER|COPPER|PLATINUM|PALLADIUM|COCOA|COFFEE|SUGAR|CORN|WHEAT|SOYBEAN|COTTON)/.test(c)
+    || /^(GC|SI|HG|CL|NG|PL|PA|ZC|ZW|ZS|KC|CC|SB|CT|MGC|MCL)[FGHJKMNQUVXZ]\d{1,2}$/.test(c)) return "commodity";
+  if (/^(US30|US100|US500|US2000|USTEC|NAS100|NDX|SPX|SP500|SPX500|DJ30|DJI|UK100|FTSE|DE30|DE40|GER30|GER40|DAX|FR40|CAC40|EU50|STOXX50|ESTX50|JP225|JPN225|NIKKEI|HK50|HSI|AUS200|ASX200|CN50|CHINA50|IN50|VIX|DXY|USDX)/.test(c)
+    || /^(ES|NQ|YM|RTY|MES|MNQ|MYM)[FGHJKMNQUVXZ]\d{1,2}$/.test(c)) return "index";
+  if (/^(BTC|ETH|XRP|LTC|SOL|ADA|DOGE|BNB|DOT|AVAX|LINK|TRX|XLM|BCH|SHIB|TON)(USD|USDT|USDC|EUR|JPY|BTC)?M?$/.test(c)) return "crypto";
+  if (c.length >= 6 && c.length <= 9 && CAP_FX_CCY.has(c.slice(0, 3)) && CAP_FX_CCY.has(c.slice(3, 6))) return "fx";
+  if (/^[A-Z]{1,5}([.\-][A-Z]{1,3})?$/.test(s)) return "us";
+  return "other";
+}
+
+// Lệnh thuộc mảng `m` — bản chép của marketResolver trong src/lib/capital.js: trong các mảng gắn
+// tài khoản của lệnh, mảng ghi đúng nhóm tài sản được ưu tiên, không có thì tới mảng không giới hạn nhóm.
+function capOwns(plan: CapPlan, m: CapMarket, accounts: CapAccount[]) {
+  const all = (plan.markets || []).filter((x) => x && x.id).map((x) => ({ x, names: capFamily(accounts, x), groups: x.assetGroups || [] }));
+  return (t: Record<string, unknown>) => {
+    const acc = t.account as string;
+    const cands = all.filter((c) => c.names.has(acc));
+    if (!cands.length) return false;
+    let hit = null as null | CapMarket;
+    if (cands.some((c) => c.groups.length)) {
+      const g = capAssetGroup(t.symbol, accounts.find((a) => a.name === acc)?.currency);
+      hit = cands.find((c) => c.groups.includes(g))?.x || null;
+    }
+    if (!hit) hit = cands.find((c) => !c.groups.length)?.x || null;
+    return !!hit && hit.id === m.id;
+  };
+}
+
 function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>) {
   const names = capFamily(accounts, m);
+  const owns = capOwns(plan, m, accounts);
   const from = plan.startDate || "";
   const base = capUnitBase(m);
   const mCur = m.currency || "USD";
   const closed = trades
-    .filter((t) => names.has(t.account as string) && (!from || String(t.exitDate || t.entryDate || "") >= from))
+    .filter((t) => owns(t) && (!from || String(t.exitDate || t.entryDate || "") >= from))
     .filter((t) => t.profit !== "" && t.profit !== null && t.profit !== undefined && !Number.isNaN(Number(t.profit)))
     .sort((a, b) => String(a.exitDate || a.entryDate || "").localeCompare(String(b.exitDate || b.entryDate || "")) || (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
   const pnl = (t: Record<string, unknown>) => {
@@ -426,15 +465,16 @@ function capTierList(m: CapMarket) {
   if (hold !== null && !tiers.includes(hold)) tiers.push(hold);
   return tiers.sort((a, b) => a - b);
 }
-function capRStats(m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], weekNow: string) {
+function capRStats(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], weekNow: string) {
   const names = capFamily(accounts, m);
+  const owns = capOwns(plan, m, accounts);
   const to = shiftDateStr(weekNow, 6);
   const sum = (weeks: number) => {
     const from = shiftDateStr(weekNow, -7 * (weeks - 1));
     let r = 0, n = 0;
     for (const t of trades) {
       const d = String(t.exitDate || "");
-      if (!names.has(t.account as string) || !d || d < from || d > to) continue;
+      if (!owns(t) || !d || d < from || d > to) continue;
       if (t.profit === "" || t.profit === null || t.profit === undefined || !Number.isFinite(Number(t.profit))) continue;
       const risk = capNum(t.riskAmount, 0);
       if (!risk) continue;
@@ -872,7 +912,7 @@ Deno.serve(async () => {
             m, label: m.name || "?",
             now: capPicked(plan, m, weekNow), next: capPicked(plan, m, weekNext),
             dd: capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates),
-            st: capRStats(m, trades, accounts as CapAccount[], weekNow),
+            st: capRStats(plan, m, trades, accounts as CapAccount[], weekNow),
           }));
           const missing = rows.filter((r) => !r.next.explicit);
           if (missing.length) {

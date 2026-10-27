@@ -7,7 +7,7 @@ import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
+import { accountOpenRisk, accountTimeframes, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -493,8 +493,41 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const draftRef = useRef(null);
   if (!draftRef.current) {
     const isNew = !(trades || []).some((x) => x && x.id === startRef.current.id);
-    draftRef.current = { key: draftKey(startRef.current.id, isNew), done: false, wrote: false };
+    draftRef.current = { key: draftKey(startRef.current.id, isNew), isNew, done: false, wrote: false };
   }
+  // Khung tự điền theo tài khoản (tài khoản đặt theo khung). Còn là khung tự điền thì đổi tài khoản
+  // khung đổi theo; bạn tự chọn khung rồi thì giữ nguyên, trừ khi tài khoản mới không đánh khung đó.
+  const autoTfRef = useRef(false);
+  const tfOf = (name) => accountTimeframes(resources.accounts.find((a) => a.name === name), trades);
+  const pickAccount = (name) => setT((prev) => {
+    const next = { ...prev, account: name };
+    const tf = tfOf(name);
+    if (tf.list.length && (!prev.timeframe || autoTfRef.current || (tf.configured && !tf.list.includes(prev.timeframe)))) {
+      next.timeframe = tf.list[0];
+      autoTfRef.current = true;
+    }
+    return next;
+  });
+  // Chọn khung trước khi chọn tài khoản: chỉ một tài khoản ghi khung đó thì điền luôn tài khoản.
+  const pickTimeframe = (tf) => setT((prev) => {
+    autoTfRef.current = false;
+    const next = { ...prev, timeframe: tf };
+    if (!prev.account && tf) {
+      const owners = resources.accounts.filter((a) => (a.timeframes || []).includes(tf));
+      if (owners.length === 1) next.account = owners[0].name;
+    }
+    return next;
+  });
+  useEffect(() => {
+    // Lệnh mới đã có sẵn tài khoản (tài khoản đang chọn ở thanh bên) mà chưa có khung.
+    if (!draftRef.current.isNew || t.timeframe || !t.account) return;
+    const tf = tfOf(t.account);
+    if (!tf.list.length) return;
+    autoTfRef.current = true;
+    // Ghi cả vào mốc ban đầu: khung tự điền không phải là "đã sửa" — mở form rồi thoát không bị hỏi lại.
+    startRef.current = { ...startRef.current, timeframe: tf.list[0] };
+    setT((prev) => (prev.timeframe ? prev : { ...prev, timeframe: tf.list[0] }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingDraft, setPendingDraft] = useState(null);
   const [draftInfo, setDraftInfo] = useState(null); // { at, ok }
   const isDirty = (x) => { const a = startRef.current; return Object.keys({ ...a, ...x }).some((k) => a[k] !== x[k]); };
@@ -606,9 +639,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
+  const accTf = tfOf(t.account);
+  const tfHint = accTf.configured && t.timeframe && !accTf.list.includes(t.timeframe)
+    ? `Tài khoản "${t.account}" ghi khung ${accTf.list.join(", ")} — kiểm lại tài khoản hoặc khung`
+    : autoTfRef.current && t.timeframe ? "Tự điền theo tài khoản — chọn lại nếu cần" : undefined;
   const tierOptions = useMemo(
-    () => (capitalPlan ? riskTierOptions(capitalPlan, t.account, t.entryDate || todayStr(), resources.accounts) : null),
-    [capitalPlan, t.account, t.entryDate, resources.accounts]
+    () => (capitalPlan ? riskTierOptions(capitalPlan, t.account, t.entryDate || todayStr(), resources.accounts, t.symbol) : null),
+    [capitalPlan, t.account, t.entryDate, resources.accounts, t.symbol]
   );
   // Sụt vốn không tính lệnh đang sửa: sửa lại một lệnh thua cũ thì con số không nên tự đổi
   // theo từng phím gõ ở ô lãi/lỗ.
@@ -732,10 +769,10 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             />
           </Field>
           <Field label="Tài khoản" incomplete={missing("account")}>
-            <ResourceSelect value={t.account} onChange={set("account")} options={accountNames} placeholder="Chọn tài khoản" />
+            <ResourceSelect value={t.account} onChange={pickAccount} options={accountNames} placeholder="Chọn tài khoản" />
           </Field>
-          <Field label="Khung thời gian" incomplete={missing("timeframe")}>
-            <ResourceSelect value={t.timeframe} onChange={set("timeframe")} options={resources.timeframes} placeholder="Chọn timeframe" />
+          <Field label="Khung thời gian" incomplete={missing("timeframe")} hint={tfHint}>
+            <ResourceSelect value={t.timeframe} onChange={pickTimeframe} options={resources.timeframes} placeholder="Chọn timeframe" />
           </Field>
           <Field
             label="Phiên giao dịch"

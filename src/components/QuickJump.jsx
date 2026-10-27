@@ -15,6 +15,7 @@ const KEYWORDS = {
   equityindex: "equity",
   setuphub: "miss skip bien the bo lo",
   setupperf: "hieu qua",
+  assetmatrix: "ma tran hang hoa vang crypto forex fx nhom tai san khung ngan trung dai",
   structureperf: "diem cau truc",
   heatmap: "heatmap",
   weeklyreport: "in pdf tong ket",

@@ -6,6 +6,7 @@
 // Lưu ở khoá `capitalPlan`. Bot Telegram (sl-reminder) đọc khoá này để nhắc chọn mức tuần sau —
 // sửa cách tính sụt vốn ở đây thì sửa luôn bên đó, không thì tin nhắn và app nói hai con số.
 import { accountColor, accountFamily, computeResult, dateKey, shiftDate, todayStr, uid, weekStart } from "./helpers.js";
+import { ASSET_GROUPS, assetGroupOfSymbol } from "./assetGroups.js";
 
 export const DD_WARN_DEFAULT = 8;
 export const DD_CUT_DEFAULT = 12;
@@ -37,12 +38,17 @@ export function emptyCapitalMarket() {
     rRule: { ...R_RULE_DEFAULT },
     // Màu nhận diện của mảng (viền trái + chấm cạnh tên) — rỗng là không tô.
     color: "",
+    // Chỉ tính những nhóm tài sản này (VD hàng hóa + crypto) — rỗng là mọi lệnh của tài khoản.
+    // Hàng hóa đánh chung tài khoản FX cùng khung mà đi vốn nhỏ hơn: một mảng "Hàng hóa" gắn cả
+    // ba tài khoản, chỉ nhận nhóm Hàng hóa / Crypto; mảng FX của từng tài khoản tự nhả các lệnh đó.
+    assetGroups: [],
   };
 }
 
 // Bảng màu cho mảng — cùng bộ với nhóm tình trạng thị trường để cả app một tông.
 export const MARKET_COLORS = ["#5b9cf5", "#2fb5a3", "#4caf7d", "#d8c94a", "#e0a64e", "#ff8a65", "#e0615a", "#c879e0", "#a3a9e8", "#8d9198"];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const ASSET_GROUP_KEYS = new Set(ASSET_GROUPS.map((g) => g.key));
 
 // Màu của mảng: chọn riêng thì dùng màu đó, không thì lấy màu của tài khoản đầu tiên gắn vào
 // mảng (màu đặt ở tab Tài khoản) — để US Stock ở Nhật ký, Báo cáo tuần và Phân bổ vốn cùng một màu
@@ -50,6 +56,9 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 export function marketColor(m, accounts) {
   if (!m) return "";
   if (m.color) return m.color;
+  // Mảng chỉ nhận vài nhóm tài sản (Hàng hóa) thường gắn chung tài khoản với mảng FX — lấy màu tài
+  // khoản thì hai mảng trùng màu, nên để trống cho người dùng tự chọn.
+  if ((m.assetGroups || []).length) return "";
   const acc = (accounts || []).find((a) => a && (m.accountIds || []).includes(a.id));
   return acc ? accountColor(acc.name, accounts) : "";
 }
@@ -125,6 +134,7 @@ export function normalizeCapitalPlan(raw) {
       side: !!m.side,
       rRule: normalizeRRule(m.rRule),
       color: HEX_COLOR.test(m.color || "") ? m.color : "",
+      assetGroups: Array.isArray(m.assetGroups) ? m.assetGroups.filter((g) => ASSET_GROUP_KEYS.has(g)) : [],
     })),
     picks: raw.picks && typeof raw.picks === "object" && !Array.isArray(raw.picks) ? raw.picks : {},
   };
@@ -297,9 +307,39 @@ export function splitMultiAccountMarkets(plan, accounts) {
   return { plan: { ...plan, markets, picks }, changed: true };
 }
 
-export function marketForAccount(plan, accountName, accounts) {
+// Mảng của một lệnh: trong các mảng gắn tài khoản của lệnh, mảng ghi đúng nhóm tài sản của lệnh
+// được ưu tiên; không có thì tới mảng không giới hạn nhóm. Lệnh XAU ở "Trading - Ngắn" vào mảng
+// Hàng hóa, lệnh EUR/USD cùng tài khoản vào mảng FX Ngắn.
+export function marketResolver(plan, accounts) {
+  const markets = ((plan && plan.markets) || []).map((m) => ({ m, names: marketAccountNames(m, accounts), groups: m.assetGroups || [] }));
+  const currency = new Map((accounts || []).filter((a) => a && a.name).map((a) => [a.name, a.currency]));
+  return (accountName, symbol) => {
+    if (!accountName) return null;
+    const cands = markets.filter((x) => x.names.has(accountName));
+    if (!cands.length) return null;
+    if (cands.some((x) => x.groups.length)) {
+      const g = assetGroupOfSymbol(symbol, currency.get(accountName));
+      const hit = cands.find((x) => x.groups.includes(g));
+      if (hit) return hit.m;
+    }
+    const open = cands.find((x) => !x.groups.length);
+    return open ? open.m : null;
+  };
+}
+
+export function marketForAccount(plan, accountName, accounts, symbol = "") {
   if (!plan || !accountName) return null;
-  return (plan.markets || []).find((m) => marketAccountNames(m, accounts).has(accountName)) || null;
+  return marketResolver(plan, accounts)(accountName, symbol);
+}
+
+// Lệnh thuộc mảng `m`. Không có `plan` (lời gọi cũ) thì chỉ xét tài khoản như trước.
+function marketTradeFilter(plan, m, accounts) {
+  if (!plan) {
+    const names = marketAccountNames(m, accounts);
+    return (t) => names.has(t.account);
+  }
+  const resolve = marketResolver(plan, accounts);
+  return (t) => { const hit = resolve(t.account, t.symbol); return !!hit && hit.id === m.id; };
 }
 
 // Lãi/lỗ quy về tiền của mảng. Tài khoản cùng loại tiền thì giữ nguyên; khác thì qua USD theo
@@ -338,10 +378,11 @@ export function marketDrawdown(plan, m, trades, resources) {
   const accounts = (resources && resources.accounts) || [];
   const fxRates = (resources && resources.fxRates) || {};
   const names = marketAccountNames(m, accounts);
+  const owns = marketTradeFilter(plan, m, accounts);
   const from = plan.startDate || "";
   const base = marketUnitBase(m);
   const closed = (trades || [])
-    .filter((t) => names.has(t.account) && (!from || (dateKey(t) || "") >= from))
+    .filter((t) => t && owns(t) && (!from || (dateKey(t) || "") >= from))
     .map((t) => ({ t, r: computeResult(t) }))
     .filter((x) => x.r.status === "closed" && x.r.profit !== null)
     .sort((a, b) => (dateKey(a.t) || "").localeCompare(dateKey(b.t) || "") || (a.t.createdAt || 0) - (b.t.createdAt || 0));
@@ -359,8 +400,8 @@ export function marketDrawdown(plan, m, trades, resources) {
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
 // rủi ro của từng mức. Tuần tính theo ngày vào lệnh, để sửa lệnh cũ vẫn thấy đúng mức lúc đó.
-export function riskTierOptions(plan, accountName, dateStr, accounts) {
-  const m = marketForAccount(plan, accountName, accounts);
+export function riskTierOptions(plan, accountName, dateStr, accounts, symbol = "") {
+  const m = marketForAccount(plan, accountName, accounts, symbol);
   if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
   const picked = pickedTier(plan, m.id, week);
@@ -397,13 +438,14 @@ export function rWindowRanges(dateStr) {
   return R_WINDOWS.map((w) => ({ ...w, from: shiftDate(now, -7 * (w.weeks - 1)), to }));
 }
 
-export function marketRStats(m, trades, accounts, dateStr) {
+export function marketRStats(m, trades, accounts, dateStr, plan = null) {
   const names = marketAccountNames(m, accounts);
+  const owns = marketTradeFilter(plan, m, accounts);
   const ranges = rWindowRanges(dateStr);
   const oldest = ranges[ranges.length - 1].from;
   const to = ranges[0].to;
   const closed = (trades || [])
-    .filter((t) => t && names.has(t.account) && t.exitDate && t.exitDate >= oldest && t.exitDate <= to)
+    .filter((t) => t && owns(t) && t.exitDate && t.exitDate >= oldest && t.exitDate <= to)
     .map((t) => ({ d: t.exitDate, r: computeResult(t) }))
     .filter((x) => x.r.status === "closed");
   const windows = {};

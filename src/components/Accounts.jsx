@@ -4,6 +4,7 @@ import { Pencil, ChevronLeft } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
+import { assetGroupOfSymbol } from "../lib/assetGroups.js";
 import { ACCOUNT_COLORS, accountColor, familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
 
 // Ngưỡng cảnh báo rủi ro tổng. 6% là "đang gánh nặng", 10% là một phiên xấu đủ thổi bay
@@ -11,8 +12,35 @@ import { ACCOUNT_COLORS, accountColor, familyScope, rootAccounts, totalOpenRisk,
 const TOTAL_RISK_WARN = 6;
 const TOTAL_RISK_DANGER = 10;
 
-export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
-  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true };
+// Chia lệnh của tài khoản sắp xóa theo khung (gộp "Hàng Hóa" vào các tài khoản Trading theo khung):
+// mỗi khung gợi ý sẵn một tài khoản đích — tài khoản ghi khung đó ở form, không có thì tài khoản có
+// nhiều lệnh FX / hàng hóa ở khung đó nhất (bỏ qua lệnh cổ phiếu, vì "D" của US Stock không phải "D"
+// của Trading - Dài).
+function guessTimeframeTargets(source, owned, accounts, trades) {
+  const leaves = accounts.filter((a) => a.id !== source.id && !accounts.some((x) => x.parentId === a.id));
+  const tfs = [...new Set(owned.map((t) => t.timeframe || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const out = {};
+  tfs.forEach((tf) => {
+    if (!tf) { out[tf] = ""; return; }
+    const own = leaves.find((a) => (a.timeframes || []).includes(tf));
+    if (own) { out[tf] = own.name; return; }
+    const score = new Map();
+    trades.forEach((t) => {
+      if (!t || t.timeframe !== tf || t.account === source.name) return;
+      const acc = leaves.find((a) => a.name === t.account);
+      if (!acc || ["us", "vn"].includes(assetGroupOfSymbol(t.symbol, acc.currency))) return;
+      score.set(acc.name, (score.get(acc.name) || 0) + 1);
+    });
+    const best = [...score.entries()].sort((a, b) => b[1] - a[1])[0];
+    out[tf] = best ? best[0] : "";
+  });
+  return out;
+}
+
+const BY_TIMEFRAME = "__bytf";
+
+export function AccountsList({ accounts, ledger, trades, timeframes, onChange, onMoveTrades, onMoveTradesBy, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
+  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true, timeframes: [] };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState("");
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
@@ -33,6 +61,7 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
   // biến mất khỏi mọi thống kê theo tài khoản mà không báo gì. Bắt chuyển lệnh đi trước.
   const [pendingDelete, setPendingDelete] = useState(null);
   const [moveTarget, setMoveTarget] = useState("");
+  const [tfTargets, setTfTargets] = useState({});
 
   const doRemove = (id) => {
     onChange(accounts.filter((a) => a.id !== id).map((a) => (a.parentId === id ? { ...a, parentId: "" } : a)));
@@ -43,14 +72,30 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
   const remove = (id) => {
     const acc = accounts.find((a) => a.id === id);
     const owned = acc ? trades.filter((t) => t.account === acc.name) : [];
-    if (owned.length) { setPendingDelete({ account: acc, count: owned.length }); setMoveTarget(""); return; }
+    if (owned.length) {
+      const byTf = {};
+      owned.forEach((t) => { byTf[t.timeframe || ""] = (byTf[t.timeframe || ""] || 0) + 1; });
+      setPendingDelete({ account: acc, count: owned.length, byTf });
+      setTfTargets(guessTimeframeTargets(acc, owned, accounts, trades));
+      setMoveTarget("");
+      return;
+    }
     doRemove(id);
   };
   const confirmDeleteWithMove = () => {
     const acc = pendingDelete.account;
-    const target = accounts.find((a) => a.id === moveTarget);
-    if (onMoveTrades) onMoveTrades(acc.name, target ? target.name : "");
+    if (moveTarget === BY_TIMEFRAME) {
+      if (onMoveTradesBy) onMoveTradesBy(acc.name, tfTargets);
+    } else {
+      const target = accounts.find((a) => a.id === moveTarget);
+      if (onMoveTrades) onMoveTrades(acc.name, target ? target.name : "");
+    }
     doRemove(acc.id);
+  };
+  const tfSplitReady = moveTarget !== BY_TIMEFRAME || Object.keys(pendingDelete ? pendingDelete.byTf : {}).every((tf) => tfTargets[tf]);
+  const toggleFormTf = (tf) => {
+    const cur = form.timeframes || [];
+    setF("timeframes")(cur.includes(tf) ? cur.filter((x) => x !== tf) : [...cur, tf]);
   };
 
   // Gồm cả tài khoản mồ côi (nhóm cha đã bị xóa) — trước đây chúng biến mất khỏi cả trang này
@@ -199,6 +244,21 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
             <IdSelect value={form.parentId} onChange={setF("parentId")} items={accounts.filter((a) => a.id !== form.id)} placeholder="Không thuộc nhóm nào" />
           </Field>
         </div>
+        {(timeframes || []).length ? (
+          <Field label="Khung thời gian của tài khoản (tùy chọn)"
+            hint="Chọn tài khoản trong form lệnh là khung tự điền (khung chọn đầu tiên là mặc định), chọn khung trước thì tài khoản tự điền; lệnh ghi lệch khung sẽ được nhắc. Bỏ trống thì app tự đoán theo khung của lệnh gần nhất.">
+            <div className="acct-tf-chips">
+              {(timeframes || []).map((tf) => {
+                const i = (form.timeframes || []).indexOf(tf);
+                return (
+                  <button key={tf} type="button" className={`lsn-pick-btn ${i >= 0 ? "lsn-pick-on lsn-pick-on-1" : ""}`} onClick={() => toggleFormTf(tf)}>
+                    {tf}{i === 0 && form.timeframes.length > 1 ? <small className="acct-tf-default"> mặc định</small> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        ) : null}
         <Field label="Màu tài khoản" hint="Dùng cho thẻ, bộ lọc, nhật ký và biểu đồ. Để Tự động thì app gán màu theo thứ tự.">
           <div className="acct-swatches">
             <button type="button" className={`acct-swatch acct-swatch-auto ${!form.color ? "acct-swatch-on" : ""}`} onClick={() => setF("color")("")}>Tự động</button>
@@ -235,8 +295,9 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
             <span className="risk-alert-title">Tài khoản "{pendingDelete.account.name}" đang có {pendingDelete.count} lệnh</span>
             <p className="risk-alert-line">Chọn tài khoản để chuyển các lệnh này sang trước khi xóa, nếu không chúng sẽ mất liên kết và biến mất khỏi mọi thống kê theo tài khoản.</p>
           </div>
-          <select className="input" style={{ maxWidth: 220 }} value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)}>
+          <select className="input" style={{ maxWidth: 240 }} value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)}>
             <option value="">— Xóa luôn, không chuyển —</option>
+            <option value={BY_TIMEFRAME}>Chia theo khung của từng lệnh…</option>
             {accounts.filter((a) => a.id !== pendingDelete.account.id).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
           <div style={{ display: "flex", gap: 8 }}>
@@ -244,8 +305,24 @@ export function AccountsList({ accounts, ledger, trades, onChange, onMoveTrades,
             <DangerConfirmButton
               label={moveTarget ? "Chuyển lệnh rồi xóa" : "Vẫn xóa (bỏ liên kết)"}
               confirmLabel="Bấm lần nữa để xác nhận"
+              disabled={!tfSplitReady}
               onConfirm={confirmDeleteWithMove} />
           </div>
+          {moveTarget === BY_TIMEFRAME ? (
+            <div className="acct-tf-split">
+              {Object.entries(pendingDelete.byTf).sort((a, b) => (a[0] === "") - (b[0] === "") || a[0].localeCompare(b[0])).map(([tf, n]) => (
+                <div key={tf || "none"} className="acct-tf-split-row">
+                  <span className="mono acct-tf-split-tf">{tf || "Chưa ghi khung"}</span>
+                  <span className="field-hint">{n} lệnh →</span>
+                  <select className="input" value={tfTargets[tf] || ""} onChange={(e) => setTfTargets((p) => ({ ...p, [tf]: e.target.value }))}>
+                    <option value="">— Chọn tài khoản —</option>
+                    {accounts.filter((a) => a.id !== pendingDelete.account.id && !accounts.some((x) => x.parentId === a.id)).map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                  </select>
+                </div>
+              ))}
+              {!tfSplitReady ? <span className="field-hint">Chọn tài khoản cho mọi dòng rồi mới xóa được.</span> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="account-card-grid" style={{ marginTop: 16 }}>
@@ -432,7 +509,7 @@ export function AccountDetail({ account, accounts, fxRates, ledger, trades, onBa
   );
 }
 
-export function AccountsSection({ accounts, ledger, trades, onAccountsChange, onMoveTrades, onLedgerChange, fxRates, onFxRatesChange }) {
+export function AccountsSection({ accounts, ledger, trades, timeframes, onAccountsChange, onMoveTrades, onMoveTradesBy, onLedgerChange, fxRates, onFxRatesChange }) {
   const [tab, setTab] = useNavTab("accountsTab", "list");
   const [viewingId, setViewingId] = useState("");
   const [editTarget, setEditTarget] = useState(null);
@@ -462,7 +539,7 @@ export function AccountsSection({ accounts, ledger, trades, onAccountsChange, on
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}>Tài khoản</button>
         <button className={`subtab ${tab === "flow" ? "subtab-active" : ""}`} onClick={() => setTab("flow")}>Nạp / Rút / Chuyển vốn</button>
       </div>
-      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} onChange={onAccountsChange} onMoveTrades={onMoveTrades} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
+      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} timeframes={timeframes} onChange={onAccountsChange} onMoveTrades={onMoveTrades} onMoveTradesBy={onMoveTradesBy} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
         onView={setViewingId} editTarget={editTarget} onEditConsumed={() => setEditTarget(null)} />
         : <CashFlowList accounts={accounts} ledger={ledger} onChange={onLedgerChange} />}
     </div>
