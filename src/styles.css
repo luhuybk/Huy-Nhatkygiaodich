@@ -2341,3 +2341,8 @@ button.nt-check:hover { filter: brightness(1.25); }
 /* Cột Loại tài sản ở Nhật ký */
 .asset-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 12px; }
 .asset-tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ag); flex: none; }
+
+/* Tách nhóm tài sản ra mảng vốn riêng */
+.cap-split { margin: 8px 0 4px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; }
+.cap-split-title { font-size: 13px; }
+.cap-split-taken { opacity: .55; }

@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput, useAutoFocus } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import { ASSET_GROUPS } from "../lib/assetGroups.js";
 import {
-  capitalScale, emptyCapitalMarket, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
+  capitalScale, claimedAssetGroups, emptyCapitalMarket, splitMarketByAssets, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
@@ -182,8 +182,43 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
   );
 }
 
-function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, startEditing }) {
+// Bảng chọn nhóm tài sản để tách ra một mảng riêng (VD hàng hóa của Trading - H4 đi vốn nhỏ hơn FX).
+function SplitPicker({ plan, market, accounts, onSplit, onClose }) {
+  const claimed = claimedAssetGroups(plan, market, accounts);
+  const [groups, setGroups] = useState(() => (claimed.commodity ? [] : ["commodity"]));
+  const [side, setSide] = useState(true);
+  const toggle = (key) => setGroups((p) => (p.includes(key) ? p.filter((x) => x !== key) : [...p, key]));
+  return (
+    <div className="cap-split">
+      <b className="cap-split-title">Tách nhóm tài sản ra mảng riêng</b>
+      <p className="field-hint" style={{ margin: "2px 0 8px" }}>
+        Mảng mới gắn cùng tài khoản, chỉ nhận lệnh của nhóm đã chọn, có vốn và mức risk riêng. Mảng này giữ các nhóm còn lại.
+      </p>
+      <div className="cap-accounts">
+        {ASSET_GROUPS.filter((g) => g.key !== "other").map((g) => (
+          <label key={g.key} className={`mc-check cap-account ${claimed[g.key] ? "cap-split-taken" : ""}`} title={claimed[g.key] ? `Đã có mảng "${claimed[g.key]}"` : undefined}>
+            <input type="checkbox" disabled={!!claimed[g.key]} checked={groups.includes(g.key)} onChange={() => toggle(g.key)} />
+            <span>{g.label}{claimed[g.key] ? <small className="field-hint"> · đã tách</small> : null}</span>
+          </label>
+        ))}
+      </div>
+      <label className="mc-check cap-side-check" style={{ marginTop: 6 }}>
+        <input type="checkbox" checked={side} onChange={(e) => setSide(e.target.checked)} />
+        <span>Để ở Tài khoản phụ (không nhắc chọn mức mỗi tuần)</span>
+      </label>
+      <div className="cap-editor-foot">
+        <button type="button" className="btn btn-primary" disabled={!groups.length} onClick={() => onSplit(groups, side)}><Split size={14} /> Tách</button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
+      </div>
+    </div>
+  );
+}
+
+function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, onSplit, startEditing }) {
   const [editing, setEditing] = useState(!!startEditing);
+  const [splitting, setSplitting] = useState(false);
+  // Chỉ mảng chung (không chọn nhóm) mới tách được — mảng đã giới hạn nhóm thì sửa thẳng ở ô Sửa.
+  const canSplit = !!onSplit && !(market.assetGroups || []).length && market.accountIds.length > 0;
   const now = pickedTier(plan, market.id, weeks.now);
   const next = pickedTier(plan, market.id, weeks.next);
   const safest = safestTier(market);
@@ -210,8 +245,16 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
           <button type="button" className="row-btn" disabled={!onMove.canLeft} onClick={() => onMove(-1)} title="Dời sang trái"><ChevronLeft size={13} /></button>
           <button type="button" className="row-btn" disabled={!onMove.canRight} onClick={() => onMove(1)} title="Dời sang phải"><ChevronRight size={13} /></button>
         </span>
+        {canSplit ? (
+          <button type="button" className={`row-btn ${splitting ? "row-btn-on" : ""}`} onClick={() => setSplitting((v) => !v)}
+            title="Tách nhóm tài sản (VD hàng hóa) ra mảng riêng để đi vốn khác"><Split size={13} /></button>
+        ) : null}
         <button type="button" className="row-btn" onClick={() => setEditing(true)} title="Sửa mảng (đổi tên, màu, mức rủi ro…)"><Pencil size={13} /></button>
       </div>
+      {splitting ? (
+        <SplitPicker plan={plan} market={market} accounts={accounts} onClose={() => setSplitting(false)}
+          onSplit={(groups, side) => { setSplitting(false); onSplit(groups, side); }} />
+      ) : null}
 
       <table className="cap-tiers">
         <thead><tr><th>Rủi ro</th><th>Tiền / lệnh</th><th>Quy ra vốn tổng</th></tr></thead>
@@ -454,6 +497,13 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
     setNewId(m.id);
     patch({ markets: [...plan.markets, m] });
   };
+  // Mảng tách ra mở sẵn ô Sửa để điền vốn và mức risk; bấm Hủy ở đó là bỏ luôn mảng vừa tách.
+  const splitMarket = (id, groups, side) => {
+    const r = splitMarketByAssets(plan, id, groups, side, accounts);
+    if (!r.id) return;
+    setNewId(r.id);
+    onChange(r.plan);
+  };
   const mainMarkets = plan.markets.filter((m) => !m.side);
   const sideMarkets = plan.markets.filter((m) => m.side);
   const card = (m, i, group) => {
@@ -463,7 +513,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
     return (
       <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
         onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
-        onSave={saveMarket} onDelete={() => deleteMarket(m.id)} onMove={onMove} />
+        onSave={saveMarket} onDelete={() => deleteMarket(m.id)} onMove={onMove} onSplit={(groups, side) => splitMarket(m.id, groups, side)} />
     );
   };
 

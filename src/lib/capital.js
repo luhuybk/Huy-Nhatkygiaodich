@@ -333,6 +333,43 @@ export function marketForAccount(plan, accountName, accounts, symbol = "", group
   return marketResolver(plan, accounts)(accountName, symbol, group);
 }
 
+// Nhóm tài sản đã có mảng riêng trên cùng tài khoản với `m` — tách thêm lần nữa thì hai mảng giành
+// nhau một lệnh, nên nút Tách không cho chọn lại. Trả về { nhóm: tên mảng đang giữ }.
+export function claimedAssetGroups(plan, m, accounts) {
+  const mine = marketAccountNames(m, accounts);
+  const out = {};
+  ((plan && plan.markets) || []).forEach((x) => {
+    if (x.id === m.id || !(x.assetGroups || []).length) return;
+    if (![...marketAccountNames(x, accounts)].some((n) => mine.has(n))) return;
+    x.assetGroups.forEach((g) => { if (!out[g]) out[g] = x.name; });
+  });
+  return out;
+}
+
+// Tách vài nhóm tài sản của mảng `sourceId` ra một mảng mới cùng tài khoản (VD "Trading - H4 ·
+// Hàng hóa") để đi vốn riêng. Mảng gốc giữ nguyên — nó không chọn nhóm nên tự nhả các lệnh thuộc
+// nhóm vừa tách. Vốn mặc định 10% mảng gốc, mức risk nhỏ; người dùng sửa ngay sau khi tạo.
+export function splitMarketByAssets(plan, sourceId, groups, side, accounts) {
+  const src = (plan.markets || []).find((x) => x.id === sourceId);
+  if (!src || !(groups || []).length) return { plan, id: null };
+  const linked = (accounts || []).filter((a) => (src.accountIds || []).includes(a.id));
+  const base = linked.length === 1 ? linked[0].name : src.name;
+  const labels = ASSET_GROUPS.filter((g) => groups.includes(g.key)).map((g) => g.label).join(" + ");
+  const m = {
+    ...emptyCapitalMarket(),
+    name: `${base} · ${labels}`,
+    currency: src.currency, rate: src.rate,
+    allocated: Math.round((num(src.allocated, 0) * 0.1) / 100) * 100 || 1000,
+    tiers: [0.5, 1], defaultTier: 0.5,
+    accountIds: [...(src.accountIds || [])],
+    assetGroups: [...groups], side: !!side,
+    rRule: { ...normalizeRRule(src.rRule) },
+  };
+  const markets = [...plan.markets];
+  markets.splice(markets.findIndex((x) => x.id === sourceId) + 1, 0, m);
+  return { plan: { ...plan, markets }, id: m.id };
+}
+
 // Lệnh thuộc mảng `m`. Không có `plan` (lời gọi cũ) thì chỉ xét tài khoản như trước.
 function marketTradeFilter(plan, m, accounts) {
   if (!plan) {
