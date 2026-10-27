@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, CornerDownRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, Wallet, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput, useAutoFocus } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
 import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
 import { ASSET_GROUPS } from "../lib/assetGroups.js";
 import {
-  capitalScale, claimedAssetGroups, emptyCapitalMarket, splitMarketByAssets, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
+  capitalScale, claimedAssetGroups, emptyCapitalMarket, marketDisplayOrder, marketFamilies, splitMarketByAssets, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
 } from "../lib/capital.js";
@@ -214,7 +214,7 @@ function SplitPicker({ plan, market, accounts, onSplit, onClose }) {
   );
 }
 
-function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, onSplit, startEditing }) {
+function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, onSplit, startEditing, scope }) {
   const [editing, setEditing] = useState(!!startEditing);
   const [splitting, setSplitting] = useState(false);
   // Chỉ mảng chung (không chọn nhóm) mới tách được — mảng đã giới hạn nhóm thì sửa thẳng ở ô Sửa.
@@ -241,16 +241,19 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
           {market.side ? "ước lượng " : ""}{fmtMoney(market.allocated, "USD")}
           {market.currency !== "USD" ? ` ≈ ${fmtMoney(market.allocated * market.rate, market.currency)}` : ""}
         </span>
-        <span className="cap-move">
-          <button type="button" className="row-btn" disabled={!onMove.canLeft} onClick={() => onMove(-1)} title="Dời sang trái"><ChevronLeft size={13} /></button>
-          <button type="button" className="row-btn" disabled={!onMove.canRight} onClick={() => onMove(1)} title="Dời sang phải"><ChevronRight size={13} /></button>
-        </span>
+        {onMove ? (
+          <span className="cap-move">
+            <button type="button" className="row-btn" disabled={!onMove.canLeft} onClick={() => onMove(-1)} title="Dời sang trái"><ChevronLeft size={13} /></button>
+            <button type="button" className="row-btn" disabled={!onMove.canRight} onClick={() => onMove(1)} title="Dời sang phải"><ChevronRight size={13} /></button>
+          </span>
+        ) : null}
         {canSplit ? (
           <button type="button" className={`row-btn ${splitting ? "row-btn-on" : ""}`} onClick={() => setSplitting((v) => !v)}
             title="Tách nhóm tài sản (VD hàng hóa) ra mảng riêng để đi vốn khác"><Split size={13} /></button>
         ) : null}
         <button type="button" className="row-btn" onClick={() => setEditing(true)} title="Sửa mảng (đổi tên, màu, mức rủi ro…)"><Pencil size={13} /></button>
       </div>
+      {scope ? <span className={`cap-scope ${scope.child ? "cap-scope-child" : ""}`}>{scope.child ? <CornerDownRight size={12} /> : null}{scope.text}</span> : null}
       {splitting ? (
         <SplitPicker plan={plan} market={market} accounts={accounts} onClose={() => setSplitting(false)}
           onSplit={(groups, side) => { setSplitting(false); onSplit(groups, side); }} />
@@ -337,9 +340,9 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
   const [openRule, setOpenRule] = useState(null);
   const accounts = resources.accounts || [];
   const ranges = rWindowRanges(today);
-  const rows = useMemo(() => [...plan.markets.filter((m) => !m.side), ...plan.markets.filter((m) => m.side)].map((m) => {
+  const rows = useMemo(() => marketDisplayOrder(plan, accounts).map(({ m, parentId }) => {
     const stats = marketRStats(m, trades, accounts, today, plan);
-    return { m, stats, s: suggestNextTier(plan, m, stats, dds[m.id], today), next: pickedTier(plan, m.id, weeks.next) };
+    return { m, parentId, stats, s: suggestNextTier(plan, m, stats, dds[m.id], today), next: pickedTier(plan, m.id, weeks.next) };
   }), [plan, trades, accounts, dds, today, weeks.next]);
   const pending = rows.filter((r) => r.s && r.s.action !== "none" && !(r.next.explicit && r.next.pct === r.s.pct));
   const count = (a) => rows.filter((r) => r.s && r.s.action === a).length;
@@ -368,7 +371,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
       </p>
 
       <div className="cap-rp-grid">
-        {rows.map(({ m, stats, s, next }) => {
+        {rows.map(({ m, parentId, stats, s, next }) => {
           const applied = s && next.explicit && next.pct === s.pct;
           const action = s ? s.action : "none";
           const rule = s ? s.rule : normalizeRRule(m.rRule);
@@ -388,7 +391,7 @@ function RPerformancePanel({ plan, trades, resources, dds, today, weeks, onChang
           return (
             <div key={m.id} className={`cap-rp-card cap-rp-act-${action} ${marketColor(m, accounts) ? "has-mk" : ""}`} style={marketColorStyle(m, accounts)}>
               <div className="cap-rp-card-head">
-                <b className="cap-rp-card-name">{marketColor(m, accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</b>
+                <b className="cap-rp-card-name">{parentId ? <CornerDownRight size={12} className="cap-child-mark" /> : null}{marketColor(m, accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</b>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className="cap-rp-verdict">{verdict}</span>
                 <button type="button" className={`row-btn ${openRule === m.id ? "row-btn-on" : ""}`} title="Luật gợi ý của mảng này"
@@ -504,15 +507,20 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
     setNewId(r.id);
     onChange(r.plan);
   };
-  const mainMarkets = plan.markets.filter((m) => !m.side);
-  const sideMarkets = plan.markets.filter((m) => m.side);
-  const card = (m, i, group) => {
-    const onMove = (dir) => onChange(moveMarket(plan, m.id, dir));
-    onMove.canLeft = i > 0;
-    onMove.canRight = i < group.length - 1;
+  const fam = useMemo(() => marketFamilies(plan, accounts), [plan, accounts]);
+  const looseMain = fam.loose.filter((m) => !m.side);
+  const looseSide = fam.loose.filter((m) => m.side);
+  const card = (m, i, group, scope) => {
+    // Trong khối tài khoản thì mảng con luôn đứng sau mảng chung — không cho dời.
+    let onMove = null;
+    if (!scope) {
+      onMove = (dir) => onChange(moveMarket(plan, m.id, dir));
+      onMove.canLeft = i > 0;
+      onMove.canRight = i < group.length - 1;
+    }
     return (
       <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
-        onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))}
+        onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))} scope={scope}
         onSave={saveMarket} onDelete={() => deleteMarket(m.id)} onMove={onMove} onSplit={(groups, side) => splitMarket(m.id, groups, side)} />
     );
   };
@@ -540,8 +548,28 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
         </div>
       ) : null}
 
+      {fam.families.map((f) => {
+        const taken = f.children.flatMap((c) => c.assetGroups);
+        const rest = ASSET_GROUPS.filter((g) => g.key !== "other" && !taken.includes(g.key)).map((g) => g.label);
+        const total = [f.parent, ...f.children].reduce((s, m) => s + (Number(m.allocated) || 0), 0);
+        return (
+          <section key={f.parent.id} className="cap-family">
+            <div className="cap-family-head">
+              <Wallet size={15} />
+              <b>{f.accounts.map((a) => a.name).join(", ") || f.parent.name}</b>
+              <span className="field-hint">tài khoản sàn chia {f.children.length + 1} mảng · tổng vốn {fmtMoney(total, "USD")}</span>
+            </div>
+            <div className="cap-grid">
+              {card(f.parent, 0, [], { text: `Mọi nhóm còn lại (${rest.slice(0, 3).join(", ")}${rest.length > 3 ? "…" : ""})` })}
+              {f.children.map((c) => card(c, 0, [], { child: true, text: `Chỉ ${groupLabels(c.assetGroups)}${c.side ? " · tài khoản phụ" : ""}` }))}
+            </div>
+          </section>
+        );
+      })}
+
+      {fam.families.length && looseMain.length ? <h3 className="block-title">Các mảng khác</h3> : null}
       <div className="cap-grid">
-        {mainMarkets.map(card)}
+        {looseMain.map(card)}
         <button type="button" className="cap-add" onClick={() => addMarket(false)}><Plus size={16} /> Thêm mảng</button>
       </div>
 
@@ -551,7 +579,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
         (chưa chọn thì dùng mức mặc định), nhưng vẫn có chip gợi ý khi nhập lệnh và vẫn theo dõi sụt vốn.
       </p>
       <div className="cap-grid">
-        {sideMarkets.map(card)}
+        {looseSide.map(card)}
         <button type="button" className="cap-add cap-add-side" onClick={() => addMarket(true)}><Plus size={16} /> Thêm tài khoản phụ</button>
       </div>
 
@@ -573,16 +601,17 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
 export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
   const today = todayStr();
   const week = thisWeekKey(today);
-  const rows = useMemo(() => (plan ? plan.markets.map((m) => {
+  const rows = useMemo(() => (plan ? marketDisplayOrder(plan, resources.accounts || []).map(({ m, parentId }) => {
     const p = pickedTier(plan, m.id, week);
     const dd = marketDrawdown(plan, m, trades, resources);
     const stats = marketRStats(m, trades, resources.accounts || [], today, plan);
-    return { m, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd, stats, sug: suggestNextTier(plan, m, stats, dd, today) };
+    return { m, parentId, pct: p.pct, money: p.pct === null ? null : tierMoney(m, p.pct), dd, stats, sug: suggestNextTier(plan, m, stats, dd, today) };
   }) : []), [plan, trades, resources, week, today]);
   if (!plan || !rows.length) return null;
   const missing = isWeekend(today) ? marketsMissingNextPick(plan, today) : [];
-  // Mảng chính trước, tài khoản phụ sau — nhìn là biết đâu là tiền thật, đâu là chơi nhẹ.
-  const ordered = [...rows.filter((r) => !r.m.side), ...rows.filter((r) => r.m.side)];
+  // Mảng chính trước, tài khoản phụ sau — nhìn là biết đâu là tiền thật, đâu là chơi nhẹ. Mảng tách
+  // theo nhóm tài sản đứng ngay sau mảng chung của cùng tài khoản.
+  const ordered = rows;
   return (
     <div className="cap-summary">
       <div className="cap-summary-top">
@@ -593,14 +622,14 @@ export function CapitalSummaryCard({ plan, trades, resources, onOpen }) {
         <button type="button" className="cap-summary-open" onClick={onOpen}>Mở bảng phân bổ <ChevronRight size={13} /></button>
       </div>
       <div className="cap-tiles">
-        {ordered.map(({ m, pct, money, dd, stats, sug }) => {
+        {ordered.map(({ m, parentId, pct, money, dd, stats, sug }) => {
           const isHold = pct !== null && pct === m.holdTier;
           const barW = Math.min(100, (dd.pct / (plan.ddCutPct || 12)) * 100);
           return (
             <button type="button" key={m.id} onClick={onOpen} style={marketColorStyle(m, resources.accounts)}
               className={`cap-tile cap-tile-${dd.level} ${m.side ? "cap-tile-side" : ""} ${isHold ? "cap-tile-hold" : ""} ${marketColor(m, resources.accounts) ? "has-mk" : ""}`}>
               <span className="cap-tile-head">
-                <span className="cap-tile-name">{marketColor(m, resources.accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</span>
+                <span className="cap-tile-name">{parentId ? <CornerDownRight size={12} className="cap-child-mark" /> : null}{marketColor(m, resources.accounts) ? <span className="cap-mk-dot" /> : null}{m.name}</span>
                 {m.side ? <small className="cap-side-tag">phụ</small> : null}
                 <span className={`cap-tile-status cap-tile-status-${dd.level}`}>{DD_LABEL[dd.level]}</span>
               </span>

@@ -346,6 +346,36 @@ export function claimedAssetGroups(plan, m, accounts) {
   return out;
 }
 
+// Gom mảng theo tài khoản: mảng chỉ nhận vài nhóm (Hàng hóa + Crypto) mà mọi tài khoản của nó đều
+// thuộc một mảng chung (không chọn nhóm) là "mảng con" của mảng chung đó — hai mảng chia nhau đúng một
+// tài khoản sàn. Mảng Hàng hóa gắn cả ba tài khoản thì không thuộc mảng nào, đứng riêng.
+export function marketFamilies(plan, accounts) {
+  const markets = (plan && plan.markets) || [];
+  const open = markets.filter((m) => !(m.assetGroups || []).length && (m.accountIds || []).length);
+  const parentOf = new Map();
+  markets.forEach((m) => {
+    if (!(m.assetGroups || []).length || !(m.accountIds || []).length) return;
+    const p = open.find((o) => m.accountIds.every((id) => o.accountIds.includes(id)));
+    if (p) parentOf.set(m.id, p.id);
+  });
+  const families = open
+    .map((p) => ({ parent: p, children: markets.filter((m) => parentOf.get(m.id) === p.id) }))
+    .filter((f) => f.children.length)
+    .map((f) => ({ ...f, accounts: (accounts || []).filter((a) => f.parent.accountIds.includes(a.id)) }));
+  const inFamily = new Set(families.flatMap((f) => [f.parent.id, ...f.children.map((c) => c.id)]));
+  return { families, loose: markets.filter((m) => !inFamily.has(m.id)), parentOf };
+}
+
+// Thứ tự hiện ở bảng tóm tắt / phong độ R: mảng chính trước, tài khoản phụ sau, mảng con đứng ngay
+// sau mảng chung của nó (dù mảng con để ở tài khoản phụ).
+export function marketDisplayOrder(plan, accounts) {
+  const markets = (plan && plan.markets) || [];
+  const { parentOf } = marketFamilies(plan, accounts);
+  const tops = [...markets.filter((m) => !m.side && !parentOf.has(m.id)), ...markets.filter((m) => m.side && !parentOf.has(m.id))];
+  return tops.flatMap((m) => [m, ...markets.filter((c) => parentOf.get(c.id) === m.id)])
+    .map((m) => ({ m, parentId: parentOf.get(m.id) || "" }));
+}
+
 // Tách vài nhóm tài sản của mảng `sourceId` ra một mảng mới cùng tài khoản (VD "Trading - H4 ·
 // Hàng hóa") để đi vốn riêng. Mảng gốc giữ nguyên — nó không chọn nhóm nên tự nhả các lệnh thuộc
 // nhóm vừa tách. Vốn mặc định 10% mảng gốc, mức risk nhỏ; người dùng sửa ngay sau khi tạo.

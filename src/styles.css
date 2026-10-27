@@ -2346,3 +2346,14 @@ button.nt-check:hover { filter: brightness(1.25); }
 .cap-split { margin: 8px 0 4px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; }
 .cap-split-title { font-size: 13px; }
 .cap-split-taken { opacity: .55; }
+
+/* Phân bổ vốn: gom mảng theo tài khoản sàn (mảng chung + các mảng tách theo nhóm tài sản) */
+.cap-family { margin-bottom: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 3%, transparent); }
+.cap-family-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
+.cap-family-head b { font-size: 14px; }
+.cap-family-head .field-hint { margin: 0; }
+.cap-scope { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-size: 11.5px; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.cap-scope-child { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.cap-child-mark { color: var(--muted); margin-right: 3px; vertical-align: -1px; flex: none; }
