@@ -6,6 +6,7 @@ import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
+import { ASSET_GROUPS, assetGroupInfo, assetGroupOf } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
 import { accountOpenRisk, accountTimeframes, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
 
@@ -639,13 +640,14 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = resources.accounts.map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
+  const autoAsset = assetGroupInfo(assetGroupOf({ ...t, assetGroup: "" }, resources));
   const accTf = tfOf(t.account);
   const tfHint = accTf.configured && t.timeframe && !accTf.list.includes(t.timeframe)
     ? `Tài khoản "${t.account}" ghi khung ${accTf.list.join(", ")} — kiểm lại tài khoản hoặc khung`
     : autoTfRef.current && t.timeframe ? "Tự điền theo tài khoản — chọn lại nếu cần" : undefined;
   const tierOptions = useMemo(
-    () => (capitalPlan ? riskTierOptions(capitalPlan, t.account, t.entryDate || todayStr(), resources.accounts, t.symbol) : null),
-    [capitalPlan, t.account, t.entryDate, resources.accounts, t.symbol]
+    () => (capitalPlan ? riskTierOptions(capitalPlan, t.account, t.entryDate || todayStr(), resources.accounts, t.symbol, t.assetGroup) : null),
+    [capitalPlan, t.account, t.entryDate, resources.accounts, t.symbol, t.assetGroup]
   );
   // Sụt vốn không tính lệnh đang sửa: sửa lại một lệnh thua cũ thì con số không nên tự đổi
   // theo từng phím gõ ở ô lãi/lỗ.
@@ -779,6 +781,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             hint={isForexSymbol(t.symbol) && t.entryTime ? `Đã tự điền từ giờ entry: ${sessionFromTime(t.entryTime)} — chọn lại nếu cần` : undefined}
           >
             <ResourceSelect value={t.session} onChange={set("session")} options={resources.sessions} placeholder="Chọn phiên" />
+          </Field>
+          <Field label="Loại tài sản"
+            hint={t.assetGroup ? "Đang chọn tay — chọn dòng \"Tự nhận\" để app tự nhận lại theo mã" : t.symbol ? "Tự nhận theo symbol và tài khoản — chọn lại nếu app nhận sai" : "Gõ symbol là tự nhận (VD: XAU → Hàng hóa, EUR/USD → Forex)"}>
+            <select className="input" value={t.assetGroup || ""} onChange={(e) => set("assetGroup")(e.target.value)}>
+              <option value="">{t.symbol ? `Tự nhận: ${autoAsset.label}` : "Tự nhận theo symbol"}</option>
+              {ASSET_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+            </select>
           </Field>
         </div>
         <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />

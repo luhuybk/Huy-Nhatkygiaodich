@@ -207,7 +207,7 @@ function buildCurve(list, by, plan, accounts) {
   list.forEach((x) => {
     let key;
     if (by === "market") {
-      const m = resolve ? resolve(x.t.account, x.t.symbol) : null;
+      const m = resolve ? resolve(x.t.account, x.t.symbol, x.t.assetGroup) : null;
       if (!m || !(Number(m.allocated) > 0)) return;
       key = `m_${m.id}`;
       if (!meta.has(key)) {

@@ -50,7 +50,10 @@ export function assetGroupOfSymbol(symbol, currency) {
 }
 
 const cache = new Map();
+// Lệnh có chọn tay loại tài sản (ô "Loại tài sản" ở form) thì theo đó, không thì tự nhận theo mã.
+export const isAssetGroupKey = (key) => GROUP_BY_KEY.has(key);
 export function assetGroupOf(t, resources) {
+  if (t && isAssetGroupKey(t.assetGroup)) return t.assetGroup;
   const currency = tradeCurrency(t, resources);
   const key = `${t.symbol || ""}|${currency}`;
   if (!cache.has(key)) cache.set(key, assetGroupOfSymbol(t.symbol, currency));

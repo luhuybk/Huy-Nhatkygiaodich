@@ -376,6 +376,7 @@ function capFamily(accounts: CapAccount[], m: CapMarket) {
 // crypto dù gắn chung tài khoản với mảng FX.
 const CAP_FX_CCY = new Set(["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD", "SGD", "HKD", "CNH", "MXN", "ZAR", "TRY",
   "SEK", "NOK", "DKK", "PLN", "HUF", "CZK", "THB", "INR", "ILS", "KRW", "TWD", "BRL", "AED", "SAR"]);
+const CAP_GROUPS = new Set(["fx", "commodity", "index", "crypto", "us", "vn", "other"]);
 function capAssetGroup(symbol: unknown, currency: string | undefined) {
   if (String(currency || "").trim().toUpperCase().replace(/Đ/g, "D") === "VND") return "vn";
   const s = String(symbol || "").trim().toUpperCase();
@@ -401,7 +402,9 @@ function capOwns(plan: CapPlan, m: CapMarket, accounts: CapAccount[]) {
     if (!cands.length) return false;
     let hit = null as null | CapMarket;
     if (cands.some((c) => c.groups.length)) {
-      const g = capAssetGroup(t.symbol, accounts.find((a) => a.name === acc)?.currency);
+      // Lệnh có chọn tay loại tài sản ở form thì theo đó.
+      const own = String(t.assetGroup || "");
+      const g = CAP_GROUPS.has(own) ? own : capAssetGroup(t.symbol, accounts.find((a) => a.name === acc)?.currency);
       hit = cands.find((c) => c.groups.includes(g))?.x || null;
     }
     if (!hit) hit = cands.find((c) => !c.groups.length)?.x || null;

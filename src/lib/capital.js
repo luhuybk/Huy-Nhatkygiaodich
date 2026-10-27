@@ -6,7 +6,7 @@
 // Lưu ở khoá `capitalPlan`. Bot Telegram (sl-reminder) đọc khoá này để nhắc chọn mức tuần sau —
 // sửa cách tính sụt vốn ở đây thì sửa luôn bên đó, không thì tin nhắn và app nói hai con số.
 import { accountColor, accountFamily, computeResult, dateKey, shiftDate, todayStr, uid, weekStart } from "./helpers.js";
-import { ASSET_GROUPS, assetGroupOfSymbol } from "./assetGroups.js";
+import { ASSET_GROUPS, assetGroupOfSymbol, isAssetGroupKey } from "./assetGroups.js";
 
 export const DD_WARN_DEFAULT = 8;
 export const DD_CUT_DEFAULT = 12;
@@ -313,12 +313,13 @@ export function splitMultiAccountMarkets(plan, accounts) {
 export function marketResolver(plan, accounts) {
   const markets = ((plan && plan.markets) || []).map((m) => ({ m, names: marketAccountNames(m, accounts), groups: m.assetGroups || [] }));
   const currency = new Map((accounts || []).filter((a) => a && a.name).map((a) => [a.name, a.currency]));
-  return (accountName, symbol) => {
+  // `group`: loại tài sản chọn tay ở lệnh — có thì dùng luôn, không đoán theo mã.
+  return (accountName, symbol, group = "") => {
     if (!accountName) return null;
     const cands = markets.filter((x) => x.names.has(accountName));
     if (!cands.length) return null;
     if (cands.some((x) => x.groups.length)) {
-      const g = assetGroupOfSymbol(symbol, currency.get(accountName));
+      const g = isAssetGroupKey(group) ? group : assetGroupOfSymbol(symbol, currency.get(accountName));
       const hit = cands.find((x) => x.groups.includes(g));
       if (hit) return hit.m;
     }
@@ -327,9 +328,9 @@ export function marketResolver(plan, accounts) {
   };
 }
 
-export function marketForAccount(plan, accountName, accounts, symbol = "") {
+export function marketForAccount(plan, accountName, accounts, symbol = "", group = "") {
   if (!plan || !accountName) return null;
-  return marketResolver(plan, accounts)(accountName, symbol);
+  return marketResolver(plan, accounts)(accountName, symbol, group);
 }
 
 // Lệnh thuộc mảng `m`. Không có `plan` (lời gọi cũ) thì chỉ xét tài khoản như trước.
@@ -339,7 +340,7 @@ function marketTradeFilter(plan, m, accounts) {
     return (t) => names.has(t.account);
   }
   const resolve = marketResolver(plan, accounts);
-  return (t) => { const hit = resolve(t.account, t.symbol); return !!hit && hit.id === m.id; };
+  return (t) => { const hit = resolve(t.account, t.symbol, t.assetGroup); return !!hit && hit.id === m.id; };
 }
 
 // Lãi/lỗ quy về tiền của mảng. Tài khoản cùng loại tiền thì giữ nguyên; khác thì qua USD theo
@@ -400,8 +401,8 @@ export function marketDrawdown(plan, m, trades, resources) {
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
 // rủi ro của từng mức. Tuần tính theo ngày vào lệnh, để sửa lệnh cũ vẫn thấy đúng mức lúc đó.
-export function riskTierOptions(plan, accountName, dateStr, accounts, symbol = "") {
-  const m = marketForAccount(plan, accountName, accounts, symbol);
+export function riskTierOptions(plan, accountName, dateStr, accounts, symbol = "", group = "") {
+  const m = marketForAccount(plan, accountName, accounts, symbol, group);
   if (!m || !marketTierList(m).length) return null;
   const week = thisWeekKey(dateStr || todayStr());
   const picked = pickedTier(plan, m.id, week);

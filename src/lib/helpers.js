@@ -36,6 +36,8 @@ export function emptyTrade() {
     createdAt: Date.now(),
     symbol: "", entryDate: "", entryTime: "", entryLink: "", entryImage: "",
     direction: "buy", account: "", timeframe: "", session: "",
+    // Loại tài sản chọn tay — rỗng là tự nhận theo mã (assetGroups.js). Chỉ cần khi app nhận sai.
+    assetGroup: "",
     inTradeImages: [{ link: "", image: "" }], inTradeNote: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
     setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
