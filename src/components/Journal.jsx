@@ -8,6 +8,7 @@ import { fxDetailText } from "./FxStrength.jsx";
 import { BrokerReconcile } from "./BrokerReconcile.jsx";
 import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
+import { assetGroupInfo, assetGroupOf, assetGroupOptions } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
 import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
@@ -92,6 +93,12 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
     const set = new Set(trades.map((t) => yearKey(t.entryDate)).filter(Boolean));
     return Array.from(set).sort().reverse();
   }, [trades]);
+  // Chỉ những nhóm có lệnh; nhóm đang lọc mà hết lệnh vẫn giữ trong danh sách để bỏ chọn được.
+  const assetLabels = useMemo(() => {
+    const have = assetGroupOptions(trades, resources).map((o) => o.label);
+    const chosen = Array.isArray(filters.asset) ? filters.asset : filters.asset ? [filters.asset] : [];
+    return [...have, ...chosen.filter((x) => !have.includes(x))];
+  }, [trades, resources, filters.asset]);
   // Gom lỗi theo setup để danh sách chọn không thành một đống phẳng khi mỗi setup có 5-6 lỗi.
   const errorGroups = useMemo(() => {
     const by = new Map();
@@ -129,6 +136,7 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
       <>
       <div className="filter-grid">
         <MultiFilterSelect {...menu("account")} value={filters.account} onChange={set("account")} options={accountOptions(resources.accounts)} placeholder="Tài khoản" />
+        <MultiFilterSelect {...menu("asset")} value={filters.asset} onChange={set("asset")} options={assetLabels} placeholder="Loại tài sản" />
         <MultiFilterSelect {...menu("year")} value={filters.year} onChange={set("year")} options={years} placeholder="Năm" />
         <MultiFilterSelect {...menu("month")} value={filters.month} onChange={set("month")} options={["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]} placeholder="Tháng" />
         <MultiFilterSelect {...menu("setup")} value={filters.setup} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
@@ -453,6 +461,7 @@ const JOURNAL_COLUMNS = [
   { id: "entryDate", key: "entryDate", label: "Ngày" },
   { id: "account", key: "account", label: "Tài khoản", soft: true },
   { id: "symbol", key: "symbol", label: "Symbol" },
+  { id: "asset", key: "asset", label: "Loại tài sản", soft: true },
   { id: "images", key: null, label: "Ảnh" },
   { id: "direction", key: "direction", label: "Hướng" },
   { id: "setup", key: "setup", label: "Setup" },
@@ -469,6 +478,10 @@ const JOURNAL_COLUMNS = [
 ];
 
 export const JOURNAL_COLUMN_IDS = JOURNAL_COLUMNS.map((c) => c.id);
+// Cột thêm sau này: bố cục cột đã lưu từ trước chưa có nó nên phải tự chèn vào, không thì không bao
+// giờ hiện. Tắt nó đi thì lưu kèm dấu "!id" để lần sau không bị chèn lại.
+const LATER_COLUMNS = ["asset"];
+const withHiddenMarks = (ids) => [...ids, ...LATER_COLUMNS.filter((id) => !ids.includes(id)).map((id) => `!${id}`)];
 // Sáu cột trả lời được "lệnh gì, theo kịch bản nào, kết quả ra sao" — phần còn lại là ngữ cảnh.
 const JOURNAL_COMPACT = ["entryDate", "symbol", "setup", "profit", "rr", "status"];
 
@@ -479,6 +492,12 @@ export function normalizeJournalColumns(value) {
   // trình chọn cột bật tay.
   const known = value.map((id) => (id === "checklist" ? "review" : id))
     .filter((id, i, arr) => JOURNAL_COLUMN_IDS.includes(id) && arr.indexOf(id) === i);
+  LATER_COLUMNS.forEach((id) => {
+    if (known.includes(id) || value.includes(`!${id}`) || !known.length) return;
+    // Chèn ngay sau cột đứng trước nó trong bảng gốc (cột Loại tài sản đứng sau Symbol).
+    const prev = JOURNAL_COLUMN_IDS.slice(0, JOURNAL_COLUMN_IDS.indexOf(id)).reverse().find((x) => known.includes(x));
+    known.splice(prev ? known.indexOf(prev) + 1 : 0, 0, id);
+  });
   // Ẩn hết thì bảng thành một khối trống không cứu được bằng giao diện — quay về đủ cột.
   return known.length ? known : JOURNAL_COLUMN_IDS;
 }
@@ -496,7 +515,7 @@ function ColumnPicker({ value, onChange }) {
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
   // Giữ nguyên thứ tự gốc của bảng dù người dùng tick theo thứ tự nào.
-  const toggle = (id) => onChange(JOURNAL_COLUMN_IDS.filter((x) => (x === id ? !visible.includes(id) : visible.includes(x))));
+  const toggle = (id) => onChange(withHiddenMarks(JOURNAL_COLUMN_IDS.filter((x) => (x === id ? !visible.includes(id) : visible.includes(x)))));
   return (
     <div className="msel" ref={ref}>
       <button type="button" className="btn btn-ghost" onClick={() => setOpen((v) => !v)}>
@@ -505,7 +524,7 @@ function ColumnPicker({ value, onChange }) {
       {open ? (
         <div className="msel-pop col-pop">
           <div className="col-presets">
-            <button type="button" className="chip-btn" onClick={() => onChange(JOURNAL_COMPACT)}>Gọn</button>
+            <button type="button" className="chip-btn" onClick={() => onChange(withHiddenMarks(JOURNAL_COMPACT))}>Gọn</button>
             <button type="button" className="chip-btn" onClick={() => onChange(JOURNAL_COLUMN_IDS)}>Đầy đủ</button>
           </div>
           {JOURNAL_COLUMNS.map((c) => (
@@ -676,6 +695,10 @@ export function JournalTable({ trades, resources, onEdit, onEditForm, onDelete, 
               entryDate: td(C.entryDate, t.entryDate || EMPTY, { className: "mono" }),
               account: td(C.account, t.account ? <AccountTag name={t.account} accounts={res.accounts} /> : EMPTY),
               symbol: td(C.symbol, t.symbol, { style: { fontWeight: 600 } }),
+              asset: td(C.asset, (() => {
+                const g = assetGroupInfo(assetGroupOf(t, res));
+                return <span className="asset-tag" style={{ "--ag": g.color }}>{g.label}</span>;
+              })()),
               images: td(C.images, <Strip items={shots} empty={false} />, { onClick: (e) => e.stopPropagation() }),
               direction: td(C.direction, <span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span>),
               setup: td(C.setup, t.setup || EMPTY),

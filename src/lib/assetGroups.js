@@ -4,14 +4,16 @@ import { canonicalSymbol, tradeCurrency } from "./helpers.js";
 // Nhóm tài sản tự nhận theo mã — hàng hóa đánh chung tài khoản với FX (cùng khung để EA kéo SL)
 // mà cuối tuần vẫn phải tách được hiệu suất riêng, nên không thể lọc theo tài khoản.
 export const ASSET_GROUPS = [
-  { key: "fx", label: "Forex" },
-  { key: "commodity", label: "Hàng hóa" },
-  { key: "index", label: "Chỉ số" },
-  { key: "crypto", label: "Crypto" },
-  { key: "us", label: "CP Mỹ" },
-  { key: "vn", label: "CP Việt Nam" },
-  { key: "other", label: "Khác" },
+  { key: "fx", label: "Forex", color: "#5b9cf5" },
+  { key: "commodity", label: "Hàng hóa", color: "#e0a64e" },
+  { key: "index", label: "Chỉ số", color: "#c879e0" },
+  { key: "crypto", label: "Crypto", color: "#2fb5a3" },
+  { key: "us", label: "CP Mỹ", color: "#4caf7d" },
+  { key: "vn", label: "CP Việt Nam", color: "#ff8a65" },
+  { key: "other", label: "Khác", color: "#8d9198" },
 ];
+const GROUP_BY_KEY = new Map(ASSET_GROUPS.map((g, i) => [g.key, { ...g, order: i }]));
+export const assetGroupInfo = (key) => GROUP_BY_KEY.get(key) || GROUP_BY_KEY.get("other");
 
 // Không có XAU/XAG: "XAUUSD" là vàng, phải rơi vào Hàng hóa chứ không thành một cặp tiền.
 const FX_CCY = new Set([

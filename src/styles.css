@@ -2337,3 +2337,7 @@ button.nt-check:hover { filter: brightness(1.25); }
 .acct-tf-split-row { display: grid; grid-template-columns: 130px 70px minmax(0, 240px); gap: 8px; align-items: center; }
 .acct-tf-split-tf { font-weight: 600; white-space: nowrap; }
 @media (max-width: 560px) { .acct-tf-split-row { grid-template-columns: 1fr auto; } .acct-tf-split-row select { grid-column: 1 / -1; } }
+
+/* Cột Loại tài sản ở Nhật ký */
+.asset-tag { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 12px; }
+.asset-tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ag); flex: none; }

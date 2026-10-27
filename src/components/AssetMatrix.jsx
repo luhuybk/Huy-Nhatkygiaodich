@@ -11,7 +11,7 @@ import { MARKET_COLORS, marketColor, marketResolver } from "../lib/capital.js";
 // Bên dưới là đường lãi lỗ bằng TIỀN, không phải R: mỗi nhóm đi một lượng vốn khác nhau, nên R dương
 // mà tiền vẫn âm là chuyện có thật (thắng nhiều lệnh vốn nhỏ, thua một lệnh vốn lớn).
 
-const GROUP_COLORS = { fx: "#5b9cf5", commodity: "#e0a64e", index: "#c879e0", crypto: "#2fb5a3", us: "#4caf7d", vn: "#ff8a65", other: "#8d9198" };
+const GROUP_COLORS = Object.fromEntries(ASSET_GROUPS.map((g) => [g.key, g.color]));
 const METRICS = [
   { id: "r", label: "R ròng" },
   { id: "pnl", label: "Lãi lỗ ($)" },

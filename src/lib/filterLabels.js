@@ -79,6 +79,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.month) parts.push(`Tháng ${many(f.month)}`);
   if (f.setup) parts.push(`Setup ${many(f.setup)}`);
   if (f.psychology) parts.push(`Tâm lý ${many(f.psychology)}`);
+  if (f.asset) parts.push(`Loại tài sản ${many(f.asset)}`);
   if (f.result) parts.push(pick(RESULT_FILTERS, f.result));
   if (f.grade) parts.push(pick(GRADE_FILTERS, f.grade));
   if (f.setupError) parts.push(ERROR_FILTERS.some((o) => o.id === f.setupError) ? pick(ERROR_FILTERS, f.setupError) : errName(f.setupError));

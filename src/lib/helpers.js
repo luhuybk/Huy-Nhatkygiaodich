@@ -1,5 +1,7 @@
 import { supabase } from "../supabaseClient.js";
 import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
+// Vòng import với assetGroups.js là cố ý: hai bên chỉ gọi nhau bên trong hàm, không dùng lúc nạp module.
+import { assetGroupInfo, assetGroupOf } from "./assetGroups.js";
 import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours, tradeAutoHours } from "./candles.js";
 
 // Đang ở trang/tab nào là trạng thái riêng của thiết bị, không phải dữ liệu người dùng —
@@ -3274,6 +3276,7 @@ export function tradeSortValue(t, key, resources) {
     case "direction": return t.direction === "buy" ? 0 : t.direction === "sell" ? 1 : null;
     case "setup": return str(t.setup);
     case "timeframe": return str(t.timeframe);
+    case "asset": return assetGroupInfo(assetGroupOf(t, resources)).order;
     case "riskPercent": return num(t.riskPercent);
     // Quy đổi USD trước khi so sánh, nếu không lệnh VNĐ luôn nằm ở cực trị của cột này.
     case "profit": return tradeProfitUSD(t, resources);
@@ -3550,6 +3553,7 @@ export function applyFilters(trades, filters, resources) {
     if (!filterMatches((t.entryDate || "").slice(5, 7), filters.month)) return false;
     if (!filterMatches(t.setup, filters.setup)) return false;
     if (!filterMatches(t.psychology, filters.psychology)) return false;
+    if (filters.asset && toFilterList(filters.asset).length && !filterMatches(assetGroupInfo(assetGroupOf(t, resources)).label, toFilterList(filters.asset))) return false;
     if (filters.grade && !gradeMatches(t.tradeGrade, filters.grade)) return false;
     if (filters.setupError) {
       const state = tradeErrorState(t);
