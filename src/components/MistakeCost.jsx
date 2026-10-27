@@ -3,6 +3,7 @@ import { TrendingDown } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { StatCard } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange, MISTAKE_BASES, MISTAKE_FLAG_SINCE, MISTAKE_MIN_SAMPLE, mistakeBaselineDate, mistakeCost } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v.toFixed(1)}%`);
 // Con số chi phí làm tròn 1 chữ số: "12.4R" đọc được, "12.37R" chỉ làm người ta tin một độ
@@ -28,6 +29,7 @@ export function MistakeCostPage({ trades, resources, onOpenTrade }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const [basis, setBasis] = useState("trade");
   // Mốc mặc định: xem mistakeBaselineDate. Để null nghĩa là "chưa tự chỉnh", khác với chuỗi
   // rỗng là bạn cố ý xóa mốc để tính từ đầu.
@@ -38,12 +40,12 @@ export function MistakeCostPage({ trades, resources, onOpenTrade }) {
   const from = basis === "setup" ? "" : (fromOverride === null ? autoFrom : fromOverride);
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
   const scoped = useMemo(
-    () => trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo)),
-    [trades, inScope, range, rangeFrom, rangeTo]
+    () => trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo)),
+    [trades, asset.match, inScope, range, rangeFrom, rangeTo]
   );
   const r = useMemo(() => mistakeCost(scoped, { basis, from, reviewedOnly }, resources), [scoped, basis, from, reviewedOnly, resources]);
 
-  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   const controls = (
     <div className="mc-controls">
       <label className="mc-control">

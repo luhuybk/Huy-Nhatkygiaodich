@@ -5,6 +5,7 @@ import { DashboardFilters } from "./Dashboard.jsx";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { ACCENT, GRID, LOSS, MUTED, WIN, tooltipStyle } from "../lib/constants.js";
 import { expandAccountFilter, toFilterList, buildStreakCurve, closedOf, closedOfUSD, dateKey, fmt, fmtR, inRange, streakErrorBreakdown, streakLadder } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 const THRESHOLDS = [2, 3, 4, 5];
 
@@ -170,10 +171,11 @@ export function StreakPage({ trades, resources, setupErrors }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const [minLen, setMinLen] = useState(3);
 
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
   // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
   const picked = toFilterList(scope);
@@ -194,7 +196,7 @@ export function StreakPage({ trades, resources, setupErrors }) {
   }, [curve, minLen]);
 
   const scopeBar = (
-    <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange}
+    <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange}
       rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
   );
 

@@ -6,20 +6,22 @@ import { AdvancedMetrics, DashboardFilters, RDistribution, TopBottom } from "./D
 import { CATEGORY_COLORS, GRADE_OPTIONS, LOSS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, StatCard } from "./ui.jsx";
 import { symbolGroupKey, expandAccountFilter, toFilterList, avgPillarScore, buildInsights, closedOf, closedOfUSD, dateKey, feeStats, fmt, groupFeeStats, groupStats, heatColor, inRange, monthKey, weekdayIndex, yearKey } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 export function HeatmapPage({ trades, resources }) {
   const [scope, setScope] = useState("");
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
   // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
   const picked = toFilterList(scope);
   const singleAccount = picked.length === 1 ? resources.accounts.find((a) => a.name === picked[0]) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -164,11 +166,12 @@ export function TradeAnalysisPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const closed = closedOf(scoped);
   const closedTrades = closed.map((x) => x.t);
-  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   if (closed.length === 0) {
     return (
@@ -319,14 +322,15 @@ export function Analysis({ trades, resources, onViewTrade }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
   // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
   const picked = toFilterList(scope);
   const singleAccount = picked.length === 1 ? resources.accounts.find((a) => a.name === picked[0]) : null;
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
-  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>

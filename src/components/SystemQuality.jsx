@@ -3,6 +3,7 @@ import { Gauge } from "lucide-react";
 import { DashboardFilters } from "./Dashboard.jsx";
 import { StatCard } from "./ui.jsx";
 import { expandAccountFilter, toFilterList, closedOf, closedOfUSD, computeSystemQuality, dateKey, fmtR, inRange, riskOfRuin, sqnRating } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 const RISK_LEVELS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
 
@@ -28,8 +29,9 @@ export function SystemQualityPage({ trades, resources }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
-  const scoped = trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   // Chọn đúng một tài khoản thì giữ nguyên đơn vị tiền của nó; chọn nhiều thì phải quy USD
   // trước khi cộng, không thì một lệnh VNĐ áp đảo cả bảng.
   const picked = toFilterList(scope);
@@ -39,7 +41,7 @@ export function SystemQualityPage({ trades, resources }) {
   const scopeText = singleAccount ? `trong tài khoản "${singleAccount.name}"`
     : picked.length ? `gộp ${picked.length} tài khoản: ${picked.join(", ")}`
     : "gộp mọi tài khoản";
-  const scopeBar = <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
 
   const q = computeSystemQuality(closed);
 

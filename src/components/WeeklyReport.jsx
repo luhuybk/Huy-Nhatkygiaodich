@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { PrintTrades } from "./PrintTrades.jsx";
+import { AssetFilter } from "./Dashboard.jsx";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { AccountTag, ChartCard, StatCard, FxWarning } from "./ui.jsx";
 import { GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { fmt, fmtR, periodAccountReport, periodEnd, periodLabel, periodOf, periodRTrend, periodStart, PERIODS, readLocalUi, shiftDate, shiftPeriod, todayStr, weekLabel, weeksOfMonth, weekStart, writeLocalUi } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 const MODES = [PERIODS.week, PERIODS.month];
 
@@ -59,7 +61,11 @@ function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
   );
 }
 
-export function WeeklyReportPage({ trades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills }) {
+export function WeeklyReportPage({ trades: allTrades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills }) {
+  // Hàng hóa đánh chung tài khoản với FX: lọc theo nhóm tài sản thì cả bảng, xu hướng, từng tuần
+  // trong tháng lẫn bản in đều chỉ còn nhóm đó.
+  const asset = useAssetFilter(allTrades, resources);
+  const trades = useMemo(() => allTrades.filter(asset.match), [allTrades, asset.match]);
   const [mode, setMode] = useState(() => (readLocalUi("reportMode", "week") === "month" ? "month" : "week"));
   const [anchor, setAnchor] = useState(() => periodStart(mode, todayStr()));
   const [printing, setPrinting] = useState(false);
@@ -126,9 +132,10 @@ export function WeeklyReportPage({ trades, resources, ledger, capitalPlan, journ
           onClick={() => setPrinting(true)}>
           <Printer size={14} /> In lệnh {meta.noun} này
         </button>
+        <AssetFilter asset={asset} style={{ marginLeft: 10 }} />
       </div>
       {printing ? (
-        <PrintTrades trades={trades} resources={resources} ledger={ledger} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
+        <PrintTrades trades={trades} allTrades={allTrades} assetLabel={(asset.options.find((o) => o.key === asset.asset) || {}).label || ""} resources={resources} ledger={ledger} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
           label={`${meta.noun} ${periodLabel(mode, anchor, to)}`} onClose={() => setPrinting(false)} />
       ) : null}
 

@@ -7,6 +7,7 @@ import { fxPairOf } from "../lib/fxStrength.js";
 import { buildDemoTrades } from "../lib/demoTrades.js";
 import { ConfirmButton, Field, NoteText } from "./ui.jsx";
 import { dateKey, expandAccountFilter, fmtR, inRange } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 import {
   activeStates, cloneStates, emptyRegime, emptyState, GROUP_COLORS, groupOf, marketRegimesOf, REGIME_MIN_SAMPLE, REGIME_NONE, REGIME_TONES,
   regimeForAccount, regimeGroupsOf, regimeStats, riskBandText, riskFit, sameDayState, stateName, stateRiskBand, toneVars, tradeRegime, tradeState,
@@ -417,13 +418,14 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   const regime = regimes.find((r) => r.id === tab) || null;
   useEffect(() => { if (tab !== "settings" && tab !== "fx" && !regime) setTab(regimes[0] ? regimes[0].id : "settings"); }, [tab, regime, regimes]);
 
   const inScope = useMemo(() => expandAccountFilter(scope, resources.accounts), [resources.accounts, scope]);
   const scoped = useMemo(
-    () => trades.filter((t) => (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo)),
-    [trades, inScope, range, rangeFrom, rangeTo]
+    () => trades.filter((t) => asset.match(t) && (!inScope || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo)),
+    [trades, asset.match, inScope, range, rangeFrom, rangeTo]
   );
   const st = useMemo(() => (regime ? regimeStats(scoped, regime, resources, { direction }) : null), [scoped, regime, resources, direction]);
   const groups = useMemo(() => regimeGroupsOf(resources), [resources]);
@@ -452,7 +454,7 @@ export function MarketRegimePage({ trades: realTrades, resources, onResourcesCha
   ) : null;
   const filters = (
     <>
-      <DashboardFilters multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
+      <DashboardFilters asset={asset} multi resources={resources} account={scope} onAccount={setScope} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />
       <div className="mc-controls">
         <div className="seg">
           {[["", "Buy + Sell"], ["buy", "Chỉ Buy"], ["sell", "Chỉ Sell"]].map(([id, label]) => (

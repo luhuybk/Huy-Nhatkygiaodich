@@ -281,7 +281,10 @@ function ErrorSummary({ list, errors }) {
 // từng tờ để lật tìm nhanh. Không cố nhét vừa một tờ: dài thì tự sang tờ thứ hai.
 // book: "closed" (tổng kết kỳ) | "review" (Sổ nhìn lại) | "errors" (Sổ lỗi). Hai sổ chỉ cần mục lục
 // (và bảng lỗi lặp lại cho Sổ lỗi), không cần bảng tài khoản/vốn/log.
-function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyLog, book, allMarked, weekly, errors }) {
+// "Hàng hóa" → "_Hang-hoa" cho tên file PDF.
+const assetFileTag = (label) => (label ? `_${label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : "");
+
+function Cover({ title, from, to, list, trades, capitalTrades, resources, capitalPlan, journeyLog, book, allMarked, weekly, errors }) {
   const review = book !== "closed";
   const rep = useMemo(() => periodAccountReport(trades, resources, from, to), [trades, resources, from, to]);
   const accounts = (resources && resources.accounts) || [];
@@ -291,8 +294,10 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
     // Vốn chọn theo TUẦN — in theo tháng thì "tuần sau" không có nghĩa, bỏ hẳn mục này.
     if (!weekly || !capitalPlan || !Array.isArray(capitalPlan.markets)) return [];
     return capitalPlan.markets.map((m) => {
-      const dd = marketDrawdown(capitalPlan, m, trades, resources);
-      const stats = marketRStats(m, trades, accounts, to);
+      // Sụt vốn / mức vốn tuần sau là của cả tài khoản — lọc nhóm tài sản (VD chỉ Hàng hóa) thì vẫn phải
+      // tính đủ các lệnh FX đánh chung tài khoản, không thì gợi ý tăng/giảm mức vốn sai.
+      const dd = marketDrawdown(capitalPlan, m, capitalTrades, resources);
+      const stats = marketRStats(m, capitalTrades, accounts, to);
       return {
         m, names: [...marketAccountNames(m, accounts)],
         now: pickedTier(capitalPlan, m.id, from).pct,
@@ -301,7 +306,7 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
       };
     // Mảng chưa gắn tài khoản nào thì không có gì để nói — bỏ cho trang đỡ rối.
     }).filter((x) => x.names.length && (x.now !== null || x.picked !== null || x.sug));
-  }, [weekly, capitalPlan, trades, resources, accounts, from, to, nextFrom]);
+  }, [weekly, capitalPlan, capitalTrades, resources, accounts, from, to, nextFrom]);
   const jl = useMemo(() => normalizeJourneyLog(journeyLog), [journeyLog]);
   const logs = useMemo(() => entriesInRange(jl.entries, from, to)
     .sort((a, b) => String(a.date).localeCompare(String(b.date))), [jl, from, to]);
@@ -432,7 +437,7 @@ function Cover({ title, from, to, list, trades, resources, capitalPlan, journeyL
 
 // Trang xem trước bản in, phủ toàn màn hình. Bấm In là gọi hộp thoại in của trình duyệt —
 // chọn máy Canon ở đó; khổ A4 ngang và lề đã đặt sẵn bằng @page.
-export function PrintTrades({ trades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
+export function PrintTrades({ trades, allTrades, assetLabel, resources, ledger, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
   const [book, setBook] = useState("closed");
   // Trang đường cong vốn chỉ có nghĩa với tổng kết theo kỳ, không với Sổ nhìn lại / Sổ lỗi.
   const [withEquity, setWithEquity] = useState(true);
@@ -467,11 +472,13 @@ export function PrintTrades({ trades, resources, ledger, capitalPlan, journeyLog
   const bad = list.filter((t) => ["missing", "failed"].includes(images[`${t.id}-entry`]) || ["missing", "failed"].includes(images[`${t.id}-exit`]));
   const toggle = (id) => setSkip((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
-  const title = book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`;
+  // Đang lọc một nhóm tài sản thì bản in phải ghi rõ, để sau này xem lại không tưởng là số cả tài khoản.
+  const only = assetLabel ? ` · CHỈ ${assetLabel.toUpperCase()}` : "";
+  const title = (book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`) + only;
   const equityOn = book === "closed" && withEquity;
   const pages = list.reduce((n, t) => n + 2 + (withDetail ? 1 : 0) + mistakeShots(t).length, 0) + (withCover ? 1 : 0) + (equityOn ? 1 : 0);
   const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
-  const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}.pdf`;
+  const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}${assetFileTag(assetLabel)}.pdf`;
   const download = async () => {
     const nodes = pagesRef.current ? [...pagesRef.current.querySelectorAll(".print-cover, .print-sheet")] : [];
     if (!nodes.length) return;
@@ -544,10 +551,10 @@ export function PrintTrades({ trades, resources, ledger, capitalPlan, journeyLog
       </div>
       <div className="print-pages" ref={pagesRef}>
         {equityOn ? (
-          <EquityPage title={`ĐƯỜNG CONG VỐN ${noun}`} from={from} to={to} monthly={mode === "month"} trades={trades} resources={resources} ledger={ledger} />
+          <EquityPage title={`ĐƯỜNG CONG VỐN ${noun}${only}`} from={from} to={to} monthly={mode === "month"} trades={trades} resources={resources} ledger={ledger} />
         ) : null}
         {withCover ? (
-          <Cover title={title} from={from} to={to} list={list} trades={trades} resources={resources}
+          <Cover title={title} from={from} to={to} list={list} trades={trades} capitalTrades={allTrades || trades} resources={resources}
             capitalPlan={capitalPlan} journeyLog={journeyLog} book={book} allMarked={allMarked} weekly={mode !== "month"} errors={setupErrors} />
         ) : null}
         {list.length ? list.map((t, i) => (

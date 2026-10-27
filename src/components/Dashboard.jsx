@@ -6,6 +6,7 @@ import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.js
 import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
 import { symbolGroupKey, accountFamily, accountOptions, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { useAssetFilter } from "../lib/assetGroups.js";
 
 function renderPieSliceLabel(total) {
   return ({ cx, cy, midAngle, outerRadius, value }) => {
@@ -24,7 +25,21 @@ function renderPieSliceLabel(total) {
 // `multi` bật thì ô tài khoản cho chọn nhiều cái một lúc (so H3 với H8 mà không phải xem hai
 // lượt). Bảng điều khiển giữ chế độ một tài khoản: ô đó dùng chung state với nút chuyển tài
 // khoản ở thanh bên và với tài khoản mặc định của lệnh mới, nên nó phải là một giá trị đơn.
-export function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo, multi }) {
+// Một nhóm duy nhất thì lọc cũng như không — chỉ hiện khi nhật ký có từ hai nhóm trở lên.
+export function AssetFilter({ asset, style }) {
+  if (!asset || (asset.options.length < 2 && !asset.asset)) return null;
+  return (
+    <>
+      <span className="field-label" style={{ marginRight: 4, ...style }}>Nhóm tài sản:</span>
+      <select className="input" style={{ maxWidth: 190 }} value={asset.asset} onChange={(e) => asset.setAsset(e.target.value)}>
+        <option value="">Tất cả nhóm</option>
+        {asset.options.map((o) => <option key={o.key} value={o.key}>{o.label} ({o.count} lệnh)</option>)}
+      </select>
+    </>
+  );
+}
+
+export function DashboardFilters({ resources, account, onAccount, range, onRange, rangeFrom, rangeTo, onRangeFrom, onRangeTo, multi, asset }) {
   return (
     <div className="scope-bar">
       {resources.accounts.length > 0 ? (
@@ -45,7 +60,8 @@ export function DashboardFilters({ resources, account, onAccount, range, onRange
           )}
         </>
       ) : null}
-      <span className="field-label" style={{ marginRight: 4, marginLeft: resources.accounts.length ? 14 : 0 }}>Thời gian:</span>
+      <AssetFilter asset={asset} style={{ marginLeft: resources.accounts.length ? 14 : 0 }} />
+      <span className="field-label" style={{ marginRight: 4, marginLeft: resources.accounts.length || (asset && asset.options.length > 1) ? 14 : 0 }}>Thời gian:</span>
       <select className="input" style={{ maxWidth: 180 }} value={range} onChange={(e) => onRange(e.target.value)}>
         {RANGE_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
       </select>
@@ -94,14 +110,15 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+  const asset = useAssetFilter(trades, resources);
   // Chọn nhóm tổng (VD "Forex") thì gom cả các tài khoản bên dưới, không thì luôn ra rỗng.
   const inScope = useMemo(() => accountFamily(resources.accounts, account), [resources.accounts, account]);
-  const scoped = trades.filter((t) => (!account || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
+  const scoped = trades.filter((t) => asset.match(t) && (!account || inScope.has(t.account)) && inRange(dateKey(t) || t.entryDate, range, rangeFrom, rangeTo));
   const singleAccount = account ? resources.accounts.find((a) => a.name === account) : null;
   const currencyUnit = singleAccount ? singleAccount.currency : "USD";
   const closed = singleAccount ? closedOf(scoped) : closedOfUSD(scoped, resources);
   const riskAlerts = computeRiskAlerts(resources, trades, ledger);
-  const scopeBar = <DashboardFilters resources={resources} account={account} onAccount={onAccountChange} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
+  const scopeBar = <DashboardFilters asset={asset} resources={resources} account={account} onAccount={onAccountChange} range={range} onRange={setRange} rangeFrom={rangeFrom} rangeTo={rangeTo} onRangeFrom={setRangeFrom} onRangeTo={setRangeTo} />;
   if (closed.length === 0) {
     return (
       <div>
