@@ -3,6 +3,7 @@ import { supabase } from "./supabaseClient.js";
 import { openNavTab, useBackNav } from "./lib/useBackNav.js";
 import { AssetMatrixPage } from "./components/AssetMatrix.jsx";
 import { QuickJump } from "./components/QuickJump.jsx";
+import { UpdateNotice } from "./components/UpdateNotice.jsx";
 import { discardActiveDraft } from "./lib/tradeDraft.js";
 import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
@@ -862,6 +863,7 @@ function AppShell({ onSignOut, userEmail }) {
         </div>
 
         <div className="main">
+          <UpdateNotice />
           <div className="topbar">
             <button type="button" className="mobile-nav-toggle" onClick={() => setMobileNavOpen(true)} aria-label="Mở menu">
               <Menu size={18} />

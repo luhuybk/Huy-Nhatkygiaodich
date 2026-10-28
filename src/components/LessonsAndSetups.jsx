@@ -1,4 +1,4 @@
-import { useState, useMemo, Suspense, lazy } from "react";
+import { useState, useMemo, useRef, useLayoutEffect, Suspense, lazy } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange, Printer } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, SymbolInput, clickOrDouble } from "./ui.jsx";
@@ -963,6 +963,9 @@ function TradeIssueList({ trades, onChangeTrades, onOpenTrade }) {
 
 const shortDate = (d) => (d && d.length >= 10 ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d || "");
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+// Mỗi vòng một màu cho dễ lần theo trên sơ đồ (vàng để dành cho Nguyên nhân, xanh/đỏ cho kết quả test).
+const ROUND_COLORS = ["#5b9bd5", "#9b7fe0", "#3fb8a8", "#d96fa8", "#e0875a", "#a3b84a"];
+const roundColor = (i) => ROUND_COLORS[i % ROUND_COLORS.length];
 
 // Bấm chọn kết quả của một vòng test. Chọn xong (khác "Đang test") mà chưa ghi ngày kết thúc thì lấy hôm nay.
 function setRoundResult(r, result) {
@@ -986,9 +989,9 @@ function ProblemRoundsEditor({ rounds, onChange }) {
   return (
     <div>
       {rounds.map((r, i) => (
-        <div key={r.id} className={`pb-round pb-tone-r-${r.result || "testing"}`}>
+        <div key={r.id} className="pb-round" style={{ "--rc": roundColor(i) }}>
           <div className="pb-round-head">
-            <b>Vòng {i + 1}</b>
+            <b className="pb-round-name">Vòng {i + 1}</b>
             <ProblemResultSeg value={r.result || "testing"} onChange={(v) => patch(r.id, setRoundResult(r, v))} />
             <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => onChange(rounds.filter((x) => x.id !== r.id))}>Bỏ vòng này</button>
           </div>
@@ -1019,11 +1022,41 @@ function ProblemRoundsEditor({ rounds, onChange }) {
 
 // Sơ đồ nhánh của một vấn đề: gốc là vấn đề, mỗi nhánh là nguyên nhân hoặc một vòng xử lý
 // (Hướng xử lý → Test → Tối ưu). Đổi kết quả test, mở vòng mới, chốt đã xử lý ngay trên sơ đồ.
+// Mũi tên nối từ ô cuối của vòng trước (Tối ưu tiếp) sang ô Hướng xử lý của vòng sau — vẽ bằng SVG
+// phủ lên khung nhánh, đo lại vị trí mỗi khi khung đổi cỡ (màn hẹp các ô xếp dọc, chỗ nối khác hẳn).
+function useRoundLinks(ref, deps) {
+  const [links, setLinks] = useState([]);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return undefined;
+    const measure = () => {
+      const c = box.getBoundingClientRect();
+      const next = [];
+      box.querySelectorAll("[data-round-last]").forEach((a) => {
+        const i = Number(a.getAttribute("data-round-last"));
+        const b = box.querySelector(`[data-round-first="${i + 1}"]`);
+        if (!b) return;
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        next.push({ i, x1: ra.left + ra.width / 2 - c.left, y1: ra.bottom - c.top, x2: rb.left + Math.min(rb.width / 2, 60) - c.left, y2: rb.top - c.top });
+      });
+      setLinks((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(box);
+    return () => { if (ro) ro.disconnect(); };
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  return links;
+}
+
 function ProblemMindMap({ p, onSetResult, onAddRound, onResolve, onEdit }) {
   const rounds = problemRounds(p);
   const stage = problemStage(p);
   const meta = problemStageMeta(stage);
   const today = todayStr();
+  const branchesRef = useRef(null);
+  const links = useRoundLinks(branchesRef, [p]);
   return (
     <div className="pmm" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <div className={`pmm-root pb-tone-${stage}`}>
@@ -1033,23 +1066,36 @@ function ProblemMindMap({ p, onSetResult, onAddRound, onResolve, onEdit }) {
         <span className="field-hint" style={{ margin: 0 }}>{meta.hint}</span>
         <button type="button" className="btn btn-ghost pmm-edit" onClick={onEdit}><Pencil size={12} /> Sửa</button>
       </div>
-      <div className="pmm-branches">
+      <div className="pmm-branches" ref={branchesRef}>
+        <svg className="pmm-links" aria-hidden="true">
+          {links.map((l) => {
+            const color = roundColor(l.i + 1);
+            const ey = l.y2 - 7;
+            const bend = Math.max(10, (ey - l.y1) / 2);
+            return (
+              <g key={l.i}>
+                <path d={`M${l.x1},${l.y1} C${l.x1},${l.y1 + bend} ${l.x2},${ey - bend} ${l.x2},${ey}`} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+                <path d={`M${l.x2 - 5},${ey - 1} L${l.x2 + 5},${ey - 1} L${l.x2},${l.y2} Z`} fill={color} />
+              </g>
+            );
+          })}
+        </svg>
         {p.cause ? (
           <div className="pmm-branch">
-            <div className="pmm-node pmm-cause"><span className="pmm-kicker">Nguyên nhân</span><NoteText text={p.cause} /></div>
+            <div className="pmm-node pmm-cause"><span className="pmm-kicker">⚑ Nguyên nhân</span><NoteText text={p.cause} /></div>
           </div>
         ) : null}
         {rounds.map((r, i) => {
           const res = r.result || "testing";
           return (
-            <div key={r.id} className="pmm-branch">
+            <div key={r.id} className="pmm-branch pmm-round" style={{ "--rc": roundColor(i) }}>
               <div className="pmm-chain">
-                <div className="pmm-node pmm-idea">
-                  <span className="pmm-kicker">Vòng {i + 1} · Hướng xử lý</span>
+                <div className="pmm-node pmm-idea" data-round-first={i}>
+                  <span className="pmm-kicker"><span className="pmm-round-tag">Vòng {i + 1}</span> Hướng xử lý</span>
                   <NoteText text={r.idea || "—"} />
                 </div>
                 <span className="pmm-arrow" aria-hidden="true" />
-                <div className={`pmm-node pmm-test pb-tone-r-${res}`}>
+                <div className={`pmm-node pmm-test pb-tone-r-${res}`} {...(r.next ? {} : { "data-round-last": i })}>
                   <span className="pmm-kicker">Test{r.from ? ` · ${shortDate(r.from)} → ${r.to ? shortDate(r.to) : "nay"} (${daysBetween(r.from, r.to || today)} ngày)` : ""}</span>
                   <select className="input pmm-result" value={res} onChange={(e) => onSetResult(r.id, e.target.value)} aria-label={`Kết quả test vòng ${i + 1}`}>
                     {PROBLEM_RESULTS.map((x) => <option key={x.id} value={x.id}>{x.short} {x.label}</option>)}
@@ -1059,7 +1105,7 @@ function ProblemMindMap({ p, onSetResult, onAddRound, onResolve, onEdit }) {
                 {r.next ? (
                   <>
                     <span className="pmm-arrow" aria-hidden="true" />
-                    <div className="pmm-node pmm-next">
+                    <div className="pmm-node pmm-next" data-round-last={i}>
                       <span className="pmm-kicker">{res === "works" ? "Chốt / ghi nhớ" : "Tối ưu tiếp"}</span>
                       <NoteText text={r.next} />
                     </div>
@@ -1137,6 +1183,8 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
     const payload = { ...form, id: form.id || uid(), images: cleanedImages, rounds, solution: rounds.length ? rounds[rounds.length - 1].idea : "" };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
+    // Vấn đề vừa tạo mở sẵn sơ đồ để thấy ngay vòng xử lý đầu tiên.
+    if (!exists) setExpanded((prev) => { const next = new Set(prev); if (allOpen) next.delete(payload.id); else next.add(payload.id); return next; });
     setModalOpen(false);
     setForm(emptyProblemLog());
   };
@@ -1170,7 +1218,7 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
             <textarea className="input textarea" style={{ minHeight: 70 }} value={form.problem} onChange={(e) => setF("problem")(e.target.value)} placeholder="VD: FOMO vào lệnh khi có giờ ra tin..." />
           </Field>
           <Field label="Nguyên nhân">
-            <textarea className="input textarea" style={{ minHeight: 50 }} value={form.cause || ""} onChange={(e) => setF("cause")(e.target.value)} placeholder="Vì sao xảy ra — VD: không xem lịch tin trước phiên, thấy nến chạy mạnh là vào..." />
+            <textarea className="input textarea pb-cause-input" style={{ minHeight: 50 }} value={form.cause || ""} onChange={(e) => setF("cause")(e.target.value)} placeholder="Vì sao xảy ra — VD: không xem lịch tin trước phiên, thấy nến chạy mạnh là vào..." />
           </Field>
           <Field label="Các vòng xử lý">
             <ProblemRoundsEditor rounds={form.rounds || []} onChange={setF("rounds")} />
@@ -1230,8 +1278,9 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
                   </span>
                 ) : null}
               </div>
+              {!isOpen && n.cause ? <p className="note-content pb-latest pb-latest-cause"><b>⚑ Nguyên nhân:</b> {n.cause}</p> : null}
               {!isOpen && rounds.length ? (
-                <p className="note-content pb-latest"><b>Vòng {rounds.length}:</b> {rounds[rounds.length - 1].idea || "—"}</p>
+                <p className="note-content pb-latest"><b style={{ color: roundColor(rounds.length - 1) }}>Vòng {rounds.length}:</b> {rounds[rounds.length - 1].idea || "—"}</p>
               ) : null}
               {isOpen ? (
                 <ProblemMindMap p={n}
