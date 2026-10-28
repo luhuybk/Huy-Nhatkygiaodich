@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
-import { Pencil, ChevronLeft } from "lucide-react";
+import { Pencil, ChevronLeft, PauseCircle, PlayCircle, ChevronDown } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
 import { ACCENT, CURRENCIES, FLOW_TYPES, GRID, LOSS, MUTED, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, ConfirmButton, DangerConfirmButton, Field, IdSelect, MoneyInput, StatCard } from "./ui.jsx";
 import { assetGroupOfSymbol } from "../lib/assetGroups.js";
-import { ACCOUNT_COLORS, accountColor, familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
+import { ACCOUNT_COLORS, accountColor, computeResult, familyScope, rootAccounts, totalOpenRisk, accountBalance, accountOpenRisk, buildBalanceCurve, buildGrowthSeries, closedOf, computeAdvancedMetrics, emptyFlow, fmt, fmtMoney, toUSD, uid, fxRate, missingFxAccounts } from "../lib/helpers.js";
 
 // Ngưỡng cảnh báo rủi ro tổng. 6% là "đang gánh nặng", 10% là một phiên xấu đủ thổi bay
 // hai tháng lãi — đặt ở đây để sau này chỉnh một chỗ.
@@ -39,7 +39,48 @@ function guessTimeframeTargets(source, owned, accounts, trades) {
 
 const BY_TIMEFRAME = "__bytf";
 
-export function AccountsList({ accounts, ledger, trades, timeframes, onChange, onMoveTrades, onMoveTradesBy, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
+// Bảng xác nhận khi ngừng một tài khoản: số dư còn lại chuyển đi đâu, có tắt lịch nhắc và bỏ mảng vốn
+// chỉ gắn tài khoản này không. Lệnh cũ không đụng tới.
+function StopAccountPanel({ info, accounts, onConfirm, onCancel }) {
+  const { account, balance, currency, openCount, markets } = info;
+  const [to, setTo] = useState("");
+  const [offSchedules, setOffSchedules] = useState(true);
+  const [dropMarkets, setDropMarkets] = useState(true);
+  const targets = accounts.filter((a) => a.id !== account.id && !a.closed && !accounts.some((x) => x.parentId === a.id));
+  const amount = Math.round(balance * 100) / 100;
+  return (
+    <div className="risk-alert-banner acct-stop" style={{ marginTop: 16 }}>
+      <div className="risk-alert-body" style={{ flex: 1, minWidth: 260 }}>
+        <span className="risk-alert-title">Ngừng tài khoản "{account.name}"</span>
+        <p className="risk-alert-line">
+          Lệnh cũ giữ nguyên ở tài khoản này — lịch sử, báo cáo các kỳ trước và ma trận vẫn đúng. Tài khoản chỉ biến khỏi các ô chọn
+          khi nhập lệnh mới, đối chiếu file sàn và thanh chuyển tài khoản. Bật lại được bất cứ lúc nào.
+        </p>
+        {openCount ? <p className="risk-alert-line text-loss">Còn {openCount} lệnh đang mở — nên đóng xong rồi hãy ngừng, không thì chúng không hiện ở ô chọn tài khoản khi sửa lệnh khác.</p> : null}
+        <div className="acct-stop-rows">
+          <label className="acct-stop-row">
+            <span>Số dư còn lại <b className="mono">{fmtMoney(amount, currency)}</b> chuyển sang</span>
+            <select className="input" value={to} onChange={(e) => setTo(e.target.value)}>
+              <option value="">— Không chuyển (vốn ảo, bỏ khỏi tổng vốn) —</option>
+              {targets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+          <label className="mc-check"><input type="checkbox" checked={offSchedules} onChange={(e) => setOffSchedules(e.target.checked)} /> <span>Tắt lịch nhắc dời SL / kiểm tra setup của tài khoản này</span></label>
+          {markets.length ? (
+            <label className="mc-check"><input type="checkbox" checked={dropMarkets} onChange={(e) => setDropMarkets(e.target.checked)} /> <span>Xoá mảng vốn chỉ gắn tài khoản này: <b>{markets.map((m) => m.name).join(", ")}</b></span></label>
+          ) : null}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignSelf: "flex-end" }}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Hủy</button>
+        <DangerConfirmButton label="Ngừng tài khoản" confirmLabel="Bấm lần nữa để ngừng"
+          onConfirm={() => onConfirm({ accountId: account.id, transferTo: to, amount: to && amount > 0 ? amount : 0, offSchedules, dropMarkets: dropMarkets && markets.length > 0 })} />
+      </div>
+    </div>
+  );
+}
+
+export function AccountsList({ accounts, ledger, trades, timeframes, capitalPlan, onChange, onStopAccount, onMoveTrades, onMoveTradesBy, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
   const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true, timeframes: [] };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState("");
@@ -62,6 +103,16 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
   const [pendingDelete, setPendingDelete] = useState(null);
   const [moveTarget, setMoveTarget] = useState("");
   const [tfTargets, setTfTargets] = useState({});
+  const [pendingStop, setPendingStop] = useState(null);
+  const askStop = (a) => {
+    const sc = familyScope(a, accounts, fxRates);
+    const markets = ((capitalPlan && capitalPlan.markets) || []).filter((m) => (m.accountIds || []).length && m.accountIds.every((id) => id === a.id));
+    setPendingStop({
+      account: a, balance: accountBalance(a, ledger, trades, sc), currency: sc.currency, markets,
+      openCount: trades.filter((t) => t.account === a.name && computeResult(t).status === "open").length,
+    });
+  };
+  const reopen = (a) => onChange(accounts.map((x) => (x.id === a.id ? { ...x, closed: false, closedAt: "" } : x)));
 
   const doRemove = (id) => {
     onChange(accounts.filter((a) => a.id !== id).map((a) => (a.parentId === id ? { ...a, parentId: "" } : a)));
@@ -100,8 +151,10 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
 
   // Gồm cả tài khoản mồ côi (nhóm cha đã bị xóa) — trước đây chúng biến mất khỏi cả trang này
   // lẫn mọi tổng cộng, vì không phải gốc mà cũng không nằm dưới gốc nào.
-  const roots = rootAccounts(accounts);
-  const childrenOf = (id) => accounts.filter((a) => a.parentId === id);
+  // Tài khoản đã ngừng nằm riêng ở cuối trang và không cộng vào tổng vốn.
+  const roots = rootAccounts(accounts).filter((a) => !a.closed);
+  const childrenOf = (id) => accounts.filter((a) => a.parentId === id && !a.closed);
+  const closedList = accounts.filter((a) => a.closed);
   const missingFx = missingFxAccounts({ accounts, fxRates }, null);
   // Cộng theo các tài khoản GỐC (mỗi gốc đã gộp cả nhánh của nó) thay vì chỉ cộng tài khoản lá:
   // tiền nằm ngay trên một tài khoản tổng trước đây bị bỏ sót khỏi tổng vốn.
@@ -127,8 +180,9 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
     const growth = initial ? ((bal - initial) / Math.abs(initial)) * 100 : null;
     const openRisk = accountOpenRisk(a, ledger, trades, sc);
     // Thẻ không thể là <button> vì bên trong đã có nút sửa/xóa — button lồng button là HTML sai.
+    const leaf = !accounts.some((x) => x.parentId === a.id);
     return (
-      <div key={a.id} className="account-card account-card-colored" style={{ "--acct": accountColor(a.name, accounts) }} role="button" tabIndex={0} onClick={() => onView(a.id)}
+      <div key={a.id} className={`account-card account-card-colored ${a.closed ? "account-card-closed" : ""}`} style={{ "--acct": accountColor(a.name, accounts) }} role="button" tabIndex={0} onClick={() => onView(a.id)}
         onKeyDown={(e) => {
           // Enter/Space bấm trên nút con cũng nổi bọt lên đây, chỉ nhận phím khi chính thẻ đang focus.
           if (e.target !== e.currentTarget) return;
@@ -138,11 +192,17 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
           <strong className="acct-name"><span className="acct-dot" />{a.name}</strong>
           {sc.isGroup ? <span className="account-group-tag" title={`Gộp ${sc.members.length} tài khoản: ${sc.members.map((x) => x.name).join(", ")}`}>nhóm · {sc.members.length}</span> : null}
           <span onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 4 }}>
+            {a.closed ? (
+              <button type="button" className="row-btn" aria-label="Bật lại tài khoản" title="Bật lại — tài khoản hiện lại ở các ô chọn" onClick={() => reopen(a)}><PlayCircle size={13} /></button>
+            ) : leaf && onStopAccount ? (
+              <button type="button" className="row-btn" aria-label="Ngừng tài khoản" title="Ngừng tài khoản — giữ lịch sử, ẩn khỏi các ô chọn khi nhập mới" onClick={() => askStop(a)}><PauseCircle size={13} /></button>
+            ) : null}
             <button type="button" className="row-btn" aria-label="Sửa tài khoản" onClick={() => { setForm({ ...blank, ...a }); setError(""); }}><Pencil size={13} /></button>
             <ConfirmButton onConfirm={() => remove(a.id)} />
           </span>
         </div>
         {parent ? <span className="account-card-parent">thuộc nhóm {parent.name}</span> : null}
+        {a.closed ? <span className="account-card-parent">Đã ngừng{a.closedAt ? ` từ ${a.closedAt.slice(8, 10)}/${a.closedAt.slice(5, 7)}/${a.closedAt.slice(0, 4)}` : ""}</span> : null}
         <div className={`account-card-balance ${bal >= initial ? "text-win" : "text-loss"}`}>{fmt(bal)} <span className="mono" style={{ fontSize: 13 }}>{sc.currency}</span></div>
         {sc.mixed ? <span className="field-hint">Nhóm gồm nhiều loại tiền — quy về USD</span> : null}
         <div className="account-card-rows">
@@ -289,6 +349,10 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
           <button type="button" className="btn btn-primary" onClick={submit}>{form.id ? "Cập nhật tài khoản" : "Thêm tài khoản"}</button>
         </div>
       </div>
+      {pendingStop ? (
+        <StopAccountPanel key={pendingStop.account.id} info={pendingStop} accounts={accounts} onCancel={() => setPendingStop(null)}
+          onConfirm={(opts) => { setPendingStop(null); onStopAccount(opts); }} />
+      ) : null}
       {pendingDelete ? (
         <div className="risk-alert-banner" style={{ marginTop: 16, alignItems: "center", flexWrap: "wrap" }}>
           <div className="risk-alert-body" style={{ flex: 1, minWidth: 260 }}>
@@ -329,6 +393,14 @@ export function AccountsList({ accounts, ledger, trades, timeframes, onChange, o
         {accounts.length === 0 ? <p className="empty-note">Chưa có tài khoản nào.</p> : null}
         {roots.map((a) => renderGroup(a))}
       </div>
+      {closedList.length ? (
+        <details className="acct-closed">
+          <summary><ChevronDown size={14} className="acct-closed-chev" /> Đã ngừng ({closedList.length}) — lệnh cũ vẫn tính trong lịch sử và báo cáo</summary>
+          <div className="account-card-grid" style={{ marginTop: 10 }}>
+            {closedList.map((a) => renderCard(a, accounts.find((p) => p.id === a.parentId) || null))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -509,7 +581,7 @@ export function AccountDetail({ account, accounts, fxRates, ledger, trades, onBa
   );
 }
 
-export function AccountsSection({ accounts, ledger, trades, timeframes, onAccountsChange, onMoveTrades, onMoveTradesBy, onLedgerChange, fxRates, onFxRatesChange }) {
+export function AccountsSection({ accounts, ledger, trades, timeframes, capitalPlan, onStopAccount, onAccountsChange, onMoveTrades, onMoveTradesBy, onLedgerChange, fxRates, onFxRatesChange }) {
   const [tab, setTab] = useNavTab("accountsTab", "list");
   const [viewingId, setViewingId] = useState("");
   const [editTarget, setEditTarget] = useState(null);
@@ -539,7 +611,7 @@ export function AccountsSection({ accounts, ledger, trades, timeframes, onAccoun
         <button className={`subtab ${tab === "list" ? "subtab-active" : ""}`} onClick={() => setTab("list")}>Tài khoản</button>
         <button className={`subtab ${tab === "flow" ? "subtab-active" : ""}`} onClick={() => setTab("flow")}>Nạp / Rút / Chuyển vốn</button>
       </div>
-      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} timeframes={timeframes} onChange={onAccountsChange} onMoveTrades={onMoveTrades} onMoveTradesBy={onMoveTradesBy} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
+      {tab === "list" ? <AccountsList accounts={accounts} ledger={ledger} trades={trades} timeframes={timeframes} capitalPlan={capitalPlan} onStopAccount={onStopAccount} onChange={onAccountsChange} onMoveTrades={onMoveTrades} onMoveTradesBy={onMoveTradesBy} fxRates={fxRates} onFxRatesChange={onFxRatesChange}
         onView={setViewingId} editTarget={editTarget} onEditConsumed={() => setEditTarget(null)} />
         : <CashFlowList accounts={accounts} ledger={ledger} onChange={onLedgerChange} />}
     </div>

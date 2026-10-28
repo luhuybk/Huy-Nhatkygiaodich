@@ -2102,6 +2102,15 @@ export function accountOpenRisk(account, ledger, trades, scope) {
   return { pct: balance ? (money / balance) * 100 : 0, count: openTrades.length, money, unmeasured, balance, currency: sc.currency };
 }
 
+// Tài khoản đã ngừng (VD "Hàng Hóa" sau khi hàng hóa chuyển sang đánh chung tài khoản Trading): lệnh
+// cũ giữ nguyên tên tài khoản để lịch sử và báo cáo các kỳ trước vẫn đúng, nhưng tài khoản biến khỏi
+// các ô chọn dùng để nhập mới. `keep`: tên đang được chọn — sửa một lệnh cũ của tài khoản đã ngừng
+// vẫn phải thấy đúng tài khoản của nó.
+export const isAccountClosed = (a) => !!(a && a.closed);
+export function openAccounts(accounts, keep) {
+  return (accounts || []).filter((a) => a && (!a.closed || (keep && a.name === keep)));
+}
+
 // Khung thời gian của một tài khoản (tài khoản đặt theo khung: Ngắn = H3/H4, Trung = H8…). Ghi ở tab
 // Tài khoản thì dùng đúng thứ tự đó, khung đầu là mặc định. Chưa ghi thì đoán theo các lệnh đã có của
 // tài khoản, khung của lệnh gần nhất đứng đầu — `configured` false để form chỉ tự điền chứ không

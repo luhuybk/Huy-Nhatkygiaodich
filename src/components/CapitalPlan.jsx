@@ -154,10 +154,10 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
       ) : <p className="field-hint" style={{ color: "var(--loss)" }}>Chưa có mức nào hợp lệ.</p>}
       <Field label="Tài khoản thuộc mảng này" hint="Thường là một tài khoản. Chọn nhiều (hoặc cả nhóm) nghĩa là chúng dùng chung vốn này. Dùng để gợi ý rủi ro khi nhập lệnh và tính sụt vốn.">
         <div className="cap-accounts">
-          {accounts.length ? accounts.map((a) => (
+          {accounts.length ? accounts.filter((a) => !a.closed || m.accountIds.includes(a.id)).map((a) => (
             <label key={a.id} className="mc-check cap-account">
               <input type="checkbox" checked={m.accountIds.includes(a.id)} onChange={() => toggleAccount(a.id)} />
-              <span>{a.name} <small className="field-hint">{a.currency}</small></span>
+              <span>{a.name} <small className="field-hint">{a.currency}{a.closed ? " · đã ngừng" : ""}</small></span>
             </label>
           )) : <span className="field-hint">Chưa có tài khoản nào — thêm ở tab Tài khoản.</span>}
         </div>

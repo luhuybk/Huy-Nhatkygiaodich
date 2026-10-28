@@ -8,7 +8,7 @@ import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { ASSET_GROUPS, assetGroupInfo, assetGroupOf } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, accountTimeframes, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
+import { accountOpenRisk, accountTimeframes, openAccounts, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -514,7 +514,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     autoTfRef.current = false;
     const next = { ...prev, timeframe: tf };
     if (!prev.account && tf) {
-      const owners = resources.accounts.filter((a) => (a.timeframes || []).includes(tf));
+      const owners = openAccounts(resources.accounts).filter((a) => (a.timeframes || []).includes(tf));
       if (owners.length === 1) next.account = owners[0].name;
     }
     return next;
@@ -638,7 +638,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const total = computeResult(t);
   // Đếm xem mục 1A đã có gì chưa, để nhãn gấp lại nói được là trống hay đã điền.
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
-  const accountNames = resources.accounts.map((a) => a.name);
+  const accountNames = openAccounts(resources.accounts, t.account).map((a) => a.name);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
   const autoAsset = assetGroupInfo(assetGroupOf({ ...t, assetGroup: "" }, resources));
   const accTf = tfOf(t.account);

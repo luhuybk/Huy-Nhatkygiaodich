@@ -98,7 +98,8 @@ function AccountScheduleCards({ schedules, resources, onUpdate, trades, onTf, se
   }
   return (
     <div className="acc-list">
-      {resources.accounts.map((acc) => {
+      {/* Tài khoản đã ngừng không còn lệnh mới để nhắc — lịch của nó đã tắt lúc bấm Ngừng. */}
+      {resources.accounts.filter((acc) => !acc.closed).map((acc) => {
         const sched = scheduleFor(acc.id) || emptyReminderSchedule(acc.id, acc.name);
         const auto = candle && sched.auto;
         // Theo nến thì giờ gõ tay chỉ còn cho lệnh khung W / chưa ghi khung — có lệnh như vậy mới hiện ô.
@@ -779,7 +780,7 @@ export function NotifySettingsPanel({ settings, onChange, resources, trades, wat
         <table className="table topic-table">
           <thead><tr><th>Tài khoản</th><th>Dời SL</th><th>Kiểm tra setup</th></tr></thead>
           <tbody>
-            {(resources.accounts || []).map((acc) => (
+            {(resources.accounts || []).filter((acc) => !acc.closed).map((acc) => (
               <tr key={acc.id}>
                 <td><b>{acc.name}</b></td>
                 <td><TopicInput value={(baseOf(s.schedules, acc.id) || {}).threadId} onSave={(v) => setThread("schedules", acc, v)} onTest={sendTest} /></td>

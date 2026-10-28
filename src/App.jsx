@@ -15,7 +15,7 @@ import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESE
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
-  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor } from "./lib/helpers.js";
+  shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor, emptyFlow, openAccounts, todayStr } from "./lib/helpers.js";
 import { ReminderBell } from "./components/ReminderBell.jsx";
 import { LinkIndexProvider, SloganBar, useStickyTab } from "./components/ui.jsx";
 import { buildLinkIndex } from "./lib/linkIndex.js";
@@ -481,6 +481,31 @@ function AppShell({ onSignOut, userEmail }) {
     const r = renameInList(trades, ["account"], fromName, toName);
     if (r.changed) await persistTrades(r.items);
   }, [trades, persistTrades]);
+  // Ngừng tài khoản: đánh dấu ngừng (lệnh cũ giữ nguyên), chuyển số dư còn lại bằng một dòng "Chuyển
+  // vốn", tắt lịch nhắc của nó để bot thôi gửi, và bỏ mảng vốn chỉ gắn riêng nó.
+  const handleStopAccount = useCallback(async ({ accountId, transferTo, amount, offSchedules, dropMarkets }) => {
+    const today = todayStr();
+    await handleAccountsChange(resources.accounts.map((a) => (a.id === accountId ? { ...a, closed: true, closedAt: today } : a)));
+    if (transferTo && amount > 0) {
+      await persistLedger([...ledger, { ...emptyFlow(today), type: "transfer", accountId, toAccountId: transferTo, amount: String(amount), note: "Ngừng tài khoản — chuyển số dư còn lại" }]);
+    }
+    if (offSchedules) {
+      const off = (list) => (list || []).map((sc) => (sc && sc.accountId === accountId ? { ...sc, enabled: false } : sc));
+      await persistSlReminderSettings({ ...slReminderSettings, schedules: off(slReminderSettings.schedules), setupCheckSchedules: off(slReminderSettings.setupCheckSchedules) });
+    }
+    if (dropMarkets && capitalPlan) {
+      const drop = new Set(capitalPlan.markets.filter((m) => (m.accountIds || []).length && m.accountIds.every((id) => id === accountId)).map((m) => m.id));
+      if (drop.size) {
+        const picks = {};
+        Object.entries(capitalPlan.picks || {}).forEach(([k, v]) => {
+          const rest = Object.fromEntries(Object.entries(v || {}).filter(([id]) => !drop.has(id)));
+          if (Object.keys(rest).length) picks[k] = rest;
+        });
+        await persistCapitalPlan({ ...capitalPlan, markets: capitalPlan.markets.filter((m) => !drop.has(m.id)), picks });
+      }
+    }
+  }, [resources.accounts, ledger, slReminderSettings, capitalPlan, handleAccountsChange, persistLedger, persistSlReminderSettings, persistCapitalPlan]);
+
   // Chuyển lệnh của một tài khoản sang nhiều tài khoản theo khung của từng lệnh ({ "H4": "Trading - Ngắn", … }).
   const handleMoveTradesBy = useCallback(async (fromName, byTimeframe) => {
     let changed = false;
@@ -809,7 +834,7 @@ function AppShell({ onSignOut, userEmail }) {
             {activeAccount ? <span className="acct-dot acct-dot-lg" style={{ background: accountColor(activeAccount, resources.accounts) }} /> : null}
             <select className="input" value={activeAccount} onChange={(e) => setActiveAccount(e.target.value)}>
               <option value="">Tất cả tài khoản</option>
-              {resources.accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+              {openAccounts(resources.accounts, activeAccount).map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
             </select>
             <button type="button" className="quickadd-btn" title="Thêm tài khoản" onClick={() => goTo("accounts")}><PlusCircle size={16} /></button>
           </div>
@@ -896,6 +921,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "mistakecost" ? <MistakeCostPage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "accounts" ? (
                 <AccountsSection accounts={resources.accounts} ledger={ledger} trades={trades} timeframes={resources.timeframes}
+                  capitalPlan={capitalPlan} onStopAccount={handleStopAccount}
                   onAccountsChange={handleAccountsChange} onMoveTrades={handleMoveTrades} onMoveTradesBy={handleMoveTradesBy} onLedgerChange={persistLedger}
                   fxRates={resources.fxRates} onFxRatesChange={(next) => persistResources({ ...resources, fxRates: next })} />
               ) :

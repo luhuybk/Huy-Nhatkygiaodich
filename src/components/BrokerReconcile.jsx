@@ -5,7 +5,7 @@ import {
   guessAccount, localDate, localTime, parseBrokerCsv, reconcileBrokerRows, tradeFromBrokerPosition,
   withBrokerFees, withBrokerOutcome, withBrokerTimes,
 } from "../lib/brokerCsv.js";
-import { accountSyncsTime, computeResult, fmtMoney, missingCompletionFields, tradeCompletion, tradeCurrency, uid } from "../lib/helpers.js";
+import { accountSyncsTime, openAccounts, computeResult, fmtMoney, missingCompletionFields, tradeCompletion, tradeCurrency, uid } from "../lib/helpers.js";
 
 function money(v, currency) {
   return v === null || v === undefined ? "—" : fmtMoney(v, currency);
@@ -56,7 +56,7 @@ function FileCard({ file, result, accounts, symbols, onAccountChange, onRemove, 
         </span>
         <span className="rec-file-account">
           <ResourceSelect value={file.account} onChange={onAccountChange}
-            options={accounts.map((a) => a.name)} placeholder="Chọn tài khoản" />
+            options={openAccounts(accounts, file.account).map((a) => a.name)} placeholder="Chọn tài khoản" />
           {file.guessed && file.account ? <span className="rec-tag">tự đoán theo symbol</span> : null}
         </span>
         <button type="button" className="row-btn" title="Bỏ file này" onClick={onRemove}><X size={14} /></button>
@@ -384,11 +384,12 @@ export function BrokerReconcile({ trades, resources, onCreateTrade, onEditTrade,
     if (!picked.length) return;
     const next = await Promise.all(picked.map(async (f) => {
       const res = parseBrokerCsv(await f.text());
-      const guess = res.error ? "" : guessAccount(res.rows, trades, accounts);
+      const live = openAccounts(accounts);
+      const guess = res.error ? "" : guessAccount(res.rows, trades, live);
       return {
         id: uid(), name: f.name, rows: res.rows, error: res.error, kind: res.kind || "mixed",
         // Chỉ có một tài khoản thì khỏi đoán, cứ dùng nó.
-        account: guess || (accounts.length === 1 ? accounts[0].name : ""),
+        account: guess || (live.length === 1 ? live[0].name : ""),
         guessed: !!guess,
       };
     }));

@@ -2357,3 +2357,16 @@ button.nt-check:hover { filter: brightness(1.25); }
   border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
 .cap-scope-child { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .cap-child-mark { color: var(--muted); margin-right: 3px; vertical-align: -1px; flex: none; }
+
+/* Ngừng tài khoản */
+.account-card-closed { opacity: .62; }
+.account-card-closed:hover { opacity: .9; }
+.acct-stop { flex-wrap: wrap; align-items: flex-start; }
+.acct-stop-rows { display: grid; gap: 8px; margin-top: 10px; }
+.acct-stop-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.acct-stop-row select { max-width: 320px; }
+.acct-closed { margin-top: 18px; }
+.acct-closed > summary { cursor: pointer; list-style: none; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.acct-closed > summary::-webkit-details-marker { display: none; }
+.acct-closed-chev { transition: transform .15s; transform: rotate(-90deg); }
+.acct-closed[open] .acct-closed-chev { transform: none; }

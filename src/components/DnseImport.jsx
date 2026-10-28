@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react";
 import { FileSpreadsheet, Upload, X, CheckCircle2, AlertTriangle, PlusCircle, Wallet, Flag, Scale, RotateCcw, CalendarClock } from "lucide-react";
 import { Field, ResourceSelect, useRemembered } from "./ui.jsx";
 import { readXlsx, xlsxSupported } from "../lib/xlsx.js";
-import { accountSyncsTime, computeResult, tradeCompletion } from "../lib/helpers.js";
+import { accountSyncsTime, computeResult, openAccounts, tradeCompletion } from "../lib/helpers.js";
 import { FollowUp } from "./BrokerReconcile.jsx";
 import {
   applyDnsePlan, buildDnsePositions, buildDnseTrips, fmtMoney, fmtQty, parseDnseOrders, parseDnsePnl,
@@ -194,7 +194,7 @@ export function DnseImport({ trades, resources, onAddTrades, onCreateTrade, onEd
           <div style={{ marginTop: 12, maxWidth: 360 }}>
             <Field label="Tài khoản trong nhật ký" hint="Tài khoản đang dùng cho cổ phiếu Việt Nam (VND)">
               <ResourceSelect value={account} onChange={(next) => setAccount(next)}
-                options={accounts.map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
+                options={openAccounts(accounts, account).map((a) => a.name).filter(Boolean)} placeholder="Chọn tài khoản..." />
             </Field>
           </div>
           {!account ? (
