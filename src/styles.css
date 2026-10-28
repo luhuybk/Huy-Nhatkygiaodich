@@ -2421,3 +2421,74 @@ button.nt-check:hover { filter: brightness(1.25); }
   background: color-mix(in srgb, var(--loss) 8%, transparent); font-size: 13px; }
 .issue-note:hover { background: color-mix(in srgb, var(--loss) 13%, transparent); }
 .issue-note-go { margin-left: auto; color: var(--muted); }
+
+/* Xử lý vấn đề — giai đoạn, vòng xử lý và sơ đồ nhánh (Vấn đề → Nguyên nhân / Vòng 1..n) */
+.pb-tone-new { --pb-tone: var(--loss); }
+.pb-tone-testing, .pb-tone-r-testing { --pb-tone: #e0a64e; }
+.pb-tone-optimize, .pb-tone-r-partial { --pb-tone: #d9773f; }
+.pb-tone-r-fail { --pb-tone: var(--loss); }
+.pb-tone-works { --pb-tone: #5b9bd5; }
+.pb-tone-r-works, .pb-tone-done { --pb-tone: var(--win); }
+.pb-stages { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.pb-stage-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--border);
+  border-radius: 999px; font-size: 12px; color: var(--text-dim); }
+.pb-stage-btn::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pb-tone); }
+.pb-stage-btn b { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.pb-stage-btn:hover { border-color: var(--pb-tone); }
+.pb-stage-btn.on { border-color: var(--pb-tone); color: var(--text); background: color-mix(in srgb, var(--pb-tone) 14%, transparent); }
+.pb-card { border-left: 3px solid var(--pb-tone); }
+.pb-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--pb-tone); width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--pb-tone) 50%, transparent); background: color-mix(in srgb, var(--pb-tone) 12%, transparent); }
+.pb-dots { display: inline-flex; align-items: center; gap: 3px; }
+.pb-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--pb-tone); }
+.pb-latest { color: var(--text-dim); margin-top: 6px; font-size: 12.5px; }
+.pb-round { border: 1px solid var(--border); border-left: 3px solid var(--pb-tone); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; margin-bottom: 10px; }
+.pb-round-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pb-res-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.pb-res-seg button { all: unset; cursor: pointer; padding: 4px 9px; font-size: 12px; color: var(--text-dim); }
+.pb-res-seg button + button { border-left: 1px solid var(--border); }
+.pb-res-seg button.on { background: color-mix(in srgb, var(--pb-tone) 24%, transparent); color: var(--text); font-weight: 600; }
+.pb-round-dates { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); }
+.pb-round-dates .input { width: auto; }
+
+.pmm { --pmm-line: color-mix(in srgb, var(--text-dim) 50%, transparent); display: flex; align-items: center; margin-top: 12px; padding: 16px;
+  border-radius: 12px; background: var(--bg); border: 1px solid var(--border); cursor: default; overflow-x: auto; }
+.pmm-root { position: relative; flex: 0 0 230px; box-sizing: border-box; display: grid; gap: 7px; padding: 12px 14px; border-radius: 12px;
+  border: 1.5px solid var(--pb-tone); background: color-mix(in srgb, var(--pb-tone) 9%, var(--surface)); }
+.pmm-root b { font-size: 14px; line-height: 1.4; }
+.pmm-edit { justify-self: start; padding: 3px 8px; font-size: 12px; }
+.pmm-branches { position: relative; flex: 1; min-width: 0; padding-left: 40px; display: flex; flex-direction: column; gap: 12px; }
+.pmm-branches::before { content: ""; position: absolute; left: 0; top: 50%; width: 20px; border-top: 2px solid var(--pmm-line); }
+.pmm-branch { position: relative; }
+.pmm-branch::before { content: ""; position: absolute; left: -20px; top: 50%; width: 20px; border-top: 2px solid var(--pmm-line); }
+.pmm-branch::after { content: ""; position: absolute; left: -20px; top: -6px; bottom: -6px; border-left: 2px solid var(--pmm-line); }
+.pmm-branch:first-child::after { top: 50%; }
+.pmm-branch:last-child::after { bottom: 50%; }
+.pmm-branch:only-child::after { display: none; }
+.pmm-chain { display: flex; align-items: stretch; }
+.pmm-node { flex: 1 1 0; min-width: 160px; box-sizing: border-box; display: grid; gap: 5px; align-content: start; padding: 9px 11px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 12.5px; line-height: 1.45; }
+.pmm-kicker { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); }
+.pmm-cause { border-style: dashed; max-width: 520px; }
+.pmm-test { border-color: color-mix(in srgb, var(--pb-tone) 55%, var(--border)); box-shadow: inset 3px 0 0 var(--pb-tone); }
+.pmm-next { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.pmm-result { width: auto; justify-self: start; padding: 3px 6px; font-size: 12px; color: var(--pb-tone); font-weight: 600; }
+.pmm-arrow { position: relative; flex: 0 0 22px; align-self: center; height: 2px; background: var(--pmm-line); }
+.pmm-arrow::after { content: ""; position: absolute; right: -2px; top: -4px; border: 5px solid transparent; border-right: 0; border-left-color: var(--pmm-line); }
+.pmm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pmm-add { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px;
+  border: 1.5px dashed var(--border); color: var(--text-dim); font-size: 12.5px; }
+.pmm-add:hover { border-color: var(--accent); color: var(--accent); }
+.pmm-close { border-style: solid; border-color: color-mix(in srgb, var(--win) 55%, var(--border)); color: var(--win); }
+@media (max-width: 760px) {
+  .pmm { flex-direction: column; align-items: stretch; padding: 12px; }
+  .pmm-root { flex: none; }
+  .pmm-branches { padding-left: 20px; margin: 14px 0 0 14px; }
+  .pmm-branches::before { left: 0; top: -14px; width: 0; height: 14px; border-top: 0; border-left: 2px solid var(--pmm-line); }
+  .pmm-branch::before { left: -20px; width: 14px; }
+  .pmm-branch:first-child::after { top: 0; }
+  .pmm-chain { flex-direction: column; }
+  .pmm-node { min-width: 0; }
+  .pmm-arrow { flex: 0 0 14px; width: 2px; height: 14px; align-self: flex-start; margin-left: 20px; }
+  .pmm-arrow::after { right: auto; top: auto; left: -4px; bottom: -4px; border: 5px solid transparent; border-bottom: 0; border-top-color: var(--pmm-line); }
+}

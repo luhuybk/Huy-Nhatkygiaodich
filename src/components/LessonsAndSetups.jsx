@@ -3,7 +3,7 @@ import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange, Printer } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, SymbolInput, clickOrDouble } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, canonicalSymbol, ISSUE_STATUS, tradeIssues } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, canonicalSymbol, ISSUE_STATUS, tradeIssues, PROBLEM_RESULTS, PROBLEM_STAGES, emptyProblemRound, problemRounds, problemStage, problemStageMeta } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -905,11 +905,11 @@ export function ProblemLogFilterPanel({ filters, setFilters }) {
   const clear = () => setFilters({});
   return (
     <FilterShell filters={filters} onClear={clear}
-      search={<input className="input filter-q" placeholder="Tìm theo vấn đề / hướng xử lý..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
+      search={<input className="input filter-q" placeholder="Tìm theo vấn đề / nguyên nhân / hướng xử lý..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
       <select className="input" value={filters.status || ""} onChange={(e) => set("status")(e.target.value)}>
-        <option value="">Tất cả trạng thái</option>
-        <option value="unresolved">Chưa xử lý</option>
-        <option value="resolved">Đã xử lý</option>
+        <option value="">Tất cả giai đoạn</option>
+        <option value="unresolved">Chưa xử lý xong</option>
+        {PROBLEM_STAGES.map((st) => <option key={st.id} value={st.id}>{st.label}</option>)}
       </select>
       <input type="date" className="input" value={filters.from || ""} onChange={(e) => set("from")(e.target.value)} title="Từ ngày" />
       <input type="date" className="input" value={filters.to || ""} onChange={(e) => set("to")(e.target.value)} title="Đến ngày" />
@@ -961,45 +961,205 @@ function TradeIssueList({ trades, onChangeTrades, onOpenTrade }) {
   );
 }
 
+const shortDate = (d) => (d && d.length >= 10 ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d || "");
+const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+
+// Bấm chọn kết quả của một vòng test. Chọn xong (khác "Đang test") mà chưa ghi ngày kết thúc thì lấy hôm nay.
+function setRoundResult(r, result) {
+  return { ...r, result, to: result !== "testing" && !r.to ? todayStr() : r.to };
+}
+
+function ProblemResultSeg({ value, onChange }) {
+  return (
+    <span className="pb-res-seg" role="radiogroup" aria-label="Kết quả test">
+      {PROBLEM_RESULTS.map((r) => (
+        <button key={r.id} type="button" role="radio" aria-checked={value === r.id}
+          className={`pb-tone-r-${r.id} ${value === r.id ? "on" : ""}`} onClick={() => onChange(r.id)}>{r.label}</button>
+      ))}
+    </span>
+  );
+}
+
+function ProblemRoundsEditor({ rounds, onChange }) {
+  const patch = (id, next) => onChange(rounds.map((r) => (r.id === id ? next : r)));
+  const last = rounds[rounds.length - 1];
+  return (
+    <div>
+      {rounds.map((r, i) => (
+        <div key={r.id} className={`pb-round pb-tone-r-${r.result || "testing"}`}>
+          <div className="pb-round-head">
+            <b>Vòng {i + 1}</b>
+            <ProblemResultSeg value={r.result || "testing"} onChange={(v) => patch(r.id, setRoundResult(r, v))} />
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => onChange(rounds.filter((x) => x.id !== r.id))}>Bỏ vòng này</button>
+          </div>
+          <span className="pmm-kicker">Hướng xử lý</span>
+          <textarea className="input textarea" style={{ minHeight: 60 }} value={r.idea} onChange={(e) => patch(r.id, { ...r, idea: e.target.value })}
+            placeholder={i ? "Hướng xử lý đã chỉnh lại ở vòng này..." : "Hướng xử lý — VD: tạo nhắc hẹn không vào lệnh đồng tiền đó trong giờ ra tin"} />
+          <div className="pb-round-dates">
+            <span>Test từ</span>
+            <input type="date" className="input" value={r.from || ""} onChange={(e) => patch(r.id, { ...r, from: e.target.value })} />
+            <span>đến</span>
+            <input type="date" className="input" value={r.to || ""} onChange={(e) => patch(r.id, { ...r, to: e.target.value })} />
+            {r.from ? <span className="mono">{daysBetween(r.from, r.to || todayStr())} ngày</span> : null}
+          </div>
+          <span className="pmm-kicker">Kết quả test thực tế</span>
+          <textarea className="input textarea" style={{ minHeight: 50 }} value={r.note} onChange={(e) => patch(r.id, { ...r, note: e.target.value })}
+            placeholder="Kết quả test thực tế — VD: 2 tuần không vào lệnh giờ tin, nhưng 1 lần quên đặt nhắc..." />
+          <span className="pmm-kicker">{r.result === "works" ? "Chốt / ghi nhớ" : "Rút ra — tối ưu tiếp"}</span>
+          <textarea className="input textarea" style={{ minHeight: 50 }} value={r.next} onChange={(e) => patch(r.id, { ...r, next: e.target.value })}
+            placeholder={r.result === "works" ? "Chốt lại / cần ghi nhớ gì..." : "Rút ra — vòng sau cần tối ưu gì..."} />
+        </div>
+      ))}
+      <button type="button" className="btn btn-ghost" onClick={() => onChange([...rounds, emptyProblemRound(last && last.next && last.result !== "works" ? last.next : "")])}>
+        <Plus size={14} /> {rounds.length ? `Thêm vòng ${rounds.length + 1} (tối ưu tiếp)` : "Thêm hướng xử lý"}
+      </button>
+    </div>
+  );
+}
+
+// Sơ đồ nhánh của một vấn đề: gốc là vấn đề, mỗi nhánh là nguyên nhân hoặc một vòng xử lý
+// (Hướng xử lý → Test → Tối ưu). Đổi kết quả test, mở vòng mới, chốt đã xử lý ngay trên sơ đồ.
+function ProblemMindMap({ p, onSetResult, onAddRound, onResolve, onEdit }) {
+  const rounds = problemRounds(p);
+  const stage = problemStage(p);
+  const meta = problemStageMeta(stage);
+  const today = todayStr();
+  return (
+    <div className="pmm" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <div className={`pmm-root pb-tone-${stage}`}>
+        <span className="pmm-kicker">Vấn đề · {shortDate(p.date)}</span>
+        <b><NoteText text={p.problem} /></b>
+        <span className="pb-pill">{meta.label}</span>
+        <span className="field-hint" style={{ margin: 0 }}>{meta.hint}</span>
+        <button type="button" className="btn btn-ghost pmm-edit" onClick={onEdit}><Pencil size={12} /> Sửa</button>
+      </div>
+      <div className="pmm-branches">
+        {p.cause ? (
+          <div className="pmm-branch">
+            <div className="pmm-node pmm-cause"><span className="pmm-kicker">Nguyên nhân</span><NoteText text={p.cause} /></div>
+          </div>
+        ) : null}
+        {rounds.map((r, i) => {
+          const res = r.result || "testing";
+          return (
+            <div key={r.id} className="pmm-branch">
+              <div className="pmm-chain">
+                <div className="pmm-node pmm-idea">
+                  <span className="pmm-kicker">Vòng {i + 1} · Hướng xử lý</span>
+                  <NoteText text={r.idea || "—"} />
+                </div>
+                <span className="pmm-arrow" aria-hidden="true" />
+                <div className={`pmm-node pmm-test pb-tone-r-${res}`}>
+                  <span className="pmm-kicker">Test{r.from ? ` · ${shortDate(r.from)} → ${r.to ? shortDate(r.to) : "nay"} (${daysBetween(r.from, r.to || today)} ngày)` : ""}</span>
+                  <select className="input pmm-result" value={res} onChange={(e) => onSetResult(r.id, e.target.value)} aria-label={`Kết quả test vòng ${i + 1}`}>
+                    {PROBLEM_RESULTS.map((x) => <option key={x.id} value={x.id}>{x.short} {x.label}</option>)}
+                  </select>
+                  {r.note ? <NoteText text={r.note} /> : <span className="field-hint" style={{ margin: 0 }}>Chưa ghi kết quả thực tế</span>}
+                </div>
+                {r.next ? (
+                  <>
+                    <span className="pmm-arrow" aria-hidden="true" />
+                    <div className="pmm-node pmm-next">
+                      <span className="pmm-kicker">{res === "works" ? "Chốt / ghi nhớ" : "Tối ưu tiếp"}</span>
+                      <NoteText text={r.next} />
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        {!p.resolved ? (
+          <div className="pmm-branch">
+            <div className="pmm-actions">
+              <button type="button" className="pmm-add" onClick={onAddRound}>
+                <Plus size={13} /> {rounds.length ? `Vòng ${rounds.length + 1}: tối ưu tiếp` : "Thêm hướng xử lý"}
+              </button>
+              {stage === "works" ? <button type="button" className="pmm-add pmm-close" onClick={onResolve}>✓ Chốt: đã xử lý xong</button> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProblemStageStrip({ items, value, onPick }) {
+  const counts = useMemo(() => {
+    const c = {};
+    items.forEach((p) => { const st = problemStage(p); c[st] = (c[st] || 0) + 1; });
+    return c;
+  }, [items]);
+  return (
+    <div className="pb-stages">
+      {PROBLEM_STAGES.map((st) => (
+        <button key={st.id} type="button" title={st.hint} className={`pb-stage-btn pb-tone-${st.id} ${value === st.id ? "on" : ""}`}
+          onClick={() => onPick(value === st.id ? "" : st.id)}>
+          {st.label} <b>{counts[st.id] || 0}</b>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onOpenTrade }) {
   const [form, setForm] = useState(emptyProblemLog());
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
+  const [allOpen, setAllOpen] = useState(false);
   const toggleExpand = (id) => setExpanded((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
-  const openNew = () => { setForm(emptyProblemLog()); setError(""); setModalOpen(true); };
-  const openEdit = (n) => { setForm({ ...n, images: (n.images && n.images.length) ? n.images : [{ link: "", image: "" }] }); setError(""); setModalOpen(true); };
+  const openNew = () => { setForm({ ...emptyProblemLog(), rounds: [emptyProblemRound()] }); setError(""); setModalOpen(true); };
+  const openEdit = (n, addRound) => {
+    const rounds = problemRounds(n);
+    const last = rounds[rounds.length - 1];
+    setForm({
+      ...n, cause: n.cause || "",
+      rounds: addRound ? [...rounds, emptyProblemRound(last && last.next && last.result !== "works" ? last.next : "")] : rounds,
+      images: (n.images && n.images.length) ? n.images : [{ link: "", image: "" }],
+    });
+    setError("");
+    setModalOpen(true);
+  };
   const closeModal = () => { setModalOpen(false); setForm(emptyProblemLog()); setError(""); };
   const save = () => {
     if (!form.problem.trim()) { setError("Nhập vấn đề gặp phải trước đã."); return; }
     setError("");
     const cleanedImages = (form.images || []).filter((it) => (it.link && it.link.trim()) || it.image);
-    const payload = { ...form, id: form.id || uid(), images: cleanedImages };
+    const rounds = problemRounds({ rounds: form.rounds });
+    // `solution` giữ hướng xử lý của vòng gần nhất cho bản sao lưu / dữ liệu cũ đọc được.
+    const payload = { ...form, id: form.id || uid(), images: cleanedImages, rounds, solution: rounds.length ? rounds[rounds.length - 1].idea : "" };
     const exists = items.some((n) => n.id === payload.id);
     onChange(exists ? items.map((n) => (n.id === payload.id ? payload : n)) : [...items, payload]);
     setModalOpen(false);
     setForm(emptyProblemLog());
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
-  const toggleResolved = (n, e) => { e.stopPropagation(); onChange(items.map((it) => (it.id === n.id ? { ...it, resolved: !it.resolved } : it))); };
+  const update = (n, fn) => onChange(items.map((it) => (it.id === n.id ? fn(it) : it)));
+  const toggleResolved = (n, e) => { e.stopPropagation(); update(n, (it) => ({ ...it, resolved: !it.resolved })); };
+  const setResult = (n, roundId, result) => update(n, (it) => {
+    const rounds = problemRounds(it).map((r) => (r.id === roundId ? setRoundResult(r, result) : r));
+    return { ...it, rounds, solution: rounds.length ? rounds[rounds.length - 1].idea : "" };
+  });
   const sorted = useMemo(
-    () => applyProblemLogFilters(items, filters).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    () => applyProblemLogFilters(items, filters).sort((a, b) => (a.resolved - b.resolved) || (b.date || "").localeCompare(a.date || "")),
     [items, filters]
   );
 
   return (
     <div>
       <div className="section-head">
-        <p className="field-hint" style={{ margin: 0 }}>Ghi lại vấn đề gặp phải khi giao dịch và hướng xử lý — VD: FOMO vào lệnh khi có giờ ra tin, cách xử lý là tạo nhắc hẹn không vào lệnh đồng tiền đó.</p>
+        <p className="field-hint" style={{ margin: 0 }}>Mỗi vấn đề đi theo vòng: <b>hướng xử lý → test thử → ghi kết quả → tối ưu tiếp</b>, tới khi chốt được cách làm. Bấm vào vấn đề để xem sơ đồ.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm vấn đề</button>
       </div>
       {trades && onChangeTrades ? <TradeIssueList trades={trades} onChangeTrades={onChangeTrades} onOpenTrade={onOpenTrade} /> : null}
+      <ProblemStageStrip items={items} value={filters.status || ""} onPick={(v) => setFilters((p) => ({ ...p, status: v }))} />
       <ProblemLogFilterPanel filters={filters} setFilters={setFilters} />
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal} linkOwner={`problem:${form.id || "new"}`}>
@@ -1007,10 +1167,13 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
             <input type="date" className="input" value={form.date} onChange={(e) => setF("date")(e.target.value)} />
           </Field>
           <Field label="Vấn đề gặp phải" required>
-            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.problem} onChange={(e) => setF("problem")(e.target.value)} placeholder="VD: FOMO vào lệnh khi có giờ ra tin..." />
+            <textarea className="input textarea" style={{ minHeight: 70 }} value={form.problem} onChange={(e) => setF("problem")(e.target.value)} placeholder="VD: FOMO vào lệnh khi có giờ ra tin..." />
           </Field>
-          <Field label="Hướng xử lý">
-            <textarea className="input textarea" style={{ minHeight: 80 }} value={form.solution} onChange={(e) => setF("solution")(e.target.value)} placeholder="VD: Tạo nhắc hẹn không vào lệnh đồng tiền đó trong giờ ra tin..." />
+          <Field label="Nguyên nhân">
+            <textarea className="input textarea" style={{ minHeight: 50 }} value={form.cause || ""} onChange={(e) => setF("cause")(e.target.value)} placeholder="Vì sao xảy ra — VD: không xem lịch tin trước phiên, thấy nến chạy mạnh là vào..." />
+          </Field>
+          <Field label="Các vòng xử lý">
+            <ProblemRoundsEditor rounds={form.rounds || []} onChange={setF("rounds")} />
           </Field>
           <Field label={`Link / hình ảnh minh họa (tối đa ${PROBLEM_MAX_IMAGES})`}>
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="problem" max={PROBLEM_MAX_IMAGES} />
@@ -1018,7 +1181,7 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
           <Field label="Trạng thái">
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={!!form.resolved} onChange={(e) => setF("resolved")(e.target.checked)} />
-              <span>Đã xử lý vấn đề</span>
+              <span>Đã xử lý xong — chốt cách làm</span>
             </label>
           </Field>
           {error ? <p className="error-text">{error}</p> : null}
@@ -1029,13 +1192,20 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
           </div>
         </FormModal>
       ) : null}
-      <div className="resource-list" style={{ marginTop: 16 }}>
+      {sorted.length ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+          <button type="button" className="btn btn-ghost" onClick={() => { setAllOpen((v) => !v); setExpanded(new Set()); }}>{allOpen ? "Thu gọn tất cả" : "Mở sơ đồ tất cả"}</button>
+        </div>
+      ) : null}
+      <div className="resource-list" style={{ marginTop: 8 }}>
         {sorted.length === 0 ? <p className="empty-note" style={{ padding: "24px 0" }}>Chưa có vấn đề nào khớp bộ lọc.</p> : null}
         {sorted.map((n) => {
           const attachments = n.images || [];
-          const isOpen = expanded.has(n.id);
+          const isOpen = allOpen ? !expanded.has(n.id) : expanded.has(n.id);
+          const stage = problemStage(n);
+          const rounds = problemRounds(n);
           return (
-            <div key={n.id} className="note-card" title="Bấm để mở rộng · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => toggleExpand(n.id), () => openEdit(n))}>
+            <div key={n.id} className={`note-card pb-card pb-tone-${stage}`} title="Bấm để xem sơ đồ · bấm đúp để sửa" onClick={(e) => clickOrDouble(e, () => toggleExpand(n.id), () => openEdit(n))}>
               <div className="note-head">
                 {isOpen ? <ChevronDown size={13} color="var(--text-dim)" /> : <ChevronRight size={13} color="var(--text-dim)" />}
                 <span onClick={(e) => toggleResolved(n, e)} title={n.resolved ? "Đã xử lý — bấm để bỏ đánh dấu" : "Bấm để đánh dấu đã xử lý"}>
@@ -1045,17 +1215,30 @@ export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onO
                 <span onClick={(e) => { e.stopPropagation(); openEdit(n); }}><button type="button" className="row-btn" aria-label="Sửa"><Pencil size={13} /></button></span>
                 <span onClick={(e) => e.stopPropagation()}><ConfirmButton onConfirm={() => remove(n.id)} /></span>
               </div>
-              <div className="note-head" style={{ marginTop: 2 }}>
-                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>Ngày: {n.date || "—"}</span>
-                {n.resolved ? <span className="note-type" style={{ color: "var(--win)" }}>Đã xử lý</span> : <span className="note-type" style={{ color: "var(--loss)" }}>Chưa xử lý</span>}
+              <div className="note-head" style={{ marginTop: 4 }}>
+                <span className="pb-pill">{problemStageMeta(stage).label}</span>
+                {rounds.length ? (
+                  <span className="pb-dots" title={rounds.map((r, i) => `Vòng ${i + 1}: ${PROBLEM_RESULTS.find((x) => x.id === (r.result || "testing")).label}`).join("\n")}>
+                    {rounds.map((r) => <span key={r.id} className={`pb-dot pb-tone-r-${r.result || "testing"}`} />)}
+                    <span className="field-hint" style={{ margin: "0 0 0 4px" }}>{rounds.length} vòng</span>
+                  </span>
+                ) : null}
+                <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11.5 }}>{n.date || "—"}</span>
                 {attachments.length ? (
                   <span onClick={(e) => e.stopPropagation()}>
                     <Strip items={attachments} empty={false} />
                   </span>
                 ) : null}
               </div>
+              {!isOpen && rounds.length ? (
+                <p className="note-content pb-latest"><b>Vòng {rounds.length}:</b> {rounds[rounds.length - 1].idea || "—"}</p>
+              ) : null}
               {isOpen ? (
-                <p className="note-content" style={{ color: "var(--text-dim)", marginTop: 4 }}><strong>Hướng xử lý:</strong> <NoteText text={n.solution || "—"} /></p>
+                <ProblemMindMap p={n}
+                  onSetResult={(rid, v) => setResult(n, rid, v)}
+                  onAddRound={() => openEdit(n, true)}
+                  onResolve={() => update(n, (it) => ({ ...it, resolved: true }))}
+                  onEdit={() => openEdit(n)} />
               ) : null}
             </div>
           );

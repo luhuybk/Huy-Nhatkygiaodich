@@ -486,7 +486,45 @@ export function skillStats(items) {
 export const PROBLEM_MAX_IMAGES = 4;
 
 export function emptyProblemLog(date) {
-  return { id: null, date: date || todayStr(), problem: "", solution: "", images: [{ link: "", image: "" }], resolved: false };
+  return { id: null, date: date || todayStr(), problem: "", cause: "", solution: "", rounds: [], images: [{ link: "", image: "" }], resolved: false };
+}
+
+// Mỗi vấn đề xử lý theo vòng: đưa ra hướng xử lý → test thử một thời gian → ghi kết quả thực tế →
+// rút ra điều cần tối ưu, rồi mở vòng tiếp theo cho tới khi chốt được cách làm.
+export const PROBLEM_RESULTS = [
+  { id: "testing", label: "Đang test", short: "…" },
+  { id: "works", label: "Hiệu quả", short: "✓" },
+  { id: "partial", label: "Một phần", short: "◐" },
+  { id: "fail", label: "Không hiệu quả", short: "✗" },
+];
+export function problemResultLabel(id) {
+  return (PROBLEM_RESULTS.find((r) => r.id === id) || PROBLEM_RESULTS[0]).label;
+}
+export function emptyProblemRound(idea) {
+  return { id: uid(), idea: idea || "", from: todayStr(), to: "", result: "testing", note: "", next: "" };
+}
+// Vấn đề ghi trước khi có vòng xử lý chỉ có một ô "Hướng xử lý" — coi như vòng 1.
+export function problemRounds(p) {
+  const rounds = ((p && p.rounds) || []).filter((r) => r && (String(r.idea || "").trim() || String(r.note || "").trim() || String(r.next || "").trim()));
+  if (rounds.length || !p || !String(p.solution || "").trim()) return rounds;
+  return [{ id: `${p.id || "p"}-r1`, idea: p.solution, from: p.date || "", to: "", result: p.resolved ? "works" : "testing", note: "", next: "" }];
+}
+export const PROBLEM_STAGES = [
+  { id: "new", label: "Chưa có hướng xử lý", hint: "Mới ghi nhận — cần nghĩ hướng xử lý" },
+  { id: "testing", label: "Đang test", hint: "Đang thử hướng xử lý của vòng gần nhất" },
+  { id: "optimize", label: "Cần tối ưu", hint: "Vòng gần nhất chưa hiệu quả hẳn — mở vòng tiếp theo" },
+  { id: "works", label: "Test đạt", hint: "Vòng gần nhất hiệu quả — chốt lại nếu đã ổn định" },
+  { id: "done", label: "Đã xử lý", hint: "Đã chốt cách làm" },
+];
+export function problemStage(p) {
+  if (p && p.resolved) return "done";
+  const rounds = problemRounds(p);
+  if (!rounds.length) return "new";
+  const last = rounds[rounds.length - 1].result || "testing";
+  return last === "works" ? "works" : last === "testing" ? "testing" : "optimize";
+}
+export function problemStageMeta(id) {
+  return PROBLEM_STAGES.find((s) => s.id === id) || PROBLEM_STAGES[0];
 }
 
 export const MISS_MAX_IMAGES = 4;
@@ -4014,10 +4052,12 @@ export function applyProblemLogFilters(items, filters) {
   return items.filter((n) => {
     if (filters.q) {
       const q = filters.q.toLowerCase();
-      if (!(n.problem || "").toLowerCase().includes(q) && !(n.solution || "").toLowerCase().includes(q)) return false;
+      const hay = [n.problem, n.cause, n.solution, ...problemRounds(n).flatMap((r) => [r.idea, r.note, r.next])].join("\n").toLowerCase();
+      if (!hay.includes(q)) return false;
     }
     if (filters.status === "resolved" && !n.resolved) return false;
     if (filters.status === "unresolved" && n.resolved) return false;
+    if (filters.status && PROBLEM_STAGES.some((st) => st.id === filters.status) && problemStage(n) !== filters.status) return false;
     if (filters.from && (n.date || "") < filters.from) return false;
     if (filters.to && (n.date || "") > filters.to) return false;
     return true;
