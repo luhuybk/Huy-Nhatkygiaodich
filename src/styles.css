@@ -2505,3 +2505,14 @@ button.nt-check:hover { filter: brightness(1.25); }
 .update-notice { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2500; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 14px; border-radius: 12px; font-size: 13px;
   background: var(--surface-2); border: 1px solid var(--accent); box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+
+/* Form lệnh: nút nhảy tới ô chưa điền tiếp + nháy viền chỗ vừa nhảy tới */
+.completion-next { all: unset; box-sizing: border-box; cursor: pointer; margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.completion-next:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.form-flash { animation: form-flash 1.5s ease-out; border-radius: 10px; }
+@keyframes form-flash {
+  0%, 35% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent); }
+  100% { box-shadow: 0 0 0 2px transparent, 0 0 0 7px transparent; }
+}

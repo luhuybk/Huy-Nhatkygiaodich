@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
+import { ArrowUpRight, ArrowDown, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
 import { ChipSelect, ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
@@ -52,13 +52,52 @@ function scrollBoxTo(box, top) {
 
 // Cuộn tới một mục của form (tính chừa thanh tiến độ ghim ở đỉnh) — dùng chung cho mục lục bên
 // phải và thanh dưới đáy ở màn hẹp.
-function scrollToSection(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
+function scrollToEl(el) {
   const box = el.closest(".body");
   if (!box) { el.scrollIntoView(); return; }
   const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top - TOC_SCROLL_OFFSET;
   scrollBoxTo(box, Math.max(0, top));
+}
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (el) scrollToEl(el);
+}
+// Nháy viền chỗ vừa nhảy tới — tự cuộn mà không có dấu hiệu gì thì dễ tưởng form tự trôi.
+function flashEl(el) {
+  el.classList.remove("form-flash");
+  void el.offsetWidth;
+  el.classList.add("form-flash");
+  setTimeout(() => el.classList.remove("form-flash"), 1600);
+}
+const canHover = () => typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+// Ô chưa điền tiếp theo tính từ chỗ đang xem (dấu ⚠ cạnh nhãn) — hết thì quay lại ô đầu tiên.
+// Vẫn đứng ở ô vừa nhảy tới (chưa cuộn đi đâu) thì đi tiếp theo thứ tự trên form: ô cùng hàng
+// không cuộn được thêm, ô sát đáy form không lên được tới vạch — tính theo vị trí là kẹt lại.
+function jumpToNextMissing(lastRef) {
+  const form = document.querySelector(".trade-form");
+  if (!form) return false;
+  const els = [...form.querySelectorAll(".field-missing-icon")].map((ic) => ic.closest(".field") || ic.parentElement);
+  if (!els.length) return false;
+  const box = els[0].closest(".body");
+  const line = (box ? box.getBoundingClientRect().top : 0) + TOC_SCROLL_OFFSET;
+  const atBottom = box ? box.scrollTop + box.clientHeight >= box.scrollHeight - 4 : false;
+  const top = (e) => e.getBoundingClientRect().top;
+  const lastIdx = els.indexOf(lastRef.current);
+  let i = lastIdx >= 0 && (atBottom || Math.abs(top(els[lastIdx]) - line) < 60)
+    ? lastIdx + 1
+    : els.findIndex((e) => top(e) > line - 8);
+  if (i < 0 || i >= els.length) i = 0;
+  const el = els[i];
+  lastRef.current = el;
+  scrollToEl(el);
+  flashEl(el);
+  // Máy có chuột thì đặt luôn con trỏ vào ô để gõ; điện thoại thì thôi, khỏi bật bàn phím che form.
+  const input = canHover() ? el.querySelector("input:not([type=hidden]):not([type=checkbox]), select, textarea") : null;
+  if (input) input.focus({ preventScroll: true });
+  // Ô chấm sao không có ô nhập — bỏ con trỏ khỏi ô trước, kẻo gõ phím lại sửa nhầm ô đó.
+  else if (document.activeElement && document.activeElement !== document.body && form.contains(document.activeElement)) document.activeElement.blur();
+  return true;
 }
 
 // Ảnh của lệnh để xem nhanh. Khoá theo cả link: link đổi thì thử tải lại thay vì giữ trạng thái
@@ -684,6 +723,38 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const feeApplied = feeNum !== null && Number.isFinite(feeNum) && feeNum !== 0 && t.profit !== "";
   const feeWarn = feeNum !== null && Number.isFinite(feeNum) && feeNum > 0;
   const total = computeResult(t);
+  const lastJumpRef = useRef(null);
+  // Mở lại một lệnh đã lưu mà chưa điền đủ thì cuộn thẳng tới phần còn thiếu: lệnh chưa đóng →
+  // mục Đóng lệnh; đóng rồi → mục thiếu đầu tiên phía sau (Kỹ năng, Tâm lý, Đánh giá...); không
+  // thì mục thiếu đầu tiên. Lệnh mới / nhân bản thì vẫn bắt đầu từ đầu form.
+  useEffect(() => {
+    if (draftRef.current.isNew) return undefined;
+    const prog = tradeSectionProgress(t);
+    const ids = sections.map((sec) => sec.id);
+    const miss = (id) => ((prog.get(id) || {}).missing || 0) > 0;
+    const target = miss("sec-1c") ? "sec-1c" : ids.slice(ids.indexOf("sec-1c") + 1).find(miss) || ids.find(miss);
+    if (!target) return undefined;
+    // Các mục phía trên còn cao thêm sau lần cuộn đầu (ảnh, khối gấp mở) làm mục đích trôi xuống —
+    // căn lại một lần nữa, trừ khi bạn đã tự cuộn / gõ phím trong lúc đó.
+    let touched = false;
+    const onTouch = () => { touched = true; };
+    const events = ["wheel", "touchmove", "keydown", "mousedown"];
+    events.forEach((ev) => window.addEventListener(ev, onTouch, { passive: true }));
+    const first = setTimeout(() => {
+      const el = document.getElementById(target);
+      if (!el) return;
+      scrollToEl(el);
+      flashEl(el);
+    }, 180);
+    const settle = setTimeout(() => {
+      const el = document.getElementById(target);
+      const box = el && el.closest(".body");
+      if (!box || touched) return;
+      const off = el.getBoundingClientRect().top - box.getBoundingClientRect().top - TOC_SCROLL_OFFSET;
+      if (Math.abs(off) > 12) scrollToEl(el);
+    }, 900);
+    return () => { clearTimeout(first); clearTimeout(settle); events.forEach((ev) => window.removeEventListener(ev, onTouch)); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Đếm xem mục 1A đã có gì chưa, để nhãn gấp lại nói được là trống hay đã điền.
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = openAccounts(resources.accounts, t.account).map((a) => a.name);
@@ -729,6 +800,15 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const submitRef = useRef(submit);
   submitRef.current = submit;
   useEffect(() => {
+    // ⌥↓ / Alt+↓: nhảy tới ô chưa điền tiếp theo, khỏi cầm chuột kéo.
+    const onJump = (e) => {
+      if (e.defaultPrevented || e.isComposing || !e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || e.key !== "ArrowDown") return;
+      if (jumpToNextMissing(lastJumpRef)) e.preventDefault();
+    };
+    window.addEventListener("keydown", onJump);
+    return () => window.removeEventListener("keydown", onJump);
+  }, []);
+  useEffect(() => {
     const onKey = (e) => {
       if (e.defaultPrevented || e.isComposing || e.altKey || e.shiftKey || !(e.metaKey || e.ctrlKey)) return;
       const k = String(e.key || "").toLowerCase();
@@ -759,7 +839,12 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
         </div>
       ) : null}
       <RiskAlertBanner alerts={riskAlerts} />
-      <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky />
+      <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky
+        action={completion.done < completion.total ? (
+          <button type="button" className="completion-next" onClick={() => jumpToNextMissing(lastJumpRef)} title={`Nhảy tới ô chưa điền tiếp theo (${IS_MAC ? "⌥" : "Alt+"}↓)`}>
+            Ô chưa điền tiếp <ArrowDown size={12} />
+          </button>
+        ) : null} />
       {t.brokerFilled ? (
         <p className="broker-note">
           <FileSpreadsheet size={13} /> Lợi nhuận, ngày thoát và phí của lệnh này do <b>file sàn điền hộ</b> ngày {t.brokerFilled} —
