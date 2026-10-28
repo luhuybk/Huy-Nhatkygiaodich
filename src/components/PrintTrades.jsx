@@ -1,18 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Download, ImageOff, Printer, X } from "lucide-react";
-import { avgPillarScore, computeResult, fmtHold, fmtMoney, fmtR, holdHours, mistakeImages, partialExitsOf, partialExitStats, periodAccountReport, reviewEntries, shiftDate, skillLabel, tradeCurrency } from "../lib/helpers.js";
+import { accountRTotals, avgPillarScore, closedOfUSD, computeResult, fmtHold, fmtMoney, fmtR, holdHours, mistakeImages, partialExitsOf, partialExitStats, periodAccountReport, reviewEntries, skillLabel, tradeCurrency } from "../lib/helpers.js";
 import { GRADE_OPTIONS } from "../lib/constants.js";
 import { marketRegimesOf, regimeGroupsOf, riskBandText, riskFit, stateName, stateRiskBand, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { fxDetailText } from "./FxStrength.jsx";
 import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
-import { fmtPctVN, marketAccountNames, marketDrawdown, marketRStats, pickedTier, suggestNextTier } from "../lib/capital.js";
+import { ASSET_GROUPS, assetGroupOf } from "../lib/assetGroups.js";
 import { NoteText } from "./ui.jsx";
 import { exportPdf } from "../lib/exportPdf.js";
 import { EquityPage } from "./PrintEquity.jsx";
 
-const ACTION_LABEL = { up: "▲ tăng", down: "▼ hạ", same: "= giữ", none: "—" };
 
 // Ghi chú nhìn lại in dưới ảnh: tờ VÀO mang lý do đánh dấu, tờ THOÁT mang các lần đã nhìn lại.
 function ReviewStrip({ trade, kind }) {
@@ -245,6 +244,60 @@ function rCell(v, n) {
   return n ? fmtR(v) : "—";
 }
 
+// Ma trận Tài khoản × Nhóm tài sản của kỳ in (thay bảng "Từng tài khoản"): tài khoản đặt theo khung
+// mà mỗi khung đánh cả FX lẫn hàng hóa, nên một dòng tổng của tài khoản giấu mất "FX thắng, vàng thua".
+// Tiền quy USD để cộng được giữa các tài khoản; R cộng thẳng.
+function PrintAssetMatrix({ trades, resources, from, to }) {
+  const accounts = (resources && resources.accounts) || [];
+  const data = useMemo(() => {
+    const closed = closedOfUSD((trades || []).filter((t) => t && t.exitDate && t.exitDate >= from && t.exitDate <= to), resources)
+      .map((x) => ({ ...x, g: assetGroupOf(x.t, resources) }));
+    const order = accounts.map((a) => a.name);
+    const present = [...new Set(closed.map((x) => x.t.account || "—"))];
+    const rows = [...order.filter((n) => present.includes(n)), ...present.filter((n) => !order.includes(n))];
+    const groups = ASSET_GROUPS.filter((g) => closed.some((x) => x.g === g.key));
+    const cell = (row, g) => accountRTotals(closed.filter((x) => (!row || (x.t.account || "—") === row) && (!g || x.g === g)));
+    return { rows, groups, cell, any: closed.length > 0 };
+  }, [trades, resources, accounts, from, to]);
+  if (!data.any) return <p className="print-cover-empty">Không có lệnh nào đóng trong kỳ này.</p>;
+  const tone = (c) => (!c.rCount ? "" : c.rNet > 0 ? "is-up" : c.rNet < 0 ? "is-down" : "");
+  const box = (c, total) => (!c.count ? <span className="print-dim">·</span> : (
+    <>
+      <b className={`pmx-r ${tone(c)}`}>{rCell(c.rNet, c.rCount)}</b>
+      <span className="pmx-line">{c.count} lệnh · {c.wins}T/{c.losses}L{c.be ? `/${c.be}H` : ""}{c.winRate === null ? "" : ` · ${Math.round(c.winRate)}%`}</span>
+      <span className="pmx-line">{c.profit >= 0 ? "+" : ""}{fmtMoney(Math.round(c.profit * 100) / 100, "USD")}</span>
+      {total && c.rCount ? <span className="pmx-line print-dim">R thắng {fmtR(c.rWin)} · lỗ {fmtR(c.rLoss)}</span> : null}
+    </>
+  ));
+  return (
+    <table className="print-table pmx">
+      <thead>
+        <tr>
+          <th>Tài khoản</th>
+          {data.groups.map((g) => <th key={g.key}><i className="pmx-dot" style={{ background: g.color }} />{g.label}</th>)}
+          <th className="pmx-total">Tổng</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.rows.map((row) => (
+          <tr key={row}>
+            <td><b>{row}</b></td>
+            {data.groups.map((g) => { const c = data.cell(row, g.key); return <td key={g.key} className={`pmx-cell ${c.count ? tone(c) : ""}`}>{box(c)}</td>; })}
+            <td className="pmx-cell pmx-total">{box(data.cell(row, ""), true)}</td>
+          </tr>
+        ))}
+        {data.rows.length > 1 ? (
+          <tr className="pmx-foot">
+            <td><b>Tổng</b></td>
+            {data.groups.map((g) => <td key={g.key} className="pmx-cell pmx-total">{box(data.cell("", g.key), true)}</td>)}
+            <td className="pmx-cell pmx-total">{box(data.cell("", ""), true)}</td>
+          </tr>
+        ) : null}
+      </tbody>
+    </table>
+  );
+}
+
 // Trang đầu Sổ lỗi: mắc bao nhiêu lệnh, mất bao nhiêu R vì chúng, và lỗi nào lặp lại nhiều nhất.
 function ErrorSummary({ list, errors }) {
   const freq = errorFrequency(list, errors);
@@ -284,29 +337,9 @@ function ErrorSummary({ list, errors }) {
 // "Hàng hóa" → "_Hang-hoa" cho tên file PDF.
 const assetFileTag = (label) => (label ? `_${label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : "");
 
-function Cover({ title, from, to, list, trades, capitalTrades, resources, capitalPlan, journeyLog, book, allMarked, weekly, errors }) {
+function Cover({ title, from, to, list, trades, resources, journeyLog, book, allMarked, errors }) {
   const review = book !== "closed";
   const rep = useMemo(() => periodAccountReport(trades, resources, from, to), [trades, resources, from, to]);
-  const accounts = (resources && resources.accounts) || [];
-  const nextFrom = shiftDate(to, 1);
-  const nextTo = shiftDate(to, 7);
-  const capital = useMemo(() => {
-    // Vốn chọn theo TUẦN — in theo tháng thì "tuần sau" không có nghĩa, bỏ hẳn mục này.
-    if (!weekly || !capitalPlan || !Array.isArray(capitalPlan.markets)) return [];
-    return capitalPlan.markets.map((m) => {
-      // Sụt vốn / mức vốn tuần sau là của cả tài khoản — lọc nhóm tài sản (VD chỉ Hàng hóa) thì vẫn phải
-      // tính đủ các lệnh FX đánh chung tài khoản, không thì gợi ý tăng/giảm mức vốn sai.
-      const dd = marketDrawdown(capitalPlan, m, capitalTrades, resources);
-      const stats = marketRStats(m, capitalTrades, accounts, to, capitalPlan);
-      return {
-        m, names: [...marketAccountNames(m, accounts)],
-        now: pickedTier(capitalPlan, m.id, from).pct,
-        picked: pickedTier(capitalPlan, m.id, nextFrom).pct,
-        sug: suggestNextTier(capitalPlan, m, stats, dd, to),
-      };
-    // Mảng chưa gắn tài khoản nào thì không có gì để nói — bỏ cho trang đỡ rối.
-    }).filter((x) => x.names.length && (x.now !== null || x.picked !== null || x.sug));
-  }, [weekly, capitalPlan, capitalTrades, resources, accounts, from, to, nextFrom]);
   const jl = useMemo(() => normalizeJourneyLog(journeyLog), [journeyLog]);
   const logs = useMemo(() => entriesInRange(jl.entries, from, to)
     .sort((a, b) => String(a.date).localeCompare(String(b.date))), [jl, from, to]);
@@ -334,48 +367,9 @@ function Cover({ title, from, to, list, trades, capitalTrades, resources, capita
             <div><span>R thắng · R lỗ</span><b>{rCell(t.rWin, t.rCount)} · {rCell(t.rLoss, t.rCount)}</b></div>
           </div>
 
-          <h3 className="print-cover-h">Từng tài khoản</h3>
-          {rep.rows.length ? (
-            <table className="print-table">
-              <thead>
-                <tr><th>Tài khoản</th><th>Lệnh</th><th>Thắng/Thua</th><th>Tỷ lệ thắng</th><th>R ròng</th><th>R thắng · lỗ</th><th>Lãi/lỗ</th></tr>
-              </thead>
-              <tbody>
-                {rep.rows.map((r) => (
-                  <tr key={r.account}>
-                    <td><b>{r.account}</b></td>
-                    <td>{r.count}</td>
-                    <td>{r.wins}/{r.losses}{r.be ? ` (+${r.be} hoà)` : ""}</td>
-                    <td>{r.winRate === null ? "—" : `${Math.round(r.winRate)}%`}</td>
-                    <td><b>{rCell(r.rNet, r.rCount)}</b></td>
-                    <td>{rCell(r.rWin, r.rCount)} · {rCell(r.rLoss, r.rCount)}</td>
-                    <td>{fmtMoney(r.profit, r.currency)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p className="print-cover-empty">Không có lệnh nào đóng trong kỳ này.</p>}
+          <h3 className="print-cover-h">Từng tài khoản × nhóm tài sản <span className="print-dim">(R ròng · số lệnh, thắng/thua, tỷ lệ thắng · lãi lỗ quy USD)</span></h3>
+          <PrintAssetMatrix trades={trades} resources={resources} from={from} to={to} />
 
-          {capital.length ? (
-            <>
-              <h3 className="print-cover-h">Phân bổ vốn tuần sau ({fmtDateVN(nextFrom).slice(0, 5)} – {fmtDateVN(nextTo)})</h3>
-              <table className="print-table">
-                <thead><tr><th>Mảng</th><th>Tài khoản</th><th>Tuần này</th><th>Gợi ý theo R</th><th>Đã chọn</th><th>Lý do</th></tr></thead>
-                <tbody>
-                  {capital.map(({ m, names, now, picked, sug }) => (
-                    <tr key={m.id}>
-                      <td><b>{m.name}</b></td>
-                      <td>{names.join(", ") || "—"}</td>
-                      <td>{now === null ? "—" : fmtPctVN(now)}</td>
-                      <td>{sug ? `${ACTION_LABEL[sug.action] || ""} ${fmtPctVN(sug.pct)}` : "—"}</td>
-                      <td>{picked === null ? <i>chưa chọn</i> : fmtPctVN(picked)}</td>
-                      <td className="print-small">{sug && sug.reasons ? sug.reasons.join(" · ") : ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : null}
 
           {logs.length ? (
             <>
@@ -437,7 +431,7 @@ function Cover({ title, from, to, list, trades, capitalTrades, resources, capita
 
 // Trang xem trước bản in, phủ toàn màn hình. Bấm In là gọi hộp thoại in của trình duyệt —
 // chọn máy Canon ở đó; khổ A4 ngang và lề đã đặt sẵn bằng @page.
-export function PrintTrades({ trades, allTrades, assetLabel, resources, ledger, capitalPlan, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
+export function PrintTrades({ trades, assetLabel, resources, ledger, journeyLog, setupErrors, skills, mode, from, to, label, onClose }) {
   const [book, setBook] = useState("closed");
   // Trang đường cong vốn chỉ có nghĩa với tổng kết theo kỳ, không với Sổ nhìn lại / Sổ lỗi.
   const [withEquity, setWithEquity] = useState(true);
@@ -554,8 +548,8 @@ export function PrintTrades({ trades, allTrades, assetLabel, resources, ledger, 
           <EquityPage title={`ĐƯỜNG CONG VỐN ${noun}${only}`} from={from} to={to} monthly={mode === "month"} trades={trades} resources={resources} ledger={ledger} />
         ) : null}
         {withCover ? (
-          <Cover title={title} from={from} to={to} list={list} trades={trades} capitalTrades={allTrades || trades} resources={resources}
-            capitalPlan={capitalPlan} journeyLog={journeyLog} book={book} allMarked={allMarked} weekly={mode !== "month"} errors={setupErrors} />
+          <Cover title={title} from={from} to={to} list={list} trades={trades} resources={resources}
+            journeyLog={journeyLog} book={book} allMarked={allMarked} errors={setupErrors} />
         ) : null}
         {list.length ? list.map((t, i) => (
           <Fragment key={t.id}>

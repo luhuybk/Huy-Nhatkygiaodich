@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { accountColor, buildTWRCurve, computeResult, fmtMoney, fmtR, periodAccountReport, shiftDate } from "../lib/helpers.js";
+import { accountColor, buildTWRCurve, closedOf, computeResult, fmtMoney, fmtR, periodAccountReport, shiftDate } from "../lib/helpers.js";
+import { ASSET_GROUPS, assetGroupOf } from "../lib/assetGroups.js";
 import { fmtDateVN, weekdayVN } from "../lib/printTrades.js";
 
 // Trang đầu của bản in tổng kết tuần / tháng: kỳ này đánh thế nào. Trên cùng là R cộng dồn theo
@@ -13,6 +14,30 @@ const SHORT_WD = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const wdShort = (d) => SHORT_WD[new Date(`${d}T00:00:00`).getDay()];
 const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const pctText = (v) => (v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2).replace(".", ",")}%`);
+
+// Lãi lỗ kỳ này của một tài khoản chia theo nhóm tài sản (bằng TIỀN của tài khoản, kèm R): hai nhóm
+// đi vốn khác nhau nên "R dương mà tiền âm" chỉ lộ ra khi đặt hai con số cạnh nhau. Một nhóm thì thôi.
+function AssetSplitLine({ trades, resources, account, currency, from, to }) {
+  const parts = useMemo(() => {
+    const list = closedOf((trades || []).filter((t) => t && t.account === account && t.exitDate && t.exitDate >= from && t.exitDate <= to));
+    return ASSET_GROUPS.map((g) => {
+      const items = list.filter((x) => assetGroupOf(x.t, resources) === g.key);
+      const withR = items.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
+      return { g, n: items.length, pnl: items.reduce((s, x) => s + (x.r.profit || 0), 0), r: withR.reduce((s, x) => s + x.r.rr, 0), nR: withR.length };
+    }).filter((x) => x.n);
+  }, [trades, resources, account, from, to]);
+  if (parts.length < 2) return null;
+  return (
+    <div className="print-acct-split">
+      {parts.map((x) => (
+        <span key={x.g.key}>
+          <i style={{ background: x.g.color }} />{x.g.label} <b className={x.pnl > 0 ? "is-up" : x.pnl < 0 ? "is-down" : ""}>{x.pnl > 0 ? "+" : ""}{fmtMoney(Math.round(x.pnl * 100) / 100, currency)}</b>
+          {x.nR ? <span className="print-dim"> ({fmtR(x.r)})</span> : null}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function daysBetween(from, to) {
   const out = [];
@@ -203,6 +228,7 @@ export function EquityPage({ title, from, to, monthly, trades, resources, ledger
                     series={[{ key: "i", color: accountColor(row.account, accounts), values: win.map((p) => p.index), width: 2.4 }]}
                     yFmt={(v) => String(Math.round(v * 10) / 10).replace(".", ",")} />
                 ) : <p className="print-cover-empty">Chưa có vốn ban đầu / nạp tiền nên chưa vẽ được đường cong.</p>}
+                <AssetSplitLine trades={trades} resources={resources} account={row.account} currency={row.currency} from={from} to={to} />
                 <div className="print-acct-stats">
                   <span>Lệnh <b>{row.count}</b> ({row.wins}T/{row.losses}L{row.be ? `/${row.be}H` : ""})</span>
                   <span>R <b>{row.rCount ? fmtR(row.rNet) : "—"}</b></span>

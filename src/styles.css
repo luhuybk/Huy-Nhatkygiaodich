@@ -2370,3 +2370,20 @@ button.nt-check:hover { filter: brightness(1.25); }
 .acct-closed > summary::-webkit-details-marker { display: none; }
 .acct-closed-chev { transition: transform .15s; transform: rotate(-90deg); }
 .acct-closed[open] .acct-closed-chev { transform: none; }
+
+/* Bản in: ma trận Tài khoản × Nhóm tài sản (trang 2) + dòng chia nhóm ở thẻ tài khoản (trang 1) */
+.pmx td, .pmx th { text-align: center; }
+.pmx td:first-child, .pmx th:first-child { text-align: left; }
+.pmx-cell { line-height: 1.3; }
+.pmx-r { display: block; font-size: 13px; }
+.pmx-line { display: block; font-size: 10.5px; }
+.pmx-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pmx td.is-up { background: #e6f4ea; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pmx td.is-down { background: #fbe9e7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pmx .pmx-total { background: #f3f3f3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pmx-foot td { border-top: 2px solid #888; }
+.pmx-child td { background: #fafafa; }
+.print-acct-split { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; margin: 2px 0 4px; }
+.print-acct-split i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pmx-r.is-up, .print-acct-split b.is-up { color: #1e7d3a; }
+.pmx-r.is-down, .print-acct-split b.is-down { color: #b3261e; }

@@ -2380,7 +2380,7 @@ export function weeksOfMonth(mStart) {
 
 // Tách R thắng và R thua chứ không chỉ R ròng: +2R có thể là "thắng 3R thua 1R" (ổn)
 // hoặc "thắng 12R thua 10R" (đánh nhiều, giữ lại được ít) — hai chuyện hoàn toàn khác.
-function accountRTotals(items) {
+export function accountRTotals(items) {
   let rWin = 0, rLoss = 0, rCount = 0, wins = 0, losses = 0, be = 0, profit = 0;
   items.forEach((x) => {
     const rr = x.r.rr;

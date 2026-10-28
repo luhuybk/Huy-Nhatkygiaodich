@@ -61,7 +61,7 @@ function MonthWeeks({ trades, resources, monthStart, onPickWeek }) {
   );
 }
 
-export function WeeklyReportPage({ trades: allTrades, resources, ledger, capitalPlan, journeyLog, setupErrors, skills }) {
+export function WeeklyReportPage({ trades: allTrades, resources, ledger, journeyLog, setupErrors, skills }) {
   // Hàng hóa đánh chung tài khoản với FX: lọc theo nhóm tài sản thì cả bảng, xu hướng, từng tuần
   // trong tháng lẫn bản in đều chỉ còn nhóm đó.
   const asset = useAssetFilter(allTrades, resources);
@@ -135,7 +135,7 @@ export function WeeklyReportPage({ trades: allTrades, resources, ledger, capital
         <AssetFilter asset={asset} style={{ marginLeft: 10 }} />
       </div>
       {printing ? (
-        <PrintTrades trades={trades} allTrades={allTrades} assetLabel={(asset.options.find((o) => o.key === asset.asset) || {}).label || ""} resources={resources} ledger={ledger} capitalPlan={capitalPlan} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
+        <PrintTrades trades={trades} assetLabel={(asset.options.find((o) => o.key === asset.asset) || {}).label || ""} resources={resources} ledger={ledger} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} mode={mode} from={anchor} to={to}
           label={`${meta.noun} ${periodLabel(mode, anchor, to)}`} onClose={() => setPrinting(false)} />
       ) : null}
 
