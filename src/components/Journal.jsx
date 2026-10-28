@@ -10,8 +10,8 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { assetGroupInfo, assetGroupOf, assetGroupOptions } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, brokerPending, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
+import { applyFilters, accountOptions, avgPillarScore, brokerPending, openTradeIssues, tradeIssues, issueStatusLabel, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -189,6 +189,10 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
             {CHECKLIST_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
         ) : null}
+        <select className="input" value={filters.issue || ""} onChange={(e) => set("issue")(e.target.value)}>
+          <option value="">Vấn đề</option>
+          {ISSUE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
         <select className="input" value={filters.hasLesson || ""} onChange={(e) => set("hasLesson")(e.target.value)}>
           <option value="">Bài học</option>
           {LESSON_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -384,6 +388,10 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
                   <DetailRow prose label="Lỗi đã ghi" value={t.mistakeNote} onChange={editNote("mistakeNote")} />
                 </>
               ) : null}
+              {tradeIssues(t).map((x, i) => (
+                <DetailRow key={x.id} prose label={`Vấn đề ${i + 1}${x.type ? ` · ${x.type}` : ""}`} tone={x.status === "done" ? "" : "text-loss"}
+                  value={`${issueStatusLabel(x.status)}${x.status === "done" && x.resolvedDate ? ` (${x.resolvedDate})` : ""}${x.what ? ` — ${x.what}` : ""}${x.fix ? `\nXử lý: ${x.fix}` : ""}`} />
+              ))}
               <DetailRow prose label="Lý do vào lệnh" value={t.entryReason} onChange={editNote("entryReason")} />
               <DetailRow prose label="Cảm nghĩ trong lệnh" value={t.inTradeNote} onChange={editNote("inTradeNote")} />
             </DetailGroup>
@@ -720,6 +728,9 @@ export function JournalTable({ trades, resources, onEdit, onEditForm, onDelete, 
                   {status === "open"
                     ? <span className="status-pill open">Đang mở</span>
                     : <span className={`status-pill ${outcome}`}>{outcome === "win" ? "Thắng" : outcome === "loss" ? "Thua" : "Hòa"}</span>}
+                  {openTradeIssues(t).length ? (
+                    <span className="issue-flag" title={openTradeIssues(t).map((x) => `${x.type || "Vấn đề"}: ${x.what || "chưa ghi"}`).join("\n")}>⚠ {openTradeIssues(t).length}</span>
+                  ) : null}
                   {brokerPending(t) ? (
                     <span className="broker-dot" title="Kết quả do file sàn điền hộ, bạn chưa mở lệnh ra soát — phần đánh giá còn trống">sàn</span>
                   ) : null}

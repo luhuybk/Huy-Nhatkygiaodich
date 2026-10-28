@@ -3,7 +3,7 @@ import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, Layers, Filter, Plus, BookOpen, ClipboardList, ChevronDown, ChevronRight, Wrench, Newspaper, Eye, EyeOff, SkipForward, Shapes, Dumbbell, Map as MapIcon, SquareArrowOutUpRight, TrendingUp, CalendarRange, Printer } from "lucide-react";
 import { ChecklistEditor, ChipSelect, ConfirmButton, DangerConfirmButton, Field, FilterShell, FormModal, IdSelect, ImageOrLink, MultiChipSelect, MultiImageOrLink, ImagePreviewStrip as Strip, ResourceSelect, NoteText, ShotGallery, SymbolInput, clickOrDouble } from "./ui.jsx";
 import { MAJOR_CURRENCIES, REVIEW_DIRECTIONS } from "../lib/constants.js";
-import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, canonicalSymbol } from "../lib/helpers.js";
+import { applyLessonFilters, countByLevel, fmtR, groupByLevel, groupByMonth, groupByReason, missedVsPerformance, readLocalUi, writeLocalUi, lessonLevel, lessonLevelMeta, LESSON_LEVELS, applyMissSkipFilters, countPendingWatch, groupBySetup, watchState, WATCH_FILTERS, applyNewsLogFilters, applyProblemLogFilters, emptyLesson, emptyMissed, emptyNewsLog, emptyProblemLog, emptySetupDef, emptySetupVariant, emptySkipped, emptyVariant, variantDesc, variantNoteRest, lessonAttachments, lessonTitle, LESSON_MAX_IMAGES, MISS_MAX_IMAGES, NEWS_MAX_IMAGES, PROBLEM_MAX_IMAGES, SKIP_MAX_IMAGES, VARIANT_MAX_IMAGES, startOfWeek, todayStr, uid, canonicalSymbol, ISSUE_STATUS, tradeIssues } from "../lib/helpers.js";
 
 const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").then((m) => ({ default: m.ProcessImprovementSection })));
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
@@ -917,7 +917,51 @@ export function ProblemLogFilterPanel({ filters, setFilters }) {
   );
 }
 
-export function ProblemLogSection({ items, onChange }) {
+// Vấn đề ghi trong từng lệnh (mục 8 → tab Vấn đề) — gom lên đây để có một danh sách việc cần sửa duy
+// nhất. Đổi trạng thái ngay tại đây (ghi thẳng vào lệnh), muốn sửa nội dung thì mở lệnh.
+function TradeIssueList({ trades, onChangeTrades, onOpenTrade }) {
+  const [showDone, setShowDone] = useState(false);
+  const rows = useMemo(() => (trades || []).flatMap((t) => tradeIssues(t).map((x) => ({ t, x })))
+    .sort((a, b) => (a.x.status === "done") - (b.x.status === "done") || String(b.x.foundDate || "").localeCompare(String(a.x.foundDate || ""))), [trades]);
+  if (!rows.length) return null;
+  const open = rows.filter((r) => r.x.status !== "done");
+  const shown = showDone ? rows : open;
+  const setStatus = (t, x, status) => onChangeTrades(trades.map((y) => (y.id !== t.id ? y : {
+    ...y, issues: (y.issues || []).map((z) => (z && z.id === x.id ? { ...z, status, resolvedDate: status === "done" ? (z.resolvedDate || todayStr()) : "" } : z)),
+  })));
+  return (
+    <div className="trade-issue-block">
+      <div className="trade-issue-head">
+        <b>Vấn đề trong lệnh</b>
+        <span className="field-hint" style={{ margin: 0 }}>{open.length ? `${open.length} chưa xử lý xong` : "đã xử lý hết"} · {rows.length} tổng</span>
+        {rows.length > open.length ? (
+          <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => setShowDone((v) => !v)}>{showDone ? "Ẩn vấn đề đã xử lý" : `Hiện cả ${rows.length - open.length} vấn đề đã xử lý`}</button>
+        ) : null}
+      </div>
+      {shown.map(({ t, x }) => (
+        <div key={`${t.id}-${x.id}`} className={`trade-issue-row issue-${x.status || "open"}`}>
+          <div className="trade-issue-main">
+            <span className="trade-issue-title">
+              <b>{t.symbol || "—"}</b> <span className="field-hint" style={{ margin: 0 }}>{t.account || ""} · {t.entryDate || ""}</span>
+              {x.type ? <span className="note-type">{x.type}</span> : null}
+              {x.impact !== "" && x.impact !== undefined && x.impact !== null && Number(x.impact) ? <span className={`mono ${Number(x.impact) < 0 ? "text-loss" : "text-win"}`}>{Number(x.impact) > 0 ? "+" : ""}{x.impact}</span> : null}
+            </span>
+            {x.what ? <span className="trade-issue-text">{x.what}</span> : null}
+            {x.fix ? <span className="trade-issue-text"><b>Xử lý:</b> {x.fix}</span> : null}
+          </div>
+          <div className="trade-issue-actions">
+            <select className="input" value={x.status || "open"} onChange={(e) => setStatus(t, x, e.target.value)}>
+              {ISSUE_STATUS.map((st) => <option key={st.id} value={st.id}>{st.label}</option>)}
+            </select>
+            {onOpenTrade ? <button type="button" className="btn btn-ghost" onClick={() => onOpenTrade(t)}>Mở lệnh</button> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProblemLogSection({ items, onChange, trades, onChangeTrades, onOpenTrade }) {
   const [form, setForm] = useState(emptyProblemLog());
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({});
@@ -955,6 +999,7 @@ export function ProblemLogSection({ items, onChange }) {
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại vấn đề gặp phải khi giao dịch và hướng xử lý — VD: FOMO vào lệnh khi có giờ ra tin, cách xử lý là tạo nhắc hẹn không vào lệnh đồng tiền đó.</p>
         <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm vấn đề</button>
       </div>
+      {trades && onChangeTrades ? <TradeIssueList trades={trades} onChangeTrades={onChangeTrades} onOpenTrade={onOpenTrade} /> : null}
       <ProblemLogFilterPanel filters={filters} setFilters={setFilters} />
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa vấn đề" : "Ghi nhận vấn đề mới"} onClose={closeModal} linkOwner={`problem:${form.id || "new"}`}>
@@ -1354,7 +1399,7 @@ export function JourneySection({ lessons, resources, trades, onChangeTrades, onC
           <ProcessImprovementSection items={processImprovements} avoidPrinciples={avoidPrinciples} onChange={onChangeProcessImprovements} />
         </Suspense>
       ) : tab === "problems" ? (
-        <ProblemLogSection items={problemLogs} onChange={onChangeProblemLogs} />
+        <ProblemLogSection items={problemLogs} onChange={onChangeProblemLogs} trades={trades} onChangeTrades={onChangeTrades} onOpenTrade={onOpenTrade} />
       ) : (
         <NewsLogSection items={newsLogs} onChange={onChangeNewsLogs} />
       )}

@@ -5,7 +5,7 @@ import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { symbolGroupKey, accountFamily, accountOptions, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { symbolGroupKey, accountFamily, accountOptions, openTradeIssues, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 import { useAssetFilter } from "../lib/assetGroups.js";
 
 function renderPieSliceLabel(total) {
@@ -106,7 +106,19 @@ function CoreShortcuts({ plans, lessons, onGoToPlans, onGoToLessons }) {
   );
 }
 
-export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans, capitalPlan, onGoToCapital }) {
+// Còn vấn đề (lệch SL với sàn, EA...) chưa xử lý xong thì nhắc một dòng — bấm là mở danh sách ở
+// Hành trình giao dịch → Xử lý vấn đề.
+function OpenIssuesNote({ trades, onOpen }) {
+  const n = (trades || []).reduce((s, t) => s + openTradeIssues(t).length, 0);
+  if (!n) return null;
+  return (
+    <button type="button" className="issue-note" onClick={onOpen}>
+      <span>⚠</span> Còn <b>{n} vấn đề</b> trong lệnh chưa xử lý xong <span className="issue-note-go">Xem danh sách →</span>
+    </button>
+  );
+}
+
+export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans, capitalPlan, onGoToCapital, onGoToIssues }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
@@ -123,6 +135,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
     return (
       <div>
         <RiskAlertBanner alerts={riskAlerts} />
+        <OpenIssuesNote trades={trades} onOpen={onGoToIssues} />
         <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
         <CoreShortcuts plans={tradingPlans} lessons={lessons} onGoToPlans={onGoToPlans} onGoToLessons={onGoToLessons} />
         {scopeBar}
@@ -186,6 +199,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
   return (
     <div>
       <RiskAlertBanner alerts={riskAlerts} />
+      <OpenIssuesNote trades={trades} onOpen={onGoToIssues} />
       <CapitalSummaryCard plan={capitalPlan} trades={trades} resources={resources} onOpen={onGoToCapital} />
       <CoreShortcuts plans={tradingPlans} lessons={lessons} onGoToPlans={onGoToPlans} onGoToLessons={onGoToLessons} />
       {scopeBar}

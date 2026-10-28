@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
-import { ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
+import { ChipSelect, ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
@@ -8,7 +8,7 @@ import { FxCondPicker } from "./FxStrength.jsx";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { ASSET_GROUPS, assetGroupInfo, assetGroupOf } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
-import { accountOpenRisk, accountTimeframes, openAccounts, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
+import { accountOpenRisk, accountTimeframes, openAccounts, emptyTradeIssue, ISSUE_MAX_IMAGES, ISSUE_STATUS, openTradeIssues, tradeIssues, avgPillarScore, clearBrokerFilled, computeResult, canonicalSymbol, looksTelexed, emptyReviewEntry, migrateReviewFields, REVIEW_MAX_IMAGES, REVIEW_TARGET_SHARE, reviewShare, MISTAKE_MAX_IMAGES, mistakeImages, todayStr, visibleFormSections, computeRiskAlerts, emptyPartialExit, emptyTrade, errorsForSetup, fmt, IN_TRADE_MAX_IMAGES, isFieldMissing, isForexSymbol, PARTIAL_MAX, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sessionFromTime, setTradeClean, toggleTradeError, tradeCompletion, tradeSectionProgress, skillLabel, skillsForSetup, toggleTradeSkill, tradeImageShots } from "../lib/helpers.js";
 
 // Mục lục dính bên phải form. Form nhập lệnh dài 11 mục, cuộn từ đầu tới cuối mất phương
 // hướng — cái này vừa là bản đồ vừa là danh sách việc còn thiếu, bấm là nhảy thẳng tới nơi.
@@ -475,6 +475,52 @@ function ReviewLog({ entries, onChange, onRemove, onAdd }) {
   );
 }
 
+// Tab "Vấn đề" ở mục 8: chuyện kỹ thuật / vận hành phải đi sửa (lệch SL với sàn, EA, trượt giá...) —
+// khác tab Lỗi là cái mình đánh sai. Mỗi vấn đề có trạng thái riêng; xong thì tự ghi ngày xử lý.
+function TradeIssues({ items, types, onChange }) {
+  const patch = (id, p) => onChange(items.map((x) => (x.id === id ? { ...x, ...p } : x)));
+  const setStatus = (x, status) => patch(x.id, { status, resolvedDate: status === "done" ? (x.resolvedDate || todayStr()) : "" });
+  return (
+    <div className="issue-list">
+      {items.map((x, n) => (
+        <div key={x.id} className={`issue-card issue-${x.status || "open"}`}>
+          <div className="issue-head">
+            <b>Vấn đề {n + 1}</b>
+            <div className="issue-status">
+              {ISSUE_STATUS.map((st) => (
+                <button key={st.id} type="button" className={`issue-st ${x.status === st.id ? `issue-st-on issue-st-${st.id}` : ""}`} onClick={() => setStatus(x, st.id)}>{st.label}</button>
+              ))}
+            </div>
+            <ConfirmButton onConfirm={() => onChange(items.filter((y) => y.id !== x.id))} />
+          </div>
+          <Field label="Loại vấn đề" hint="Sửa danh sách ở Tài nguyên → Vấn đề">
+            <ChipSelect value={x.type} onChange={(v) => patch(x.id, { type: v })} options={types} />
+          </Field>
+          <div className="grid-2">
+            <Field label="Ngày phát hiện"><input type="date" className="input" value={x.foundDate || ""} onChange={(e) => patch(x.id, { foundDate: e.target.value })} /></Field>
+            <Field label="Ảnh hưởng tiền (tùy chọn)" hint="VD lỗ thêm bao nhiêu so với SL đúng — số âm là thiệt">
+              <input type="number" step="any" className="input mono" value={x.impact ?? ""} onChange={(e) => patch(x.id, { impact: e.target.value })} placeholder="-12" />
+            </Field>
+          </div>
+          <Field label="Chuyện gì xảy ra">
+            <textarea className="input textarea" value={x.what || ""} onChange={(e) => patch(x.id, { what: e.target.value })}
+              placeholder="VD: nhật ký SL 1.0850, trên sàn 1.0835 — EA kéo SL không theo đuôi nến..." />
+          </Field>
+          <Field label="Cách xử lý / fix">
+            <textarea className="input textarea" value={x.fix || ""} onChange={(e) => patch(x.id, { fix: e.target.value })}
+              placeholder="VD: sửa SL tay trên MT5; kiểm lại input EA (đệm 2×spread)..." />
+          </Field>
+          <Field label="Ảnh" hint={`Chụp màn hình sàn / EA — tối đa ${ISSUE_MAX_IMAGES} ảnh/link`}>
+            <MultiImageOrLink items={x.images} onChange={(v) => patch(x.id, { images: v })} label={`issue-${x.id}`} max={ISSUE_MAX_IMAGES} />
+          </Field>
+          {x.status === "done" && x.resolvedDate ? <span className="field-hint">Đã xử lý ngày {x.resolvedDate}</span> : null}
+        </div>
+      ))}
+      <button type="button" className="btn btn-ghost" onClick={() => onChange([...items, emptyTradeIssue()])}><Plus size={14} /> Thêm vấn đề</button>
+    </div>
+  );
+}
+
 export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills, trades, ledger, onSave, onCancel, onDirtyChange }) {
   const [t, setT] = useState(() => migrateReviewFields(initial || emptyTrade()));
   // Báo cho App biết form đã sửa gì chưa — để nút Back của chuột / trình duyệt hỏi lại trước khi
@@ -488,6 +534,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   useEffect(() => () => { if (onDirtyChange) onDirtyChange(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [formError, setFormError] = useState("");
   const set = (k) => (v) => setT((prev) => ({ ...prev, [k]: v }));
+  // Mục 8 chia 3 tab; mở lệnh đang có vấn đề chưa xử lý thì vào thẳng tab Vấn đề.
+  const [sec8Tab, setSec8Tab] = useState(() => (openTradeIssues(t).length ? "issues" : t.hasMistake ? "mistake" : "review"));
 
   // ——— Nháp tự lưu ———
   // Lệnh chưa có trong danh sách = lệnh mới (dùng chung ô nháp "new").
@@ -673,7 +721,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     clearDraft(draftRef.current.key);
     // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn". Symbol dịch ngược
     // Chuẩn hoá thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
-    onSave(clearBrokerFilled({ ...t, symbol: canonicalSymbol(t.symbol, knownSymbols) }));
+    onSave(clearBrokerFilled({ ...t, symbol: canonicalSymbol(t.symbol, knownSymbols), issues: tradeIssues(t) }));
   };
 
   // ⌘S / Ctrl+S (hoặc ⌘Enter) lưu lệnh. Rời ô đang gõ trước để các ô chỉ chốt giá trị lúc rời
@@ -1011,7 +1059,19 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
         ) : null}
       </Section>
 
-      <Section id="sec-8" num="8" title="Nhìn lại / Lỗi" subtitle="Đánh dấu lệnh đáng mở ra xem lại, và ghi lại lỗi đã mắc trong lệnh này">
+      <Section id="sec-8" num="8" title="Nhìn lại / Lỗi / Vấn đề" subtitle="Lệnh đáng xem lại, lỗi mình đã mắc, và vấn đề kỹ thuật cần đi sửa">
+        <div className="subtabs sec8-tabs">
+          <button type="button" className={`subtab ${sec8Tab === "review" ? "subtab-active" : ""}`} onClick={() => setSec8Tab("review")}>
+            Nhìn lại{t.needsReview ? " 📌" : reviewLog.length ? ` (${reviewLog.length})` : ""}
+          </button>
+          <button type="button" className={`subtab ${sec8Tab === "mistake" ? "subtab-active" : ""}`} onClick={() => setSec8Tab("mistake")}>
+            Lỗi{t.hasMistake ? <span className="sec8-dot sec8-dot-loss" /> : null}
+          </button>
+          <button type="button" className={`subtab ${sec8Tab === "issues" ? "subtab-active" : ""}`} onClick={() => setSec8Tab("issues")}>
+            Vấn đề{tradeIssues(t).length ? ` (${openTradeIssues(t).length ? `${openTradeIssues(t).length} chưa xong` : "đã xong"})` : ""}
+          </button>
+        </div>
+        {sec8Tab === "review" ? (<>
         <button
           type="button"
           className={`lesson-toggle-btn ${t.needsReview ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
@@ -1043,11 +1103,12 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               onAdd={() => setT((prev) => ({ ...prev, reviewLog: [...(prev.reviewLog || []), emptyReviewEntry()] }))} />
           </div>
         ) : null}
+        </>) : null}
 
-        <div className="section-divider" />
         {/* Tách hẳn khỏi "Lỗi của setup" ở mục 3: mục đó tick theo bộ lỗi khai sẵn cho từng
             setup, còn đây là chỗ ghi tay mọi thứ đã sai trong chính lệnh này — vào sớm, dời
             dừng lỗ, phá kế hoạch — kể cả khi bản thân setup không lỗi gì. */}
+        {sec8Tab === "mistake" ? (<>
         <button
           type="button"
           className={`lesson-toggle-btn ${t.hasMistake ? "mistake-toggle-active" : ""}`}
@@ -1085,6 +1146,15 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             </span>
           </div>
         ) : null}
+        </>) : null}
+
+        {sec8Tab === "issues" ? (<>
+          <span className="field-hint" style={{ display: "block", marginBottom: 8 }}>
+            Chuyện kỹ thuật / vận hành cần đi sửa — lệch SL với sàn, EA không kéo SL, trượt giá, sàn lỗi... (khác tab Lỗi là cái mình đánh sai).
+            Vấn đề chưa xử lý hiện dấu ⚠ ở Nhật ký và nằm trong danh sách Hành trình giao dịch → Xử lý vấn đề.
+          </span>
+          <TradeIssues items={t.issues || []} types={resources.issueTypes || []} onChange={set("issues")} />
+        </>) : null}
       </Section>
 
       {sections.some((sec) => sec.id === "sec-9") ? (

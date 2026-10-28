@@ -49,6 +49,9 @@ export function emptyTrade() {
     skills: [],
     tradeGrade: "", reviewNote: "", needsReview: false, reviewReason: "", reviewLog: [],
     hasMistake: false, mistakeNote: "", mistakeImages: [{ link: "", image: "" }],
+    // Vấn đề kỹ thuật / vận hành của lệnh cần đi sửa (lệch SL với sàn, EA không kéo SL...) — khác
+    // "Lỗi" là cái mình đánh sai. Mỗi vấn đề có trạng thái riêng tới khi xử lý xong.
+    issues: [],
     checklist: {},
     hasLesson: false, lessonNote: "",
   };
@@ -1812,6 +1815,7 @@ export const RESOURCE_TRADE_FIELDS = {
   skipReasons: { skipped: ["reason"] },
   checklistItems: { checklistKey: true },
   lessonCategories: { lessonArray: ["categories"] },
+  issueTypes: { tradeIssues: true },
   structureScores: { trade: ["structureScore"] },
 };
 
@@ -2560,6 +2564,23 @@ export const MISTAKE_MAX_IMAGES = 4;
 // "Lỗi của setup" ở mục 3 chỉ tick được khi setup đó đã khai sẵn bộ lỗi, và chỉ nói được
 // những lỗi thuộc về setup. Cái này là chỗ ghi tay mọi thứ đã sai trong CHÍNH lệnh này —
 // vào sớm, dời dừng lỗ, bỏ kế hoạch — kể cả khi setup không có lỗi nào.
+// ——— Vấn đề của lệnh (mục 8 → tab Vấn đề) ———
+export const ISSUE_STATUS = [
+  { id: "open", label: "Chưa xử lý" },
+  { id: "doing", label: "Đang xử lý" },
+  { id: "done", label: "Đã xử lý" },
+];
+export const ISSUE_MAX_IMAGES = 4;
+export function emptyTradeIssue(date) {
+  return { id: uid(), type: "", status: "open", foundDate: date || todayStr(), resolvedDate: "", what: "", fix: "", impact: "", images: [{ link: "", image: "" }] };
+}
+// Bỏ các dòng thêm vào rồi để trống hẳn — bấm "Thêm vấn đề" nhầm thì lưu lệnh không còn dòng rỗng.
+export function tradeIssues(t) {
+  return ((t && t.issues) || []).filter((x) => x && (x.type || String(x.what || "").trim() || String(x.fix || "").trim() || realImages(x.images).length));
+}
+export const openTradeIssues = (t) => tradeIssues(t).filter((x) => x.status !== "done");
+export const issueStatusLabel = (id) => (ISSUE_STATUS.find((s) => s.id === id) || ISSUE_STATUS[0]).label;
+
 export function hasMistake(t) {
   return !!(t && t.hasMistake);
 }
@@ -3621,6 +3642,12 @@ export function applyFilters(trades, filters, resources) {
       if (filters.checklist === "none" && cp.checked !== 0) return false;
       if (filters.checklist === "partial" && (cp.checked === 0 || cp.checked === cp.total)) return false;
     }
+    if (filters.issue) {
+      const all = tradeIssues(t).length, open = openTradeIssues(t).length;
+      if (filters.issue === "open" && !open) return false;
+      if (filters.issue === "any" && !all) return false;
+      if (filters.issue === "done" && !(all && !open)) return false;
+    }
     if (filters.hasLesson === "yes" && !t.hasLesson) return false;
     if (filters.hasLesson === "no" && t.hasLesson) return false;
     if (filters.completion) {
@@ -4034,6 +4061,11 @@ export function tradeImageShots(t) {
   reviewEntries(t).forEach((e, n) => {
     (e.images || []).forEach((img, i) => {
       if (img && (img.image || img.link)) shots.push({ key: `lr-${e.id}-${i}`, label: `Nhìn lại lần ${n + 1}${e.date ? ` · ${e.date}` : ""}`, image: img.image, link: img.link });
+    });
+  });
+  tradeIssues(t).forEach((x, n) => {
+    (x.images || []).forEach((img, i) => {
+      if (img && (img.image || img.link)) shots.push({ key: `is-${x.id}-${i}`, label: `Vấn đề ${n + 1}${x.type ? ` · ${x.type}` : ""}`, image: img.image, link: img.link });
     });
   });
   return shots;

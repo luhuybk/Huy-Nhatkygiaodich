@@ -49,6 +49,11 @@ export const REVIEW_FILTERS = [
   { id: "waiting", label: "Đánh dấu, chưa nhìn lần nào", hidden: true },
   { id: "done", label: "Đã nhìn lại ít nhất 1 lần", hidden: true },
 ];
+export const ISSUE_FILTERS = [
+  { id: "open", label: "Vấn đề chưa xử lý xong", short: "vấn đề chưa xử lý" },
+  { id: "any", label: "Có vấn đề (bất kỳ)", short: "có vấn đề" },
+  { id: "done", label: "Vấn đề đã xử lý hết", short: "vấn đề đã xử lý" },
+];
 export const LESSON_FILTERS = [
   { id: "yes", label: "Có bài học" },
   { id: "no", label: "Không có bài học" },
@@ -93,6 +98,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.mistake) parts.push(`Lỗi: ${pick(MISTAKE_FILTERS, f.mistake)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
+  if (f.issue) parts.push(pick(ISSUE_FILTERS, f.issue));
   if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);
   return parts.length ? parts.join(" · ") : "Không lọc gì — hiện mọi lệnh";
 }

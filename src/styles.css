@@ -2387,3 +2387,37 @@ button.nt-check:hover { filter: brightness(1.25); }
 .print-acct-split i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .pmx-r.is-up, .print-acct-split b.is-up { color: #1e7d3a; }
 .pmx-r.is-down, .print-acct-split b.is-down { color: #b3261e; }
+
+/* Mục 8: tab Vấn đề + danh sách vấn đề trong lệnh */
+.sec8-tabs { margin-bottom: 12px; }
+.sec8-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 6px; vertical-align: 1px; }
+.sec8-dot-loss { background: var(--loss); }
+.issue-list { display: grid; gap: 10px; }
+.issue-card { border: 1px solid var(--border); border-left: 3px solid var(--loss); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; }
+.issue-card.issue-doing { border-left-color: #e0a64e; }
+.issue-card.issue-done { border-left-color: var(--win); opacity: .8; }
+.issue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.issue-status { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-left: auto; }
+.issue-st { all: unset; cursor: pointer; padding: 4px 10px; font-size: 12px; color: var(--muted); }
+.issue-st + .issue-st { border-left: 1px solid var(--border); }
+.issue-st-on.issue-st-open { background: color-mix(in srgb, var(--loss) 22%, transparent); color: var(--text); }
+.issue-st-on.issue-st-doing { background: color-mix(in srgb, #e0a64e 25%, transparent); color: var(--text); }
+.issue-st-on.issue-st-done { background: color-mix(in srgb, var(--win) 22%, transparent); color: var(--text); }
+.issue-flag { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; color: var(--loss); white-space: nowrap; }
+.trade-issue-block { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; display: grid; gap: 8px; }
+.trade-issue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.trade-issue-row { display: flex; gap: 12px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--loss);
+  background: color-mix(in srgb, var(--muted) 6%, transparent); }
+.trade-issue-row.issue-doing { border-left-color: #e0a64e; }
+.trade-issue-row.issue-done { border-left-color: var(--win); opacity: .75; }
+.trade-issue-main { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.trade-issue-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.trade-issue-text { font-size: 13px; white-space: pre-wrap; }
+.trade-issue-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.trade-issue-actions select { width: auto; }
+@media (max-width: 560px) { .trade-issue-row { flex-direction: column; } }
+.issue-note { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 12px;
+  padding: 9px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--loss) 45%, var(--border));
+  background: color-mix(in srgb, var(--loss) 8%, transparent); font-size: 13px; }
+.issue-note:hover { background: color-mix(in srgb, var(--loss) 13%, transparent); }
+.issue-note-go { margin-left: auto; color: var(--muted); }

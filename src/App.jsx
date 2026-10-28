@@ -466,6 +466,11 @@ function AppShell({ onSignOut, userEmail }) {
       const r = renameInArrayField(lessons, map.lessonArray, from, to);
       if (r.changed) await persistLessons(r.items);
     }
+    // Loại vấn đề nằm trong từng vấn đề của lệnh (t.issues[].type).
+    if (map.tradeIssues && trades.some((t) => (t.issues || []).some((x) => x && x.type === from))) {
+      await persistTrades(trades.map((t) => ((t.issues || []).some((x) => x && x.type === from)
+        ? { ...t, issues: t.issues.map((x) => (x && x.type === from ? { ...x, type: to } : x)) } : t)));
+    }
     // Bộ lỗi gắn vào setup bằng TÊN, nên đổi tên setup mà quên chỗ này là cả bộ lỗi
     // treo lại ở tên cũ, còn lệnh mang tên mới thì không thấy lỗi nào để tick.
     if (rename.resourceKey === "setups") {
@@ -566,7 +571,8 @@ function AppShell({ onSignOut, userEmail }) {
   };
   const handleDuplicateTrades = (ids) => {
     const idSet = new Set(ids);
-    const copies = trades.filter((t) => idSet.has(t.id)).map((t) => ({ ...t, id: uid(), createdAt: Date.now() }));
+    // Vấn đề (lệch SL với sàn...) là của đúng lệnh gốc — bản sao không mang theo.
+    const copies = trades.filter((t) => idSet.has(t.id)).map((t) => ({ ...t, id: uid(), createdAt: Date.now(), issues: [] }));
     if (copies.length) persistTrades([...trades, ...copies]);
   };
   const startNew = () => {
@@ -892,7 +898,8 @@ function AppShell({ onSignOut, userEmail }) {
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => { writeLocalUi("journeyTab", "lessons"); goTo("lessons"); }}
                 tradingPlans={tradingPlans} onGoToPlans={() => { writeLocalUi("journeyTab", "plan"); goTo("lessons"); }}
-                capitalPlan={capitalPlanSaved} onGoToCapital={() => goTo("capitalplan")} /> :
+                capitalPlan={capitalPlanSaved} onGoToCapital={() => goTo("capitalplan")}
+                onGoToIssues={() => { writeLocalUi("journeyTab", "problems"); goTo("lessons"); }} /> :
               view === "journal" ? <JournalSection trades={trades} resources={resources} setupErrors={setupErrors} skills={skills} ledger={ledger} filterPresets={filterPresets} onFilterPresetsChange={persistFilterPresets} onEdit={startEdit} onEditForm={openEditForm} onCreate={openEditForm} onUpdate={handleUpdateTrades} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onDuplicate={handleDuplicateTrades} onAddTrades={handleAddTrades} uiSettings={uiSettings} onUiSettingsChange={persistUiSettings} /> :
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}

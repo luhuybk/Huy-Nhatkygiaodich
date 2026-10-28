@@ -70,6 +70,11 @@ export const RESOURCE_GROUPS = [
       { key: "lessonCategories", label: "Danh mục bài học", hint: "Phân loại bài học rút ra (Quản trị vốn, Tâm lý, Kỷ luật...) — dùng ở mục Hành trình giao dịch" },
     ]
   },
+  {
+    key: "issues", label: "Vấn đề", children: [
+      { key: "issueTypes", label: "Loại vấn đề", hint: "Loại vấn đề kỹ thuật / vận hành ghi ở mục 8 → tab Vấn đề của lệnh (lệch SL với sàn, EA, trượt giá...)" },
+    ]
+  },
 ];
 
 // Thang ĐCT mặc định 0 → 7, bước 0.5 — đúng thang cũ, để người đang dùng không mất mức nào.
@@ -129,6 +134,7 @@ export const DEFAULT_RESOURCES = {
   missReasons: ["Bất khả kháng", "Lỗi cá nhân", "Không nhận ra setup"],
   skipReasons: ["Không đủ tự tin", "Risk quá cao", "Ngoài giờ theo dõi", "Chưa đủ tín hiệu xác nhận", "Đang có lệnh khác"],
   lessonCategories: ["Quản trị vốn", "Tâm lý", "Kỷ luật vào lệnh", "Kỹ năng trong lệnh", "Kỹ năng thoát lệnh", "Kiến thức / Setup", "Khác"],
+  issueTypes: ["Lệch SL/TP với sàn", "EA / bot", "Khớp lệnh / trượt giá", "Sàn / kết nối", "Dữ liệu nhật ký", "Khác"],
   structureScores: STRUCTURE_SCORES,
   fxRates: { USD: 1, VND: 26000, EUR: 0.92, GBP: 0.79, JPY: 150 },
 };
