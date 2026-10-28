@@ -61,8 +61,10 @@ function niceTicks(lo, hi, count = 5) {
 // series: [{ key, label, color, values: số | null theo từng mốc x, width, dash }]
 // `width` là bề rộng hệ toạ độ: biểu đồ nhỏ trong thẻ tài khoản dùng số nhỏ để chữ trên trục không
 // bị thu bé tí khi co vào thẻ hẹp.
-function SvgChart({ series, labels, width: W = 1000, height = 230, yFmt, zero, shade, base }) {
-  const padL = 54, padR = 14, padT = 10, padB = 26;
+// `dots`: chấm mọi điểm (đường theo tuần chỉ có vài điểm, mỗi điểm là một tuần). `pointLabels`: chữ nhỏ
+// trên từng điểm của series đầu — [{ text, color } | null].
+function SvgChart({ series, labels, width: W = 1000, height = 230, yFmt, zero, shade, base, dots, pointLabels }) {
+  const padL = 54, padR = pointLabels ? 22 : 14, padT = pointLabels ? 20 : 10, padB = 26;
   const n = labels.length;
   const vals = series.flatMap((s) => s.values.filter((v) => v !== null && Number.isFinite(v)));
   if (!vals.length || n < 2) return <p className="print-cover-empty">Chưa có dữ liệu để vẽ.</p>;
@@ -94,12 +96,37 @@ function SvgChart({ series, labels, width: W = 1000, height = 230, yFmt, zero, s
         return (
           <g key={s.key}>
             <polyline points={pts.join(" ")} fill="none" stroke={s.color} strokeWidth={s.width || 2.2} strokeDasharray={s.dash || undefined} strokeLinejoin="round" strokeLinecap="round" />
+            {dots ? s.values.map((v, i) => (v === null || !Number.isFinite(v) ? null : <circle key={i} cx={x(i)} cy={y(v)} r={3.2} fill="#fff" stroke={s.color} strokeWidth={2} />)) : null}
             {lastI >= 0 ? <circle cx={x(lastI)} cy={y(s.values[lastI])} r={s.width ? s.width + 1.5 : 3.5} fill={s.color} /> : null}
           </g>
         );
       })}
+      {pointLabels && series[0] ? pointLabels.map((pl, i) => {
+        const v = series[0].values[i];
+        if (!pl || v === null || !Number.isFinite(v)) return null;
+        return <text key={`pl${i}`} x={x(i)} y={y(v) - 8} textAnchor={i === n - 1 ? "end" : "middle"} fontSize="11" fontWeight="700" fill={pl.color}>{pl.text}</text>;
+      }) : null}
     </svg>
   );
+}
+
+// Mốc cuối từng kỳ cho đường vốn trong thẻ tài khoản: in tuần thì 8 tuần (mỗi điểm là cuối một tuần),
+// in tháng thì 6 tháng. Điểm đầu là ngay trước kỳ đầu tiên để kỳ đầu cũng có % thay đổi.
+function periodMarks(from, to, monthly) {
+  if (!monthly) {
+    const starts = Array.from({ length: 8 }, (_, i) => shiftDate(from, -7 * (7 - i)));
+    return { base: shiftDate(starts[0], -1), ends: starts.map((st, i) => (i === 7 ? to : shiftDate(st, 6))), labels: starts.map(ddmm) };
+  }
+  const [y, m] = from.split("-").map(Number);
+  const starts = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(y, m - 1 - (5 - i), 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const ends = starts.map((st, i) => {
+    if (i === 5) return to;
+    return shiftDate(starts[i + 1], -1);
+  });
+  return { base: shiftDate(starts[0], -1), ends, labels: starts.map((st) => `T${Number(st.slice(5, 7))}/${st.slice(2, 4)}`) };
 }
 
 // Chỉ số vốn cuối mỗi ngày trong `days`, từ các điểm (đã xếp theo ngày) của buildTWRCurve.
@@ -170,10 +197,13 @@ export function EquityPage({ title, from, to, monthly, trades, resources, ledger
     const inPeriod = win.filter((p) => p.date >= from);
     let pk = before.index, dd = 0;
     inPeriod.forEach((p) => { pk = Math.max(pk, p.index); dd = Math.max(dd, pk ? ((pk - p.index) / pk) * 100 : 0); });
+    // Đường vẽ trong thẻ: mỗi kỳ (tuần / tháng) một điểm, kèm % thay đổi của kỳ đó.
+    const marks = periodMarks(from, to, monthly);
+    const steps = dailyIndex(pts, [marks.base, ...marks.ends]);
+    const stepPct = steps.map((p, i) => (i && steps[i - 1].index ? (p.index / steps[i - 1].index - 1) * 100 : null));
     return {
-      row, acc, win, end, dd,
+      row, acc, win, end, dd, steps, stepPct, stepLabels: ["Đầu", ...marks.labels],
       pct: before.index ? (end.index / before.index - 1) * 100 : null,
-      shade: [win.findIndex((p) => p.date >= from), win.length - 1],
       hasBalance: Number(acc.initialBalance) > 0 || pts.length > 1,
     };
   }), [rep, accounts, ledger, trades, lookFrom, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -215,17 +245,18 @@ export function EquityPage({ title, from, to, monthly, trades, resources, ledger
 
       {cards.length ? (
         <>
-          <h3 className="print-cover-h">Đường cong vốn từng tài khoản <span className="print-dim">(chỉ số mốc 100 · {monthly ? "khoảng 6 tháng" : "8 tuần"} gần nhất, nền vàng là kỳ này)</span></h3>
+          <h3 className="print-cover-h">Đường cong vốn từng tài khoản <span className="print-dim">(chỉ số mốc 100 · mỗi điểm là cuối một {monthly ? "tháng, 6 tháng" : "tuần, 8 tuần"} gần nhất kèm % thay đổi · nền vàng là kỳ này)</span></h3>
           <div className="print-acct-grid">
-            {cards.map(({ row, acc, win, end, dd, pct, shade, hasBalance }) => (
+            {cards.map(({ row, acc, end, dd, pct, steps, stepPct, stepLabels, hasBalance }) => (
               <div key={row.account} className="print-acct" style={{ "--acct": accountColor(row.account, accounts) }}>
                 <div className="print-acct-head">
                   <b>{row.account}</b>
                   {acc && hasBalance ? <span className={pct > 0 ? "is-up" : pct < 0 ? "is-down" : ""}>{pctText(pct)}</span> : null}
                 </div>
                 {acc && hasBalance ? (
-                  <SvgChart width={440} height={170} base={100} shade={shade} labels={win.map((p) => ddmm(p.date))}
-                    series={[{ key: "i", color: accountColor(row.account, accounts), values: win.map((p) => p.index), width: 2.4 }]}
+                  <SvgChart width={440} height={170} base={100} shade={[steps.length - 2, steps.length - 1]} labels={stepLabels} dots
+                    series={[{ key: "i", color: accountColor(row.account, accounts), values: steps.map((p) => p.index), width: 2.4 }]}
+                    pointLabels={stepPct.map((v) => (v === null || Math.abs(v) < 0.005 ? null : { text: `${v > 0 ? "+" : ""}${v.toFixed(1).replace(".", ",")}%`, color: v > 0 ? "#1e7d3a" : "#b3261e" }))}
                     yFmt={(v) => String(Math.round(v * 10) / 10).replace(".", ",")} />
                 ) : <p className="print-cover-empty">Chưa có vốn ban đầu / nạp tiền nên chưa vẽ được đường cong.</p>}
                 <AssetSplitLine trades={trades} resources={resources} account={row.account} currency={row.currency} from={from} to={to} />
