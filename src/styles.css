@@ -2516,3 +2516,9 @@ button.nt-check:hover { filter: brightness(1.25); }
   0%, 35% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent); }
   100% { box-shadow: 0 0 0 2px transparent, 0 0 0 7px transparent; }
 }
+.flow-ctl { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.flow-ctl .completion-next { margin-left: 0; }
+.flow-done { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--win); white-space: nowrap; }
+.flow-toggle { all: unset; cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+.flow-toggle.on { color: var(--text); }
+.flow-toggle:hover { border-color: var(--accent); }

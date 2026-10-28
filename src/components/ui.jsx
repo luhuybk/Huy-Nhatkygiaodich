@@ -254,9 +254,9 @@ export function StarRating({ value, onChange, size = 18 }) {
   );
 }
 
-export function Field({ label, children, hint, required, incomplete }) {
+export function Field({ label, children, hint, required, incomplete, flow }) {
   return (
-    <label className="field">
+    <label className="field" data-flow={flow}>
       <span className="field-label">
         {label}{required ? <span className="req">*</span> : null}
         {incomplete ? <AlertCircle size={11} className="field-missing-icon" title="Chưa điền — đang ảnh hưởng tiến độ hoàn thành" /> : null}

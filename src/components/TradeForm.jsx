@@ -5,6 +5,7 @@ import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActive
 import { RiskTierChips } from "./CapitalPlan.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
+import { fxPairOf, fxScore } from "../lib/fxStrength.js";
 import { marketDrawdown, riskTierOptions } from "../lib/capital.js";
 import { ASSET_GROUPS, assetGroupInfo, assetGroupOf } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, sortStructureScores, STRUCTURE_SCORES, structureScoreNumber } from "../lib/constants.js";
@@ -69,6 +70,52 @@ function flashEl(el) {
   el.classList.add("form-flash");
   setTimeout(() => el.classList.remove("form-flash"), 1600);
 }
+// Các ô điền lúc vào lệnh, theo thứ tự trên form. Rút từ chính nhật ký: 9 lệnh đang mở (28/10/2026)
+// đều điền đủ các ô này lúc vào lệnh, phần còn lại để tới khi đóng lệnh. Lệnh mới: điền xong một ô
+// (chọn, bấm sao, dán link...) là form tự nhảy sang ô kế tiếp còn trống trong danh sách.
+// `jump`: ô gõ tay — chỉ tự nhảy khi giá trị vào một lượt (dán link, chọn gợi ý, bấm mốc rủi ro);
+// đang gõ từng phím thì không nhảy, gõ xong bấm Enter.
+const filledStr = (v) => v !== "" && v !== null && v !== undefined;
+const grewBy = (a, b, n) => String(b || "").length - String(a || "").length > n;
+const ENTRY_FLOW = [
+  { key: "symbol", done: (t) => filledStr(t.symbol), jump: (p, t) => grewBy(p.symbol, t.symbol, 2) },
+  // Gõ năm vào ô ngày đi qua 0002 → 0020 → 0202 → 2026: chỉ tính xong khi năm đã thật.
+  { key: "entryDate", done: (t) => /^(19|20)\d\d-/.test(t.entryDate || "") },
+  { key: "account", done: (t) => filledStr(t.account) },
+  { key: "timeframe", done: (t) => filledStr(t.timeframe) },
+  { key: "fxCond", when: (t) => !!fxPairOf(t.symbol), done: (t) => fxScore(t) !== null },
+  { key: "entryVisual", done: (t) => filledStr(t.entryLink) || filledStr(t.entryImage),
+    jump: (p, t) => grewBy(p.entryLink, t.entryLink, 2) || (!p.entryImage && filledStr(t.entryImage)) },
+  // Bấm một mốc rủi ro điền cả % lẫn $ một lượt; gõ tay từng ô thì chờ Enter.
+  { key: "risk", done: (t) => filledStr(t.riskPercent) && filledStr(t.riskAmount),
+    jump: (p, t) => p.riskPercent !== t.riskPercent && p.riskAmount !== t.riskAmount },
+  { key: "riskAction", done: (t) => filledStr(t.riskAction) },
+  { key: "ratingRisk", done: (t) => Number(t.ratingRisk) > 0 },
+  { key: "setup", done: (t) => filledStr(t.setup) },
+  { key: "setupNote", done: (t) => filledStr(t.setupNote) },
+  { key: "setupCheck", done: (t) => !!t.setupClean || (t.setupErrors || []).length > 0 },
+  { key: "ratingKnowledge", done: (t) => Number(t.ratingKnowledge) > 0 },
+  { key: "entrySkill", done: (t) => filledStr(t.entrySkill) },
+  { key: "psychology", done: (t) => filledStr(t.psychology) },
+  { key: "ratingPsychology", done: (t) => Number(t.ratingPsychology) > 0 },
+];
+const flowSteps = (t) => ENTRY_FLOW.filter((st) => !st.when || st.when(t));
+const FLOW_PREF_KEY = "tj.entryFlow";
+const readFlowPref = () => { try { return localStorage.getItem(FLOW_PREF_KEY) !== "off"; } catch { return true; } };
+
+// Nhảy tới một bước của luồng vào lệnh. Ô chọn / ô gõ thì đặt con trỏ vào (máy có chuột); hàng
+// sao, nút chip thì chỉ cuộn tới + nháy viền và bỏ con trỏ khỏi ô trước.
+function focusFlowStep(key) {
+  const el = document.querySelector(`.trade-form [data-flow="${key}"]`);
+  if (!el) return false;
+  scrollToEl(el);
+  flashEl(el);
+  const input = canHover() ? el.querySelector("input:not([type=hidden]):not([type=checkbox]):not([type=file]), select, textarea") : null;
+  if (input) input.focus({ preventScroll: true });
+  else if (document.activeElement && document.activeElement !== document.body && el.closest(".trade-form").contains(document.activeElement)) document.activeElement.blur();
+  return true;
+}
+
 const canHover = () => typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 // Ô chưa điền tiếp theo tính từ chỗ đang xem (dấu ⚠ cạnh nhãn) — hết thì quay lại ô đầu tiên.
@@ -724,6 +771,53 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const feeWarn = feeNum !== null && Number.isFinite(feeNum) && feeNum > 0;
   const total = computeResult(t);
   const lastJumpRef = useRef(null);
+
+  // ——— Luồng vào lệnh (chỉ lệnh mới) ———
+  const [flowOn, setFlowOn] = useState(readFlowPref);
+  const toggleFlow = () => setFlowOn((v) => { try { localStorage.setItem(FLOW_PREF_KEY, v ? "off" : "on"); } catch { /* bỏ qua */ } return !v; });
+  const flowActive = draftRef.current.isNew && flowOn;
+  const steps = flowSteps(t);
+  const stepsDone = steps.filter((st) => st.done(t)).length;
+  const flowPrevRef = useRef(t);
+  // Bước kế tiếp còn trống sau `fromKey` (không có thì từ đầu luồng); hết bước thì tới nút Lưu.
+  const advanceFrom = (fromKey, cur) => {
+    const list = flowSteps(cur);
+    const at = list.findIndex((st) => st.key === fromKey);
+    const next = list.slice(at + 1).find((st) => !st.done(cur)) || list.find((st) => !st.done(cur));
+    if (next) return focusFlowStep(next.key);
+    const save = document.querySelector('.trade-form [data-flow="save"]');
+    if (save) { scrollToEl(save); flashEl(save); if (canHover()) save.focus({ preventScroll: true }); }
+    return true;
+  };
+  useEffect(() => {
+    const prev = flowPrevRef.current;
+    flowPrevRef.current = t;
+    if (!flowActive || prev === t) return;
+    // Bước vừa điền xong trong lần đổi này — lấy bước cuối theo thứ tự: chọn tài khoản là khung
+    // tự điền theo, thì đi tiếp sau khung.
+    const justDone = flowSteps(t).filter((st) => st.done(t) && !st.done(prev) && (!st.jump || st.jump(prev, t)));
+    if (!justDone.length) return;
+    const from = justDone[justDone.length - 1].key;
+    const id = setTimeout(() => advanceFrom(from, t), 120);
+    return () => clearTimeout(id);
+  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Enter trong ô gõ của luồng (Symbol, rủi ro %, $, link) = xong ô này, sang ô kế.
+  const onFlowKeyDown = (e) => {
+    if (!flowActive || e.key !== "Enter" || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (e.target.tagName !== "INPUT") return;
+    const box = e.target.closest("[data-flow]");
+    if (!box) return;
+    e.preventDefault();
+    // Nhóm nhiều ô (Rủi ro % và $): còn ô trống phía sau trong nhóm thì sang ô đó trước.
+    const inputs = [...box.querySelectorAll("input:not([type=hidden]):not([type=checkbox]):not([type=file])")];
+    const sibling = inputs.slice(inputs.indexOf(e.target) + 1).find((x) => !x.value);
+    if (sibling) { sibling.focus(); return; }
+    e.target.blur();
+    const key = box.getAttribute("data-flow");
+    setTimeout(() => advanceFrom(key, tRef.current), 60);
+  };
+  const tRef = useRef(t);
+  tRef.current = t;
   // Mở lại một lệnh đã lưu mà chưa điền đủ thì cuộn thẳng tới phần còn thiếu: lệnh chưa đóng →
   // mục Đóng lệnh; đóng rồi → mục thiếu đầu tiên phía sau (Kỹ năng, Tâm lý, Đánh giá...); không
   // thì mục thiếu đầu tiên. Lệnh mới / nhân bản thì vẫn bắt đầu từ đầu form.
@@ -799,10 +893,18 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   // ô (Symbol chuẩn hoá, ô số) kịp cập nhật, rồi mới lưu ở nhịp sau.
   const submitRef = useRef(submit);
   submitRef.current = submit;
+  // Lệnh mới đang theo luồng vào lệnh: ⌥↓ đi theo luồng (ô kế tiếp còn trống), không theo mọi ô thiếu.
+  const flowJumpRef = useRef(() => false);
+  flowJumpRef.current = () => {
+    if (!flowActive || stepsDone >= steps.length) return false;
+    const box = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-flow]");
+    return advanceFrom(box ? box.getAttribute("data-flow") : "", t);
+  };
   useEffect(() => {
     // ⌥↓ / Alt+↓: nhảy tới ô chưa điền tiếp theo, khỏi cầm chuột kéo.
     const onJump = (e) => {
       if (e.defaultPrevented || e.isComposing || !e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || e.key !== "ArrowDown") return;
+      if (flowJumpRef.current()) { e.preventDefault(); return; }
       if (jumpToNextMissing(lastJumpRef)) e.preventDefault();
     };
     window.addEventListener("keydown", onJump);
@@ -827,7 +929,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     <div className="trade-form-layout">
       {/* Ô dán link báo khi link đã nằm ở lệnh / setup khác, hoặc hai ô trong lệnh này dán cùng một link. */}
       <LinkScope owner={`trade:${t.id}`}>
-      <div className="trade-form">
+      <div className="trade-form" onKeyDown={onFlowKeyDown}>
       {pendingDraft ? (
         <div className="draft-banner">
           <History size={16} />
@@ -840,7 +942,19 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       ) : null}
       <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky
-        action={completion.done < completion.total ? (
+        action={draftRef.current.isNew ? (
+          <span className="flow-ctl">
+            {flowOn && stepsDone < steps.length ? (
+              <button type="button" className="completion-next" onClick={() => flowJumpRef.current()} title={`Nhảy tới ô vào lệnh tiếp theo (${IS_MAC ? "⌥" : "Alt+"}↓)`}>
+                Ô vào lệnh tiếp · {stepsDone}/{steps.length} <ArrowDown size={12} />
+              </button>
+            ) : flowOn ? <span className="flow-done"><Check size={12} /> Xong phần vào lệnh · {SAVE_KEY} để lưu</span> : null}
+            <button type="button" className={`flow-toggle ${flowOn ? "on" : ""}`} onClick={toggleFlow}
+              title={flowOn ? "Đang bật: điền xong ô nào tự nhảy sang ô vào lệnh kế tiếp. Bấm để tắt." : "Đang tắt — bấm để bật lại tự nhảy ô khi tạo lệnh mới."}>
+              Tự nhảy {flowOn ? "bật" : "tắt"}
+            </button>
+          </span>
+        ) : completion.done < completion.total ? (
           <button type="button" className="completion-next" onClick={() => jumpToNextMissing(lastJumpRef)} title={`Nhảy tới ô chưa điền tiếp theo (${IS_MAC ? "⌥" : "Alt+"}↓)`}>
             Ô chưa điền tiếp <ArrowDown size={12} />
           </button>
@@ -853,7 +967,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       ) : null}
       <Section id="sec-1" num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
-          <Field label="Symbol" required>
+          <Field label="Symbol" required flow="symbol">
             <input
               className="input"
               list="symbol-suggestions"
@@ -882,7 +996,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               </button>
             </div>
           </Field>
-          <Field label="Ngày entry" incomplete={missing("entryDate")}>
+          <Field label="Ngày entry" incomplete={missing("entryDate")} flow="entryDate">
             <input type="date" className="input" value={t.entryDate} onChange={(e) => set("entryDate")(e.target.value)} />
           </Field>
           <Field label="Giờ entry" hint="Tùy chọn — với forex sẽ tự điền phiên giao dịch bên dưới, bạn vẫn chọn lại được">
@@ -903,10 +1017,10 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               }}
             />
           </Field>
-          <Field label="Tài khoản" incomplete={missing("account")}>
+          <Field label="Tài khoản" incomplete={missing("account")} flow="account">
             <ResourceSelect value={t.account} onChange={pickAccount} options={accountNames} placeholder="Chọn tài khoản" />
           </Field>
-          <Field label="Khung thời gian" incomplete={missing("timeframe")} hint={tfHint}>
+          <Field label="Khung thời gian" incomplete={missing("timeframe")} hint={tfHint} flow="timeframe">
             <ResourceSelect value={t.timeframe} onChange={pickTimeframe} options={resources.timeframes} placeholder="Chọn timeframe" />
           </Field>
           <Field
@@ -924,8 +1038,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
           </Field>
         </div>
         <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />
-        <FxCondPicker t={t} setT={setT} trades={trades} />
-        <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")}>
+        <div data-flow="fxCond"><FxCondPicker t={t} setT={setT} trades={trades} /></div>
+        <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")} flow="entryVisual">
           <ImageOrLink link={t.entryLink} image={t.entryImage} onLinkChange={set("entryLink")} onImageChange={set("entryImage")} label="entry" />
         </Field>
       </Section>
@@ -939,6 +1053,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               : `Tài khoản "${selectedAccount.name}" đang mở ${existingOpenRisk.pct.toFixed(2)}% risk từ ${existingOpenRisk.count} lệnh khác. Cộng thêm rủi ro lệnh này để cân nhắc tổng risk.`}
           </div>
         ) : null}
+        <div data-flow="risk">
         <RiskTierChips options={tierOptions} dd={tierDrawdown} plan={capitalPlan} riskAmount={t.riskAmount}
           onPick={(x) => setT((prev) => ({ ...prev, riskPercent: String(x.pct), riskAmount: String(x.money) }))} />
         <div className="grid-3">
@@ -954,40 +1069,41 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             </div>
           </Field>
         </div>
+        </div>
         <RegimeRiskNote t={t} resources={resources} />
-        <Field label="Quản trị vốn" incomplete={missing("riskAction")}>
+        <Field label="Quản trị vốn" incomplete={missing("riskAction")} flow="riskAction">
           <ResourceSelect value={t.riskAction} onChange={set("riskAction")} options={resources.riskActions} placeholder="VD: Nâng vốn, Giữ vốn, Giảm risk..." />
         </Field>
         <Field label="Lý do">
           <textarea className="input textarea" value={t.riskActionReason} onChange={(e) => set("riskActionReason")(e.target.value)} placeholder="Vì sao nâng/giữ/giảm vốn lần này..." />
         </Field>
-        <Field label="Tự đánh giá quản trị vốn" incomplete={missing("ratingRisk")}>
+        <Field label="Tự đánh giá quản trị vốn" incomplete={missing("ratingRisk")} flow="ratingRisk">
           <StarRating value={t.ratingRisk} onChange={set("ratingRisk")} />
         </Field>
       </Section>
 
       <Section id="sec-3" num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
         <div className="grid-3">
-          <Field label="Setup" incomplete={missing("setup")}>
+          <Field label="Setup" incomplete={missing("setup")} flow="setup">
             <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} placeholder="Chọn setup" />
           </Field>
           <Field label="Bonus">
             <ResourceSelect value={t.setupBonus} onChange={set("setupBonus")} options={resources.setupBonus} placeholder="Chọn bonus (nếu có)" />
           </Field>
-          <Field label="Nhận xét Setup" incomplete={missing("setupNote")}>
+          <Field label="Nhận xét Setup" incomplete={missing("setupNote")} flow="setupNote">
             <ResourceSelect value={t.setupNote} onChange={set("setupNote")} options={resources.setupNotes} placeholder="Chọn nhận xét" />
           </Field>
           <Field label="Điểm cấu trúc (ĐCT)" hint={`Cho cặp forex — thang ${structureScale.label}. Thêm/bớt mức ở Tài nguyên → Kiến thức → Điểm cấu trúc.`}>
             <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={structureScale.options} placeholder={`Chọn điểm (${structureScale.label.replace(" đến ", "-")})`} />
           </Field>
         </div>
-        <Field label="Lỗi của setup" hint="Soi lại lệnh: làm đúng thì chọn 'Không lỗi', mắc lỗi nào thì tick lỗi đó. Bỏ trống = chưa soi.">
+        <Field label="Lỗi của setup" flow="setupCheck" hint="Soi lại lệnh: làm đúng thì chọn 'Không lỗi', mắc lỗi nào thì tick lỗi đó. Bỏ trống = chưa soi.">
           <SetupErrorPicker trade={t} catalog={setupErrors} onChange={setT} />
         </Field>
         <Field label="Lý do vào lệnh">
           <textarea className="input textarea" value={t.entryReason} onChange={(e) => set("entryReason")(e.target.value)} placeholder="Điền tay lý do vào lệnh..." />
         </Field>
-        <Field label="Tự đánh giá kiến thức" incomplete={missing("ratingKnowledge")}>
+        <Field label="Tự đánh giá kiến thức" incomplete={missing("ratingKnowledge")} flow="ratingKnowledge">
           <StarRating value={t.ratingKnowledge} onChange={set("ratingKnowledge")} />
         </Field>
       </Section>
@@ -1067,7 +1183,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
           <SkillPicker trade={t} catalog={skills} onChange={setT} />
         </Field>
         <div className="grid-3">
-          <Field label="Vào lệnh" incomplete={missing("entrySkill")}>
+          <Field label="Vào lệnh" incomplete={missing("entrySkill")} flow="entrySkill">
             <ResourceSelect value={t.entrySkill} onChange={set("entrySkill")} options={resources.entrySkills} placeholder="Chọn" />
           </Field>
           <Field label="Trong lệnh" incomplete={missing("inTradeSkill")}>
@@ -1086,10 +1202,10 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       </Section>
 
       <Section id="sec-5" num="5" title="Tâm lý" subtitle="Trạng thái tâm lý khi giao dịch">
-        <Field label="Tâm lý giao dịch" incomplete={missing("psychology")}>
+        <Field label="Tâm lý giao dịch" incomplete={missing("psychology")} flow="psychology">
           <ResourceSelect value={t.psychology} onChange={set("psychology")} options={resources.psychologies} placeholder="Chọn tâm lý" />
         </Field>
-        <Field label="Tự đánh giá tâm lý" incomplete={missing("ratingPsychology")}>
+        <Field label="Tự đánh giá tâm lý" incomplete={missing("ratingPsychology")} flow="ratingPsychology">
           <StarRating value={t.ratingPsychology} onChange={set("ratingPsychology")} />
         </Field>
         <Field label="Cảm nghĩ về tâm lý" hint="Tùy chọn — viết thêm cảm nghĩ về trạng thái tâm lý của bạn ở lệnh này">
@@ -1266,7 +1382,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
           </span>
         ) : null}
         <button type="button" className="btn btn-ghost" onClick={cancel}>Hủy</button>
-        <button type="button" className="btn btn-primary" onClick={submit} title={`Lưu giao dịch (${SAVE_KEY})`}>
+        <button type="button" className="btn btn-primary" data-flow="save" onClick={submit} title={`Lưu giao dịch (${SAVE_KEY})`}>
           <Save size={15} /> Lưu giao dịch <kbd className="kbd-hint">{SAVE_KEY}</kbd>
         </button>
       </div>
