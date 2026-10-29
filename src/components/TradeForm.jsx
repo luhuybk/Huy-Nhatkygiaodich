@@ -63,6 +63,23 @@ function scrollToSection(id) {
   const el = document.getElementById(id);
   if (el) scrollToEl(el);
 }
+// Cuộn vừa đủ cho ô kế tiếp: còn nằm trong vùng nhìn thấy (giữa thanh tiến độ ghim trên đỉnh và
+// thanh Lưu ghim dưới đáy) thì đứng yên; khuất thì đưa ô về khoảng 40% chiều cao khung, phần vừa
+// điền vẫn còn thấy phía trên. Lần nào cũng kéo ô lên sát đỉnh thì cả trang giật liên tục.
+// Trả về vị trí cuộn đích để biết sau đó bạn có tự cuộn đi chỗ khác không.
+const BOTTOM_BAR_PAD = 96;
+function scrollGently(el) {
+  const box = el.closest(".body");
+  if (!box) { el.scrollIntoView({ block: "nearest" }); return null; }
+  const b = box.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const fits = r.top >= b.top + TOC_SCROLL_OFFSET + 12 && Math.min(r.bottom, r.top + 140) <= b.bottom - BOTTOM_BAR_PAD;
+  if (fits) return box.scrollTop;
+  const target = Math.max(0, Math.min(box.scrollHeight - box.clientHeight, box.scrollTop + r.top - b.top - box.clientHeight * 0.4));
+  scrollBoxTo(box, target);
+  return target;
+}
+
 // Nháy viền chỗ vừa nhảy tới — tự cuộn mà không có dấu hiệu gì thì dễ tưởng form tự trôi.
 function flashEl(el) {
   el.classList.remove("form-flash");
@@ -108,7 +125,7 @@ const readFlowPref = () => { try { return localStorage.getItem(FLOW_PREF_KEY) !=
 function focusFlowStep(key) {
   const el = document.querySelector(`.trade-form [data-flow="${key}"]`);
   if (!el) return false;
-  scrollToEl(el);
+  scrollGently(el);
   flashEl(el);
   const input = canHover() ? el.querySelector("input:not([type=hidden]):not([type=checkbox]):not([type=file]), select, textarea") : null;
   if (input) input.focus({ preventScroll: true });
@@ -119,8 +136,8 @@ function focusFlowStep(key) {
 const canHover = () => typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 // Ô chưa điền tiếp theo tính từ chỗ đang xem (dấu ⚠ cạnh nhãn) — hết thì quay lại ô đầu tiên.
-// Vẫn đứng ở ô vừa nhảy tới (chưa cuộn đi đâu) thì đi tiếp theo thứ tự trên form: ô cùng hàng
-// không cuộn được thêm, ô sát đáy form không lên được tới vạch — tính theo vị trí là kẹt lại.
+// Chưa tự cuộn đi đâu kể từ lần nhảy trước thì đi tiếp theo thứ tự trên form (ô cùng hàng, ô đã
+// thấy sẵn nên không cuộn — tính theo vị trí là kẹt lại); đã cuộn đi thì tính từ chỗ đang xem.
 function jumpToNextMissing(lastRef) {
   const form = document.querySelector(".trade-form");
   if (!form) return false;
@@ -128,16 +145,14 @@ function jumpToNextMissing(lastRef) {
   if (!els.length) return false;
   const box = els[0].closest(".body");
   const line = (box ? box.getBoundingClientRect().top : 0) + TOC_SCROLL_OFFSET;
-  const atBottom = box ? box.scrollTop + box.clientHeight >= box.scrollHeight - 4 : false;
   const top = (e) => e.getBoundingClientRect().top;
-  const lastIdx = els.indexOf(lastRef.current);
-  let i = lastIdx >= 0 && (atBottom || Math.abs(top(els[lastIdx]) - line) < 60)
-    ? lastIdx + 1
-    : els.findIndex((e) => top(e) > line - 8);
+  const last = lastRef.current;
+  const lastIdx = last ? els.indexOf(last.el) : -1;
+  const stayed = lastIdx >= 0 && box && last.scroll !== null && Math.abs(box.scrollTop - last.scroll) < 30;
+  let i = stayed ? lastIdx + 1 : els.findIndex((e) => top(e) > line - 8);
   if (i < 0 || i >= els.length) i = 0;
   const el = els[i];
-  lastRef.current = el;
-  scrollToEl(el);
+  lastRef.current = { el, scroll: scrollGently(el) };
   flashEl(el);
   // Máy có chuột thì đặt luôn con trỏ vào ô để gõ; điện thoại thì thôi, khỏi bật bàn phím che form.
   const input = canHover() ? el.querySelector("input:not([type=hidden]):not([type=checkbox]), select, textarea") : null;
@@ -786,7 +801,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     const next = list.slice(at + 1).find((st) => !st.done(cur)) || list.find((st) => !st.done(cur));
     if (next) return focusFlowStep(next.key);
     const save = document.querySelector('.trade-form [data-flow="save"]');
-    if (save) { scrollToEl(save); flashEl(save); if (canHover()) save.focus({ preventScroll: true }); }
+    if (save) { scrollGently(save); flashEl(save); if (canHover()) save.focus({ preventScroll: true }); }
     return true;
   };
   useEffect(() => {
