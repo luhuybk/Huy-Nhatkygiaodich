@@ -336,9 +336,10 @@ function AppShell({ onSignOut, userEmail }) {
       const cur = mt5StateRef.current;
       const r = applyMt5Inbox(inbox, Array.isArray(seen) ? seen : [], cur.trades, cur.resources);
       if (!r) return;
-      if (r.added.length || r.linked.length) await persistTrades(r.trades);
+      const changed = r.added.length || r.linked.length || r.closed.length;
+      if (changed) await persistTrades(r.trades);
       await safeSet(MT5_SEEN_KEY, r.seen);
-      if (r.added.length || r.linked.length) setMt5Toast({ added: r.added, linked: r.linked });
+      if (changed) setMt5Toast({ added: r.added.filter((t) => !r.closed.includes(t)), linked: r.linked, closed: r.closed });
     } finally {
       mt5StateRef.current.busy = false;
     }
@@ -1032,13 +1033,15 @@ function AppShell({ onSignOut, userEmail }) {
       {mt5Toast && !undo ? (
         <div className="undo-toast">
           <span>
-            {mt5Toast.added.length ? `MT5 vừa thêm ${mt5Toast.added.length} lệnh: ${mt5Toast.added.map((t) => t.symbol).join(", ")}` : ""}
-            {mt5Toast.added.length && mt5Toast.linked.length ? " · " : ""}
-            {mt5Toast.linked.length ? `gắn ticket cho ${mt5Toast.linked.length} lệnh đã ghi` : ""}
+            {[
+              mt5Toast.added.length ? `MT5 vừa thêm ${mt5Toast.added.length} lệnh: ${mt5Toast.added.map((t) => t.symbol).join(", ")}` : "",
+              mt5Toast.closed.length ? `${mt5Toast.closed.length} lệnh đã đóng: ${mt5Toast.closed.map((t) => t.symbol).join(", ")} — đã điền lợi nhuận, giờ thoát` : "",
+              mt5Toast.linked.length ? `gắn ticket cho ${mt5Toast.linked.length} lệnh đã ghi` : "",
+            ].filter(Boolean).join(" · ")}
           </span>
-          {mt5Toast.added.length ? (
+          {mt5Toast.added.length || mt5Toast.closed.length ? (
             <button type="button" className="undo-btn" onClick={() => {
-              const first = trades.find((t) => t.id === mt5Toast.added[0].id);
+              const first = trades.find((t) => t.id === (mt5Toast.added[0] || mt5Toast.closed[0]).id);
               setMt5Toast(null);
               if (first) openEditForm(first);
             }}>Điền tiếp</button>

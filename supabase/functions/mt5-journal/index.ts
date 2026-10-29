@@ -3,6 +3,8 @@
 //   POST .../functions/v1/mt5-journal?key=<ALERT_RELAY_KEY>
 //   {"login": 213566823, "accountName": "1. Trading - Dài", "ticket": 123456789,
 //    "symbol": "EURUSDm", "side": "buy", "time": 1761700000}      (time = giây UTC lúc khớp)
+//   Lệnh đóng hẳn: thêm "event": "close", "volume": 0.5 (lot lúc vào), "fees": -1.2 (hoa hồng + qua đêm),
+//   "closes": [{"time": 1761800000, "lots": 0.2, "profit": 30.5}, ...] (mỗi lần đóng / chốt bớt một dòng).
 //
 // Dùng chung khoá với alert-relay (EA lấy địa chỉ alert-relay trong KeoSL_telegram.txt rồi đổi tên
 // function), nên không phải dán thêm khoá nào lên VPS.
@@ -23,7 +25,11 @@ const RELAY_KEY = Deno.env.get("ALERT_RELAY_KEY") || "";
 const INBOX_KEY = "mt5Inbox";
 const KEEP = 1000; // giữ 1000 lệnh gần nhất — đủ để lệnh nào cũng kịp được app nhận
 
-type Item = { id: string; login: string; accountName: string; ticket: string; symbol: string; side: string; time: number; receivedAt: string };
+type Close = { time: number; lots: number; profit: number };
+type Item = {
+  id: string; login: string; accountName: string; ticket: string; symbol: string; side: string; time: number; receivedAt: string;
+  event?: "close"; volume?: number; fees?: number; closes?: Close[];
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -63,6 +69,17 @@ Deno.serve(async (req) => {
     side: clean(body.side).toLowerCase() === "sell" ? "sell" : "buy",
     receivedAt: new Date().toISOString(),
   };
+  if (body.event === "close") {
+    const closes = (Array.isArray(body.closes) ? body.closes : []).slice(0, 100).map((c: Record<string, unknown>) => ({
+      time: Math.round(Number(c?.time)), lots: Number(c?.lots), profit: Number(c?.profit),
+    })).filter((c: Close) => c.time > 0 && Number.isFinite(c.lots) && Number.isFinite(c.profit));
+    if (!closes.length) return json({ ok: false, error: "close without closes" }, 400);
+    item.id = `${login}-${ticket}-close`;
+    item.event = "close";
+    item.closes = closes;
+    item.volume = Number.isFinite(Number(body.volume)) ? Number(body.volume) : 0;
+    item.fees = Number.isFinite(Number(body.fees)) ? Number(body.fees) : 0;
+  }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const userId = await ownerId(supabase);

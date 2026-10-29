@@ -2529,3 +2529,10 @@ button.nt-check:hover { filter: brightness(1.25); }
 
 /* Dòng ticket MT5 ở mục 1 form lệnh */
 .mt5-ticket { margin:2px 0 10px; }
+
+/* Module "Lệnh đã đóng — chưa ghi xong" dưới bảng nhật ký */
+.awaiting-journal { margin-top:22px; padding:14px 16px 6px; border:1px solid rgba(var(--accent-rgb),0.35); border-left:4px solid var(--accent); border-radius:10px; background:var(--surface); }
+.awaiting-journal-title { display:flex; align-items:center; gap:8px; margin:0 0 4px; font-size:15px; }
+.awaiting-journal-title svg { color:var(--accent); }
+.awaiting-journal-count { font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; background:rgba(var(--accent-rgb),0.15); color:var(--accent); }
+.awaiting-journal .field-hint { margin:0 0 10px; }

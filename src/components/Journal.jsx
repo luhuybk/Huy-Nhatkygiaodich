@@ -11,7 +11,7 @@ import { FilterCompare } from "./FilterCompare.jsx";
 import { assetGroupInfo, assetGroupOf, assetGroupOptions } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
 import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
-import { applyFilters, accountOptions, avgPillarScore, brokerPending, openTradeIssues, tradeIssues, issueStatusLabel, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
+import { applyFilters, accountOptions, awaitingJournal, avgPillarScore, brokerPending, openTradeIssues, tradeIssues, issueStatusLabel, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
 // Ô trống trước đây là dấu gạch ngang đậm ngang chữ thật; giờ lùi hẳn ra sau để mắt bỏ qua.
@@ -887,6 +887,9 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
     [trades, filters, resources, sort]
   );
   const riskAlerts = useMemo(() => computeRiskAlerts(resources, trades, ledger), [resources, trades, ledger]);
+  // Không theo bộ lọc phía trên: bộ lọc "đang mở" hay dùng sẽ làm lệnh vừa được sàn đóng hộ
+  // biến mất khỏi bảng trong khi phần đánh giá còn trống.
+  const awaiting = useMemo(() => sortTrades(trades.filter(awaitingJournal), sort, resources), [trades, sort, resources]);
 
   useEffect(() => { setSelected(new Set()); }, [filters]);
 
@@ -962,6 +965,19 @@ export function JournalSection({ trades, resources, setupErrors, skills, ledger,
           </div>
           <SortBar sort={sort} onChange={setSort} />
           <JournalTable trades={filtered} resources={resources} onEdit={onEdit} onEditForm={onEditForm} onDelete={onDelete} selected={selected} onToggleOne={toggleOne} onToggleAll={toggleAll} sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} sticky />
+          {awaiting.length ? (
+            <section className="awaiting-journal">
+              <h3 className="awaiting-journal-title">
+                <AlertCircle size={15} /> Lệnh đã đóng — chưa ghi xong <span className="awaiting-journal-count">{awaiting.length}</span>
+              </h3>
+              <p className="field-hint">
+                Lợi nhuận, ngày giờ thoát do MT5 (hoặc file sàn) điền hộ, phần đánh giá còn thiếu. Bảng này không theo bộ lọc phía trên;
+                lệnh rời khỏi đây khi điền đủ 100%. Bấm đúp một dòng để mở form.
+              </p>
+              <JournalTable trades={awaiting} resources={resources} onEdit={onEdit} onEditForm={onEditForm} onDelete={onDelete}
+                sort={sort} onSortChange={setSort} columns={uiSettings && uiSettings.journalColumns} />
+            </section>
+          ) : null}
         </div>
       ) : tab === "calendar" ? (
         <TradingCalendar trades={trades} resources={resources} onEdit={onEdit} onEditForm={onEditForm} columns={uiSettings && uiSettings.journalColumns} />

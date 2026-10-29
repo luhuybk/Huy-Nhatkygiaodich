@@ -2817,6 +2817,14 @@ export function brokerPending(t) {
   return !!(t && t.brokerFilled) && tradeCompletion(t).percent < 100;
 }
 
+// Lệnh đã đóng mà kết quả do sàn điền hộ (EA MT5 báo đóng, hoặc Đối chiếu Exness) và nhật ký
+// chưa ghi xong. Lệnh MT5 giữ dấu mt5Closed tới khi đủ 100% — lưu dở một lần vẫn còn trong danh
+// sách; dấu brokerFilled của file sàn thì lưu một lần là hết như trước.
+export function awaitingJournal(t) {
+  if (!t || !(t.mt5Closed || t.brokerFilled)) return false;
+  return computeResult(t).status === "closed" && tradeCompletion(t).percent < 100;
+}
+
 // Mở lệnh ra lưu lại = đã tự soát, gỡ dấu. Lệnh điền đủ 100% cũng tự hết dấu qua brokerPending.
 export function clearBrokerFilled(t) {
   if (!t || !t.brokerFilled) return t;
