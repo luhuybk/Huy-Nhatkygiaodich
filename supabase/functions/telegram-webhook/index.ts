@@ -6,6 +6,7 @@
 //   Dời SL            sl|<tradeId>|moved    đã dời, tiếp tục nhắc ở khung giờ kế tiếp
 //                     sl|<tradeId>|closed   lệnh đã kết thúc thật, ngừng nhắc (không đụng vào bản ghi lệnh)
 //   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
+//   Cảnh báo nhắc lại ta|<id>               "✅ Đã thấy" ở tin của alert-relay — ngừng gửi lại
 //
 // Tin dạng bảng (symbol theo dõi, dời SL): mỗi dòng một mã. Bấm nút thì chỉ dòng đó đổi trạng thái,
 // các dòng khác giữ nguyên nút. Tin cũ mỗi mã một tin thì vẫn gỡ nút và ghi thêm dòng kết quả.
@@ -287,6 +288,30 @@ async function handle(raw: string): Promise<Response> {
     }
     notice = "🔕 Đã ngừng nhắc điền cho lệnh này.";
     messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
+  } else if (kind === "ta") {
+    // Cảnh báo nhắc lại (function alert-relay): bấm "Đã thấy" thì ngừng gửi lại,
+    // và gỡ nút ở các tin nhắc trước của cùng cảnh báo.
+    const [alertId] = rest;
+    const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as { id?: string; ackedAt?: string; doneAt?: string; messageIds?: number[] }[];
+    const item = list.find((r) => r.id === alertId);
+    if (!item) {
+      notice = "Cảnh báo này đã quá cũ, không còn nhắc nữa.";
+      messageSuffix = "\n\n☑️ Đã xong.";
+    } else {
+      if (!item.ackedAt) {
+        item.ackedAt = new Date().toISOString();
+        const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
+        if (saveErr) {
+          await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+          return json({ error: saveErr.message }, 500);
+        }
+      }
+      for (const mid of item.messageIds || []) {
+        if (mid !== cb.message?.message_id && fromChatId) await editMarkup(botToken, fromChatId, mid, []);
+      }
+      notice = `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`;
+      messageSuffix = `\n\n✅ Đã thấy lúc ${vnClock()}.`;
+    }
   } else {
     await answerCallback(botToken, cb.id, "Lệnh không hợp lệ.");
     return json({ ok: true, skipped: "unknown kind" });

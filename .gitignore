@@ -5,3 +5,4 @@ dist
 .env
 supabase/.temp/
 .env.deploy
+.alert-relay-key
