@@ -2533,3 +2533,14 @@ button.nt-check:hover { filter: brightness(1.25); }
 .awaiting-journal-title svg { color:var(--accent); }
 .awaiting-journal-count { font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; background:rgba(var(--accent-rgb),0.15); color:var(--accent); }
 .awaiting-journal .field-hint { margin:0 0 10px; }
+
+/* Ticket MT5 thu gọn ở góc ô Symbol: dấu # mờ, rê vào hiện số, bấm mở ô sửa */
+.field:has(> .ticket-chip) { position:relative; }
+.ticket-chip { position:absolute; top:0; right:0; display:inline-flex; align-items:center; gap:2px; padding:0 2px;
+  border:0; background:none; color:var(--text-dim); font-size:11px; line-height:16px; cursor:pointer; opacity:.5; transition:opacity .15s, color .15s; }
+.ticket-chip:not(.has) { opacity:0; }
+.field:hover > .ticket-chip:not(.has), .ticket-chip:focus-visible { opacity:.5; }
+.ticket-chip:hover, .ticket-chip.open { opacity:1; color:var(--accent); }
+.ticket-chip-num { font-family:var(--font-mono, ui-monospace, monospace); max-width:0; overflow:hidden; white-space:nowrap; transition:max-width .2s ease; }
+.ticket-chip:hover .ticket-chip-num, .ticket-chip.open .ticket-chip-num { max-width:120px; }
+.ticket-input { margin-top:6px; font-size:12.5px; }

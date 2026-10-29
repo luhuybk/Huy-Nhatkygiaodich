@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDown, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
+import { ArrowUpRight, ArrowDown, Hash, ArrowDownRight, FileSpreadsheet, Save, StickyNote, AlertTriangle, AlertCircle, Check, Scissors, CheckCircle2, History, Plus, ChevronDown, Image as ImageIcon, ListChecks, X } from "lucide-react";
 import { ChipSelect, ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
@@ -788,6 +788,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   const feeWarn = feeNum !== null && Number.isFinite(feeNum) && feeNum > 0;
   const total = computeResult(t);
   const lastJumpRef = useRef(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   // ——— Luồng vào lệnh (chỉ lệnh mới) ———
   const [flowOn, setFlowOn] = useState(readFlowPref);
@@ -1001,6 +1002,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       <Section id="sec-1" num="1" title="Thông tin lệnh" subtitle="Symbol, entry, tài khoản, timeframe, phiên">
         <div className="grid-2">
           <Field label="Symbol" required flow="symbol">
+            {/* Ticket MT5 thu gọn thành dấu # ở góc ô Symbol: rê chuột vào thấy số, bấm mới mở ô sửa.
+                Lệnh chưa có ticket thì dấu chỉ hiện khi rê vào ô Symbol. */}
+            <button type="button" className={`ticket-chip ${t.ticket ? "has" : ""} ${ticketOpen ? "open" : ""}`}
+              title={t.ticket ? `Ticket MT5 #${t.ticket} — bấm để sửa` : "Thêm ticket MT5 (lệnh vào qua EA tự có)"}
+              onClick={(e) => { e.preventDefault(); setTicketOpen((v) => !v); }}>
+              <Hash size={11} />{t.ticket ? <span className="ticket-chip-num">{t.ticket}</span> : null}
+            </button>
             <input
               className="input"
               list="symbol-suggestions"
@@ -1010,6 +1018,11 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               onBlur={() => { const c = canonicalSymbol(t.symbol, knownSymbols); if (c !== t.symbol) applySymbol(c); }}
               placeholder="VD: XAUUSD, HPG..."
             />
+            {ticketOpen ? (
+              <input className="input mono ticket-input" inputMode="numeric" autoFocus value={t.ticket || ""} placeholder="Ticket MT5, VD 5336155530"
+                onChange={(e) => set("ticket")(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setTicketOpen(false); } }} />
+            ) : null}
             {looksTelexed(t.symbol) ? (
               <span className="field-hint telex-note">
                 Bộ gõ tiếng Việt đang bật — rời ô này sẽ tự sửa thành <b className="mono">{canonicalSymbol(t.symbol, knownSymbols)}</b>.
@@ -1068,12 +1081,6 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               <option value="">{t.symbol ? `Tự nhận: ${autoAsset.label}` : "Tự nhận theo symbol"}</option>
               {ASSET_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
             </select>
-          </Field>
-          <Field label="Ticket MT5"
-            hint={startRef.current.mt5Draft ? "MT5 tự điền cùng symbol, ngày giờ vào, tài khoản, khung — kiểm lại rồi điền tiếp phần còn lại"
-              : t.ticket ? "Số vị thế trên MT5 — lệnh đóng thì EA điền lợi nhuận, giờ thoát theo số này" : "Lệnh vào qua EA tự có; lệnh ghi tay thì bỏ trống cũng được"}>
-            <input className="input mono" inputMode="numeric" value={t.ticket || ""} placeholder="VD: 5336155530"
-              onChange={(e) => set("ticket")(e.target.value.replace(/\D/g, ""))} />
           </Field>
         </div>
         <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />
