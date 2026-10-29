@@ -94,6 +94,8 @@ export function applyMt5Inbox(inbox, seen, trades, resources) {
     const acc = mt5Account(item, resources.accounts);
     const have = ticket ? next.find((t) => t && String(t.ticket || "") === ticket) : null;
     if (item.event === "close") {
+      // Gói vào lệnh đã nhận mà không còn lệnh mang ticket này = bạn đã xoá nó — không đẻ lại
+      if (!have && seenSet.has(`${item.login}-${ticket}`)) return;
       // Lỡ mất gói vào lệnh (lệnh vào rồi đóng trong lúc EA tắt): tạo lệnh luôn rồi đóng
       const base = have || openDraft(item, acc, known, trades, resources);
       const done = closeTrade(base, item, acc);
