@@ -176,9 +176,12 @@ async function handle(raw: string): Promise<Response> {
   const { data: settingsRows, error } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
   if (error) return json({ error: error.message }, 500);
 
+  // Nút "✅ Đã thấy" của alert-relay có thể nằm ở nhóm cảnh báo riêng (ALERT_RELAY_CHAT_ID)
+  const alertChat = (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim();
   const ownerRow = (settingsRows || []).find((r) => {
-    const chatId = (r.value as { telegramChatId?: string })?.telegramChatId;
-    return chatId && String(chatId) === String(fromChatId);
+    const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
+    if (v?.telegramChatId && String(v.telegramChatId) === String(fromChatId)) return true;
+    return kind === "ta" && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
   });
   if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
 

@@ -20,6 +20,8 @@
 // Nút "✅ Đã thấy" (callback ta|<id>) do function telegram-webhook xử lý.
 //
 // Tắt tạm tin của EA (tin TradingView vẫn gửi): supabase secrets set ALERT_RELAY_EA=off  (bật lại: =on)
+// Gửi sang nhóm riêng: supabase secrets set ALERT_RELAY_CHAT_ID=<chat id nhóm, dạng -100…> [ALERT_RELAY_TOPIC=<id topic>]
+//   (telegram-webhook đọc cùng biến này để nút "✅ Đã thấy" trong nhóm đó vẫn bấm được)
 //
 // Deploy: supabase functions deploy alert-relay --no-verify-jwt
 //   (TradingView, MT5 và pg_cron gọi vào mà không mang JWT của Supabase)
@@ -31,6 +33,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RELAY_KEY = Deno.env.get("ALERT_RELAY_KEY") || "";
 const EA_OFF = (Deno.env.get("ALERT_RELAY_EA") || "").toLowerCase() === "off";
+// Nhóm Telegram riêng cho cảnh báo (bot phải là thành viên); trống = nhóm chung của Nhắc dời SL
+const ALERT_CHAT_ID = (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim();
+const ALERT_TOPIC = Number(Deno.env.get("ALERT_RELAY_TOPIC") || 0); // topic mặc định khi địa chỉ không ghi topic=
 const MAX_TEXT = 4000; // Telegram giới hạn 4096 ký tự, chừa chỗ cho dòng "Nhắc lần…"
 const REPEAT_KEY = "alertRepeats";
 const KEEP_HOURS = 24; // tin nhắc lại đã xong giữ thêm 1 ngày để bấm nút cũ vẫn ra đúng thông báo
@@ -84,7 +89,9 @@ async function loadOwner(supabase: ReturnType<typeof createClient>) {
     const s = r.value as Settings;
     return s?.telegramBotToken && s.telegramChatId;
   });
-  return row ? { userId: row.user_id as string, settings: row.value as Settings } : null;
+  if (!row) return null;
+  const settings = row.value as Settings;
+  return { userId: row.user_id as string, settings, chatId: ALERT_CHAT_ID || String(settings.telegramChatId) };
 }
 
 async function readRepeats(supabase: ReturnType<typeof createClient>, userId: string) {
@@ -116,7 +123,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     r.sent += 1;
     const last = r.sent >= r.times;
     const payload: Record<string, unknown> = {
-      chat_id: owner.settings.telegramChatId,
+      chat_id: owner.chatId,
       text: `🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}\n${r.text}`,
       reply_markup: seenButton(r.id),
     };
@@ -128,7 +135,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
         await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chat_id: owner.settings.telegramChatId, message_id: prev, reply_markup: { inline_keyboard: [] } }),
+          body: JSON.stringify({ chat_id: owner.chatId, message_id: prev, reply_markup: { inline_keyboard: [] } }),
         }).catch(() => {});
       }
       if (sent) r.messageIds.push(sent);
@@ -185,8 +192,8 @@ Deno.serve(async (req) => {
   }
   if (!owner) return json({ error: "Chưa điền Bot Token / Chat ID ở Thông báo → Nhắc dời SL" }, 500);
 
-  const payload: Record<string, unknown> = { chat_id: owner.settings.telegramChatId, text };
-  const topic = Number(pick("topic"));
+  const payload: Record<string, unknown> = { chat_id: owner.chatId, text };
+  const topic = Number(pick("topic")) || ALERT_TOPIC;
   if (topic && !Number.isNaN(topic)) payload.message_thread_id = topic;
   if (truthy(pick("silent"))) payload.disable_notification = true;
 
