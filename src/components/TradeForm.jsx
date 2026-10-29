@@ -1069,12 +1069,13 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               {ASSET_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
             </select>
           </Field>
+          <Field label="Ticket MT5"
+            hint={startRef.current.mt5Draft ? "MT5 tự điền cùng symbol, ngày giờ vào, tài khoản, khung — kiểm lại rồi điền tiếp phần còn lại"
+              : t.ticket ? "Số vị thế trên MT5 — lệnh đóng thì EA điền lợi nhuận, giờ thoát theo số này" : "Lệnh vào qua EA tự có; lệnh ghi tay thì bỏ trống cũng được"}>
+            <input className="input mono" inputMode="numeric" value={t.ticket || ""} placeholder="VD: 5336155530"
+              onChange={(e) => set("ticket")(e.target.value.replace(/\D/g, ""))} />
+          </Field>
         </div>
-        {t.ticket ? (
-          <p className="field-hint mt5-ticket">
-            Ticket MT5 <b className="mono">#{t.ticket}</b>{startRef.current.mt5Draft ? " · symbol, ngày giờ vào, tài khoản, khung do MT5 điền — kiểm lại rồi điền tiếp phần còn lại" : ""}
-          </p>
-        ) : null}
         <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />
         <div data-flow="fxCond"><FxCondPicker t={t} setT={setT} trades={trades} /></div>
         <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")} flow="entryVisual">
