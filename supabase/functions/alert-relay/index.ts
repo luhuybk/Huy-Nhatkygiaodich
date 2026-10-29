@@ -1,7 +1,8 @@
 // Supabase Edge Function: chuyển tin cảnh báo sang Telegram, dùng chung bot + nhóm chat của
 // Thông báo → Nhắc dời SL (app_data.slReminderSettings), nên không phải chép mã bot đi chỗ khác.
 //
-//   TradingView  Webhook URL = .../functions/v1/alert-relay?key=<KEY>&from=tv[&repeat=1][&topic=<ID>]
+//   TradingView  Webhook URL = .../functions/v1/alert-relay?from=tv[&repeat=1][&topic=<ID>]
+//                (không cần key: chỉ nhận khi tin tới từ IP máy chủ webhook của TradingView)
 //                Ô "Tin nhắn" viết chữ bình thường — app TradingView trên điện thoại vẫn hiện dễ đọc,
 //                còn trang này gửi nguyên văn sang Telegram.
 //   EA MT5       POST JSON {"text": "...", "topic": "...", "silent": false} lên cùng địa chỉ (?key=<KEY>).
@@ -33,6 +34,8 @@ const EA_OFF = (Deno.env.get("ALERT_RELAY_EA") || "").toLowerCase() === "off";
 const MAX_TEXT = 4000; // Telegram giới hạn 4096 ký tự, chừa chỗ cho dòng "Nhắc lần…"
 const REPEAT_KEY = "alertRepeats";
 const KEEP_HOURS = 24; // tin nhắc lại đã xong giữ thêm 1 ngày để bấm nút cũ vẫn ra đúng thông báo
+// Máy chủ gửi webhook của TradingView (TradingView công bố, mục "About webhooks")
+const TV_WEBHOOK_IPS = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7"];
 
 type Settings = { telegramBotToken?: string; telegramChatId?: string };
 type Repeat = {
@@ -162,9 +165,11 @@ Deno.serve(async (req) => {
   } catch (_e) { /* chữ thường */ }
   const pick = (name: string) => (body[name] ?? url.searchParams.get(name) ?? "") as unknown;
 
-  if (!RELAY_KEY || String(pick("key")) !== RELAY_KEY) return json({ error: "Sai khoá" }, 401);
-
   const fromTv = String(pick("from")).toLowerCase() === "tv";
+  // Tin từ máy chủ webhook của TradingView thì không cần khoá, nên địa chỉ dán vào cảnh báo không có gì
+  // bí mật. IP lấy từ cf-connecting-ip do Cloudflare tự đặt — gửi kèm header giả thì bị ghi đè hoặc chặn.
+  const fromTvServer = fromTv && TV_WEBHOOK_IPS.includes(req.headers.get("cf-connecting-ip") || "");
+  if (!fromTvServer && (!RELAY_KEY || String(pick("key")) !== RELAY_KEY)) return json({ error: "Sai khoá" }, 401);
   if (!fromTv && EA_OFF) return json({ ok: true, muted: true }); // EA coi là gửi xong, khỏi báo lỗi
 
   let text = String("text" in body ? body.text ?? "" : raw).trim();
