@@ -81,7 +81,7 @@ function StopAccountPanel({ info, accounts, onConfirm, onCancel }) {
 }
 
 export function AccountsList({ accounts, ledger, trades, timeframes, capitalPlan, onChange, onStopAccount, onMoveTrades, onMoveTradesBy, fxRates, onFxRatesChange, onView, editTarget, onEditConsumed }) {
-  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true, timeframes: [] };
+  const blank = { id: null, name: "", broker: "", currency: "USD", initialBalance: "", parentId: "", syncBrokerTime: true, timeframes: [], mt5Login: "" };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState("");
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
@@ -296,12 +296,17 @@ export function AccountsList({ accounts, ledger, trades, timeframes, capitalPlan
             <datalist id="currency-options">{CURRENCIES.map((c) => <option key={c} value={c} />)}</datalist>
           </Field>
         </div>
-        <div className="grid-2">
+        <div className="grid-3">
           <Field label="Vốn ban đầu">
             <MoneyInput value={form.initialBalance} onChange={setF("initialBalance")} placeholder="0" />
           </Field>
           <Field label="Thuộc nhóm (tùy chọn)">
             <IdSelect value={form.parentId} onChange={setF("parentId")} items={accounts.filter((a) => a.id !== form.id)} placeholder="Không thuộc nhóm nào" />
+          </Field>
+          <Field label="Số tài khoản MT5 (tùy chọn)"
+            hint="EA trên VPS báo lệnh mới kèm số này — khớp số thì lệnh tự vào đúng tài khoản, khung lấy theo khung của tài khoản.">
+            <input className="input mono" inputMode="numeric" value={form.mt5Login || ""}
+              onChange={(e) => setF("mt5Login")(e.target.value.replace(/\D/g, ""))} placeholder="VD: 213566823" />
           </Field>
         </div>
         {(timeframes || []).length ? (

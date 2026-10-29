@@ -645,6 +645,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     const isNew = !(trades || []).some((x) => x && x.id === startRef.current.id);
     draftRef.current = { key: draftKey(startRef.current.id, isNew), isNew, done: false, wrote: false };
   }
+  // Lệnh MT5 tự tạo (đã có symbol, ngày giờ, tài khoản, khung) mà chưa lưu lần nào: điền như lệnh mới.
+  const entryMode = draftRef.current.isNew || !!startRef.current.mt5Draft;
   // Khung tự điền theo tài khoản (tài khoản đặt theo khung). Còn là khung tự điền thì đổi tài khoản
   // khung đổi theo; bạn tự chọn khung rồi thì giữ nguyên, trừ khi tài khoản mới không đánh khung đó.
   const autoTfRef = useRef(false);
@@ -790,7 +792,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   // ——— Luồng vào lệnh (chỉ lệnh mới) ———
   const [flowOn, setFlowOn] = useState(readFlowPref);
   const toggleFlow = () => setFlowOn((v) => { try { localStorage.setItem(FLOW_PREF_KEY, v ? "off" : "on"); } catch { /* bỏ qua */ } return !v; });
-  const flowActive = draftRef.current.isNew && flowOn;
+  const flowActive = entryMode && flowOn;
   const steps = flowSteps(t);
   const stepsDone = steps.filter((st) => st.done(t)).length;
   const flowPrevRef = useRef(t);
@@ -836,8 +838,14 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   // Mở lại một lệnh đã lưu mà chưa điền đủ thì cuộn thẳng tới phần còn thiếu: lệnh chưa đóng →
   // mục Đóng lệnh; đóng rồi → mục thiếu đầu tiên phía sau (Kỹ năng, Tâm lý, Đánh giá...); không
   // thì mục thiếu đầu tiên. Lệnh mới / nhân bản thì vẫn bắt đầu từ đầu form.
+  // Lệnh MT5 tự tạo: vào thẳng ô vào lệnh đầu tiên còn trống, khỏi tìm.
   useEffect(() => {
-    if (draftRef.current.isNew) return undefined;
+    if (draftRef.current.isNew || !entryMode || !flowOn) return undefined;
+    const id = setTimeout(() => advanceFrom("", tRef.current), 250);
+    return () => clearTimeout(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (entryMode) return undefined;
     const prog = tradeSectionProgress(t);
     const ids = sections.map((sec) => sec.id);
     const miss = (id) => ((prog.get(id) || {}).missing || 0) > 0;
@@ -901,7 +909,8 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
     clearDraft(draftRef.current.key);
     // Lưu một lần là coi như đã tự soát: gỡ dấu "kết quả lấy từ file sàn". Symbol dịch ngược
     // Chuẩn hoá thêm một lần ở đây, phòng khi lưu bằng phím tắt mà ô symbol chưa kịp rời focus.
-    onSave(clearBrokerFilled({ ...t, symbol: canonicalSymbol(t.symbol, knownSymbols), issues: tradeIssues(t) }));
+    const { mt5Draft, ...saved } = t; // eslint-disable-line no-unused-vars
+    onSave(clearBrokerFilled({ ...saved, symbol: canonicalSymbol(t.symbol, knownSymbols), issues: tradeIssues(t) }));
   };
 
   // ⌘S / Ctrl+S (hoặc ⌘Enter) lưu lệnh. Rời ô đang gõ trước để các ô chỉ chốt giá trị lúc rời
@@ -957,7 +966,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       ) : null}
       <RiskAlertBanner alerts={riskAlerts} />
       <CompletionBar done={completion.done} total={completion.total} percent={completion.percent} sticky
-        action={draftRef.current.isNew ? (
+        action={entryMode ? (
           <span className="flow-ctl">
             {flowOn && stepsDone < steps.length ? (
               <button type="button" className="completion-next" onClick={() => flowJumpRef.current()} title={`Nhảy tới ô vào lệnh tiếp theo (${IS_MAC ? "⌥" : "Alt+"}↓)`}>
@@ -1048,6 +1057,11 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             </select>
           </Field>
         </div>
+        {t.ticket ? (
+          <p className="field-hint mt5-ticket">
+            Ticket MT5 <b className="mono">#{t.ticket}</b>{startRef.current.mt5Draft ? " · symbol, ngày giờ vào, tài khoản, khung do MT5 điền — kiểm lại rồi điền tiếp phần còn lại" : ""}
+          </p>
+        ) : null}
         <MarketCondPicker t={t} setT={setT} resources={resources} trades={trades} />
         <div data-flow="fxCond"><FxCondPicker t={t} setT={setT} trades={trades} /></div>
         <Field label="Link / hình ảnh lúc vào lệnh" incomplete={missing("entryVisual")} flow="entryVisual">

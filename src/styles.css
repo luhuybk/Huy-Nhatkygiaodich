@@ -2526,3 +2526,6 @@ button.nt-check:hover { filter: brightness(1.25); }
 /* Ô tên nhóm cạnh từng setup ở Tài nguyên */
 .resource-group-input { flex:0 0 130px; width:130px; margin:0 8px; font-size:12.5px; }
 @media (max-width: 560px) { .resource-group-input { flex-basis:96px; width:96px; } }
+
+/* Dòng ticket MT5 ở mục 1 form lệnh */
+.mt5-ticket { margin:2px 0 10px; }

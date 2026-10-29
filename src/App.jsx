@@ -22,6 +22,7 @@ import { LinkIndexProvider, SloganBar, useStickyTab } from "./components/ui.jsx"
 import { buildLinkIndex } from "./lib/linkIndex.js";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
 import { normalizeJourneyLog } from "./lib/journeyLog.js";
+import { applyMt5Inbox, MT5_INBOX_KEY, MT5_SEEN_KEY } from "./lib/mt5Inbox.js";
 import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
@@ -157,6 +158,7 @@ function AppShell({ onSignOut, userEmail }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [backups, setBackups] = useState([]);
   const [undo, setUndo] = useState(null);
+  const [mt5Toast, setMt5Toast] = useState(null);
   const [imageMigration, setImageMigration] = useState(null);
   const undoTimerRef = useRef(null);
 
@@ -318,6 +320,39 @@ function AppShell({ onSignOut, userEmail }) {
   }, [pendingSaves.length]);
 
   const persistTrades = useCallback(async (next) => { setTrades(next); noteSave("trades", next, await safeSet("trades", next)); }, []);
+  // Lệnh mới khớp trên MT5 (EA trên VPS gửi về) thành lệnh trong nhật ký — xem lib/mt5Inbox.js.
+  // Đọc lúc mở app, lúc quay lại tab và mỗi phút khi tab đang mở, để vào lệnh trên điện thoại thì
+  // nhật ký đang mở trên máy tính cũng thấy ngay.
+  const mt5StateRef = useRef({ trades, resources, loading, busy: false });
+  mt5StateRef.current = { ...mt5StateRef.current, trades, resources, loading };
+  const pullMt5 = useCallback(async () => {
+    const st = mt5StateRef.current;
+    if (st.loading || st.busy || document.hidden) return;
+    st.busy = true;
+    try {
+      const inbox = await safeGet(MT5_INBOX_KEY, []);
+      if (!Array.isArray(inbox) || !inbox.length) return;
+      const seen = await safeGet(MT5_SEEN_KEY, []);
+      const cur = mt5StateRef.current;
+      const r = applyMt5Inbox(inbox, Array.isArray(seen) ? seen : [], cur.trades, cur.resources);
+      if (!r) return;
+      if (r.added.length || r.linked.length) await persistTrades(r.trades);
+      await safeSet(MT5_SEEN_KEY, r.seen);
+      if (r.added.length || r.linked.length) setMt5Toast({ added: r.added, linked: r.linked });
+    } finally {
+      mt5StateRef.current.busy = false;
+    }
+  }, [persistTrades]);
+  useEffect(() => {
+    if (loading) return undefined;
+    pullMt5();
+    const onShow = () => { if (!document.hidden) pullMt5(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    const id = setInterval(onShow, 60000);
+    return () => { document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); clearInterval(id); };
+  }, [loading, pullMt5]);
+
   const persistResources = useCallback(async (next) => { setResources(next); noteSave("resources", next, await safeSet("resources", next)); }, []);
   const persistLedger = useCallback(async (next) => { setLedger(next); noteSave("ledger", next, await safeSet("ledger", next)); }, []);
   const persistNotes = useCallback(async (next) => { setNotes(next); noteSave("notes", next, await safeSet("notes", next)); }, []);
@@ -992,6 +1027,23 @@ function AppShell({ onSignOut, userEmail }) {
           <button type="button" className="btn btn-primary" onClick={retrySaves} disabled={retrying}>
             {retrying ? "Đang thử..." : "Thử lưu lại"}
           </button>
+        </div>
+      ) : null}
+      {mt5Toast && !undo ? (
+        <div className="undo-toast">
+          <span>
+            {mt5Toast.added.length ? `MT5 vừa thêm ${mt5Toast.added.length} lệnh: ${mt5Toast.added.map((t) => t.symbol).join(", ")}` : ""}
+            {mt5Toast.added.length && mt5Toast.linked.length ? " · " : ""}
+            {mt5Toast.linked.length ? `gắn ticket cho ${mt5Toast.linked.length} lệnh đã ghi` : ""}
+          </span>
+          {mt5Toast.added.length ? (
+            <button type="button" className="undo-btn" onClick={() => {
+              const first = trades.find((t) => t.id === mt5Toast.added[0].id);
+              setMt5Toast(null);
+              if (first) openEditForm(first);
+            }}>Điền tiếp</button>
+          ) : null}
+          <button type="button" className="row-btn" onClick={() => setMt5Toast(null)} aria-label="Đóng"><X size={14} /></button>
         </div>
       ) : null}
       {undo ? (
