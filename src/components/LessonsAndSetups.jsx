@@ -31,7 +31,7 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
       ) : null}
       search={<input className="input filter-q" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
       <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
-      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Setup" />
+      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Setup" />
       {reasonOptions ? <ResourceSelect value={filters.reason || ""} onChange={set("reason")} options={reasonOptions} placeholder="Lý do" /> : null}
       {showWatch ? (
         <select className="input" value={filters.watch || ""} onChange={(e) => set("watch")(e.target.value)}>
@@ -274,7 +274,7 @@ export function MissedSetupsSection({ items, resources, onChange }) {
             </Field>
           </div>
           <Field label="Setup">
-            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Chọn setup" />
           </Field>
           <Field label="Link / hình ảnh TradingView">
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="miss" max={MISS_MAX_IMAGES} />
@@ -397,7 +397,7 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
             </Field>
           </div>
           <Field label="Setup">
-            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Chọn setup" />
           </Field>
           <Field label="Link / hình ảnh TradingView">
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="skip" max={SKIP_MAX_IMAGES} />
@@ -520,7 +520,7 @@ export function SetupVariantsSection({ items, resources, onChange }) {
             </Field>
           </div>
           <Field label="Setup">
-            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} placeholder="Chọn setup" />
+            <ResourceSelect value={form.setup} onChange={setF("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Chọn setup" />
           </Field>
           <Field label="Link / hình ảnh TradingView" hint={`Tối đa ${VARIANT_MAX_IMAGES} ảnh/link`}>
             <MultiImageOrLink items={form.images} onChange={setF("images")} label="variant" max={VARIANT_MAX_IMAGES} />

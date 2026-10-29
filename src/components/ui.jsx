@@ -1,6 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useId, useState, useEffect, useMemo, useRef } from "react";
 import { Star, X, Trash2, ImagePlus, Link2, Check, ChevronDown, ChevronRight, Image as ImageIcon, AlertCircle, ShieldAlert, Pencil, Plus, SlidersHorizontal, Filter } from "lucide-react";
-import { canonicalSymbol, cleanFilters, formatVN, looksTelexed, missingFxAccounts, readLocalUi, setFilterList, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
+import { canonicalSymbol, cleanFilters, formatVN, looksTelexed, missingFxAccounts, readLocalUi, setFilterList, groupResourceOptions, toFilterList, writeLocalUi, accountColor } from "../lib/helpers.js";
 export { accountColor };
 import { uploadImageFile } from "../lib/storage.js";
 import { imageFromLink } from "../lib/printTrades.js";
@@ -283,7 +283,8 @@ export function FxWarning({ resources, trades, what = "Con số quy đổi USD" 
   );
 }
 
-export function ResourceSelect({ value, onChange, options, placeholder }) {
+// `groups` (tùy chọn) = { tên mục: tên nhóm } — có nhóm thì tách thành từng khối có tiêu đề.
+export function ResourceSelect({ value, onChange, options, placeholder, groups }) {
   // Giá trị đã bị gỡ khỏi Tài nguyên vẫn nằm nguyên trong lệnh cũ. Không có option nào khớp thì
   // <select> hiện dòng đầu ("Chọn...") trong khi lệnh vẫn đang mang giá trị kia — nhìn như chưa
   // chọn, bấm lưu lại vẫn giữ nguyên. Hiện nó ra kèm ghi chú để thấy đúng thứ đang được lưu.
@@ -293,7 +294,18 @@ export function ResourceSelect({ value, onChange, options, placeholder }) {
     <select className="input" value={has ? value : ""} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder || "— Chọn —"}</option>
       {stale ? <option value={value}>{value} (đã gỡ khỏi Tài nguyên)</option> : null}
-      {(options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+      {(() => {
+        const g = groups ? groupResourceOptions(options, groups) : null;
+        if (!g || !g.groups.length) return (options || []).map((o) => <option key={o} value={o}>{o}</option>);
+        return [
+          ...g.loose.map((o) => <option key={o} value={o}>{o}</option>),
+          ...g.groups.map((grp) => (
+            <optgroup key={`g:${grp.name}`} label={`── ${grp.name} ──`}>
+              {grp.items.map((o) => <option key={o} value={o}>{o}</option>)}
+            </optgroup>
+          )),
+        ];
+      })()}
     </select>
   );
 }

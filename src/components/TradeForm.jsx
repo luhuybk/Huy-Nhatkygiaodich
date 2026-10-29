@@ -969,10 +969,6 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
               Tự nhảy {flowOn ? "bật" : "tắt"}
             </button>
           </span>
-        ) : completion.done < completion.total ? (
-          <button type="button" className="completion-next" onClick={() => jumpToNextMissing(lastJumpRef)} title={`Nhảy tới ô chưa điền tiếp theo (${IS_MAC ? "⌥" : "Alt+"}↓)`}>
-            Ô chưa điền tiếp <ArrowDown size={12} />
-          </button>
         ) : null} />
       {t.brokerFilled ? (
         <p className="broker-note">
@@ -1100,7 +1096,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
       <Section id="sec-3" num="3" title="Kiến thức" subtitle="Setup, bonus, nhận xét setup, điểm cấu trúc, lý do vào lệnh">
         <div className="grid-3">
           <Field label="Setup" incomplete={missing("setup")} flow="setup">
-            <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} placeholder="Chọn setup" />
+            <ResourceSelect value={t.setup} onChange={set("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Chọn setup" />
           </Field>
           <Field label="Bonus">
             <ResourceSelect value={t.setupBonus} onChange={set("setupBonus")} options={resources.setupBonus} placeholder="Chọn bonus (nếu có)" />

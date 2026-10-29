@@ -2522,3 +2522,7 @@ button.nt-check:hover { filter: brightness(1.25); }
 .flow-toggle { all: unset; cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
 .flow-toggle.on { color: var(--text); }
 .flow-toggle:hover { border-color: var(--accent); }
+
+/* Ô tên nhóm cạnh từng setup ở Tài nguyên */
+.resource-group-input { flex:0 0 130px; width:130px; margin:0 8px; font-size:12.5px; }
+@media (max-width: 560px) { .resource-group-input { flex-basis:96px; width:96px; } }

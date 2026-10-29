@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useId } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { Pencil, GripVertical } from "lucide-react";
 import { ConfirmButton } from "./ui.jsx";
@@ -8,7 +8,10 @@ import { normalizeStructureScore, structureScaleRange } from "../lib/helpers.js"
 // `normalize` (tùy chọn) kiểm và viết lại giá trị trước khi thêm/đổi tên: trả { value } hoặc
 // { error }. `sorted` = danh sách tự xếp thứ tự, nên tắt kéo-thả — kéo được mà thả xong nó
 // nhảy về chỗ cũ thì trông như hỏng.
-export function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, placeholder, normalize, sorted }) {
+// `groups` + `onSetGroup` (tùy chọn): mỗi dòng có thêm ô tên nhóm — hiện ở Setup.
+export function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, placeholder, normalize, sorted, groups, onSetGroup }) {
+  const groupListId = useId();
+  const groupNames = groups ? [...new Set(list.map((x) => String(groups[x] || "").trim()).filter(Boolean))] : [];
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [editingIndex, setEditingIndex] = useState(-1);
@@ -80,6 +83,14 @@ export function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, pla
             ) : (
               <span style={{ flex: 1, cursor: "text" }} onClick={() => startEdit(i)}>{item}</span>
             )}
+            {onSetGroup ? (
+              // Không khoá theo dòng: gõ xong rời ô (hoặc Enter) mới lưu, khỏi ghi lên máy chủ mỗi phím.
+              <input key={`${item}|${(groups && groups[item]) || ""}`} className="input input-inline resource-group-input"
+                list={groupListId} defaultValue={(groups && groups[item]) || ""} placeholder="Nhóm"
+                title="Tên nhóm (VD Range, Trend) — bỏ trống = không nhóm"
+                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v !== String((groups && groups[item]) || "")) onSetGroup(item, v); }} />
+            ) : null}
             <span style={{ display: "flex", gap: 4 }}>
               <button type="button" className="row-btn" onClick={() => startEdit(i)} aria-label="Sửa"><Pencil size={13} /></button>
               <ConfirmButton onConfirm={() => onRemove(item)} />
@@ -87,8 +98,16 @@ export function ResourceListEditor({ list, hint, onAdd, onRemove, onSetList, pla
           </div>
         ))}
       </div>
+      {onSetGroup ? <datalist id={groupListId}>{groupNames.map((g) => <option key={g} value={g} />)}</datalist> : null}
     </div>
   );
+}
+
+// Bỏ nhóm của một tên (gỡ mục hoặc xoá trắng ô nhóm) / chuyển nhóm theo tên mới khi đổi tên.
+function withGroup(groups, name, group) {
+  const next = { ...(groups || {}) };
+  if (group) next[name] = group; else delete next[name];
+  return next;
 }
 
 // Thêm nguyên một dải điểm một lần, VD 7.5 → 12 bước 0.5 là 10 mức — gõ tay từng cái thì
@@ -153,9 +172,19 @@ export function ResourceManager({ resources, onChange }) {
             placeholder={childDef.numeric ? "Thêm một mức điểm, VD 12 hoặc 11.5..." : `Thêm mục cho "${childDef.label}"...`}
             normalize={childDef.numeric ? normalizeStructureScore : undefined}
             sorted={!!childDef.numeric}
+            groups={childDef.grouped ? resources.setupGroups || {} : undefined}
+            onSetGroup={childDef.grouped ? (item, g) => onChange({ ...resources, setupGroups: withGroup(resources.setupGroups, item, g) }) : undefined}
             onAdd={(v) => onChange({ ...resources, [childDef.key]: arrange([...(resources[childDef.key] || []), v]) })}
-            onRemove={(item) => onChange({ ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item) })}
-            onSetList={(next, rename) => onChange({ ...resources, [childDef.key]: arrange(next) }, rename ? { ...rename, resourceKey: childDef.key } : null)} />
+            onRemove={(item) => onChange({
+              ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item),
+              ...(childDef.grouped ? { setupGroups: withGroup(resources.setupGroups, item, "") } : {}),
+            })}
+            onSetList={(next, rename) => {
+              const regroup = childDef.grouped && rename
+                ? { setupGroups: withGroup(withGroup(resources.setupGroups, rename.renamedFrom, ""), rename.renamedTo, (resources.setupGroups || {})[rename.renamedFrom] || "") }
+                : {};
+              onChange({ ...resources, [childDef.key]: arrange(next), ...regroup }, rename ? { ...rename, resourceKey: childDef.key } : null);
+            }} />
         </div>
       </div>
     </div>

@@ -1766,6 +1766,7 @@ export function normalizeResources(rs) {
   );
   if (!merged.sessions || !merged.sessions.length) merged.sessions = DEFAULT_RESOURCES.sessions;
   merged.fxRates = { ...DEFAULT_RESOURCES.fxRates, ...(merged.fxRates || {}), USD: 1 };
+  if (!merged.setupGroups || typeof merged.setupGroups !== "object" || Array.isArray(merged.setupGroups)) merged.setupGroups = {};
   // Dọn một lần hai mục checklist đã có chỗ khác lo: ảnh vào/ra lệnh nằm trong % hoàn thành,
   // còn review nguội thành mục "Nhìn lại sau" có hạn ngày. Cờ checklistTrimmed để nếu bạn tự
   // thêm lại đúng hai tên đó thì lần sau không bị dọn nữa — dọn một lần rồi thôi.
@@ -1774,6 +1775,20 @@ export function normalizeResources(rs) {
     merged.checklistTrimmed = true;
   }
   return merged;
+}
+
+// Chia danh sách theo nhóm: mục chưa có nhóm đứng đầu (không tiêu đề), rồi tới từng nhóm theo
+// thứ tự mục đầu tiên của nhóm đó trong danh sách — kéo thả ở Tài nguyên là đổi được thứ tự nhóm.
+export function groupResourceOptions(options, groupOf) {
+  const loose = [];
+  const groups = new Map();
+  (options || []).forEach((o) => {
+    const g = String((groupOf && groupOf[o]) || "").trim();
+    if (!g) { loose.push(o); return; }
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(o);
+  });
+  return { loose, groups: [...groups].map(([name, items]) => ({ name, items })) };
 }
 
 const LEGACY_CHECKLIST_ITEMS = new Set(["có screenshot", "co screenshot", "có review", "co review", "có ghi lại nhật ký", "co ghi lai nhat ky"]);

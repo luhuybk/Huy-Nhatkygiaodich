@@ -20,7 +20,8 @@ export const RESOURCE_GROUPS = [
   },
   {
     key: "knowledge", label: "Kiến thức", children: [
-      { key: "setups", label: "Setup", hint: "Các mẫu hình vào lệnh (RB, IRB, ARB...)" },
+      { key: "setups", label: "Setup", grouped: true,
+        hint: "Các mẫu hình vào lệnh (RB, IRB, ARB...). Gõ tên nhóm ở ô bên phải (VD Range, Trend) để ô chọn setup khi ghi lệnh tách thành từng nhóm có tiêu đề — bỏ trống thì setup nằm trên cùng, không thuộc nhóm nào." },
       { key: "setupBonus", label: "Bonus", hint: "Điểm cộng thêm cho setup (hợp lưu, volume, tin tức...)" },
       { key: "setupNotes", label: "Nhận xét setup", hint: "Đánh giá việc áp dụng setup (Tốt, Tệ, Sai setup...)" },
       { key: "structureScores", label: "Điểm cấu trúc (ĐCT)", numeric: true,
@@ -117,6 +118,9 @@ export const DEFAULT_RESOURCES = {
     "XAUUSD", "XAGUSD", "GC", "CL", "ES", "NQ",
   ],
   setups: ["KHÔNG CÓ SETUP", "RB", "IRB", "ARB", "FB", "DD", "SB", "BB"],
+  // Nhóm của từng setup theo TÊN ({ RB: "Range" }) — tách riêng khỏi `setups` để mọi chỗ khác
+  // vẫn đọc danh sách tên như cũ.
+  setupGroups: {},
   setupBonus: [],
   setupNotes: ["Tốt", "Tệ", "Đúng setup", "Sai setup"],
   entrySkills: ["Đúng kế hoạch", "Quá sớm", "Quá muộn", "Bốc đồng"],

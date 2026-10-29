@@ -18,7 +18,7 @@ function SkillsFilterPanel({ filters, setFilters, resources }) {
         <option value="">Mọi mức thành thạo</option>
         {SKILL_LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
       </select>
-      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} placeholder="Áp dụng cho setup" />
+      <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Áp dụng cho setup" />
     </FilterShell>
   );
 }
