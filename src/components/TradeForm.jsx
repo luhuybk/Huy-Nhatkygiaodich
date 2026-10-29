@@ -875,6 +875,19 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
   // Đếm xem mục 1A đã có gì chưa, để nhãn gấp lại nói được là trống hay đã điền.
   const inTradeFilled = (t.inTradeImages || []).filter((x) => x && (x.link || x.image)).length + (t.inTradeNote ? 1 : 0);
   const accountNames = openAccounts(resources.accounts, t.account).map((a) => a.name);
+  // Tách ô chọn tài khoản theo sàn (ô Broker của tài khoản), như Setup tách theo nhóm. Gõ
+  // "exness" hay "Exness" vẫn chung một nhóm — lấy cách viết gặp đầu tiên.
+  const accountBrokers = useMemo(() => {
+    const spell = new Map();
+    const out = {};
+    (resources.accounts || []).forEach((a) => {
+      const b = String((a && a.broker) || "").trim();
+      if (!a || !a.name || !b) return;
+      if (!spell.has(b.toLowerCase())) spell.set(b.toLowerCase(), b);
+      out[a.name] = spell.get(b.toLowerCase());
+    });
+    return out;
+  }, [resources.accounts]);
   const selectedAccount = resources.accounts.find((a) => a.name === t.account);
   const autoAsset = assetGroupInfo(assetGroupOf({ ...t, assetGroup: "" }, resources));
   const accTf = tfOf(t.account);
@@ -1038,7 +1051,7 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             />
           </Field>
           <Field label="Tài khoản" incomplete={missing("account")} flow="account">
-            <ResourceSelect value={t.account} onChange={pickAccount} options={accountNames} placeholder="Chọn tài khoản" />
+            <ResourceSelect value={t.account} onChange={pickAccount} options={accountNames} groups={accountBrokers} placeholder="Chọn tài khoản" />
           </Field>
           <Field label="Khung thời gian" incomplete={missing("timeframe")} hint={tfHint} flow="timeframe">
             <ResourceSelect value={t.timeframe} onChange={pickTimeframe} options={resources.timeframes} placeholder="Chọn timeframe" />

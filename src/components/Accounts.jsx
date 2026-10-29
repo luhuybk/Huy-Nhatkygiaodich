@@ -288,8 +288,9 @@ export function AccountsList({ accounts, ledger, trades, timeframes, capitalPlan
           <Field label="Tên tài khoản">
             <input className="input" value={form.name} onChange={(e) => setF("name")(e.target.value)} placeholder="VD: Forex H3, US Stock, VN Stock..." />
           </Field>
-          <Field label="Broker">
-            <input className="input" value={form.broker} onChange={(e) => setF("broker")(e.target.value)} placeholder="VD: IC Markets, SSI, VPS..." />
+          <Field label="Broker" hint="Ô chọn tài khoản khi ghi lệnh tách nhóm theo sàn này">
+            <input className="input" list="broker-options" value={form.broker} onChange={(e) => setF("broker")(e.target.value)} placeholder="VD: Exness, ThinkMarkets, SSI..." />
+            <datalist id="broker-options">{[...new Set(accounts.map((a) => String(a.broker || "").trim()).filter(Boolean))].map((b) => <option key={b} value={b} />)}</datalist>
           </Field>
           <Field label="Đơn vị tiền tệ">
             <input className="input" list="currency-options" value={form.currency} onChange={(e) => setF("currency")(e.target.value)} placeholder="USD" />
