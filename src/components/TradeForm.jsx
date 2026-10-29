@@ -1143,6 +1143,17 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             <ResourceSelect value={t.structureScore} onChange={set("structureScore")} options={structureScale.options} placeholder={`Chọn điểm (${structureScale.label.replace(" đến ", "-")})`} />
           </Field>
         </div>
+        {/* Setup biến thể (nhìn lạ so với mẫu chuẩn): tick để sau lọc riêng ở Nhật ký → Biến thể setup. */}
+        <div className={`variant-row ${t.setupVariant ? "on" : ""}`}>
+          <label className="variant-check">
+            <input type="checkbox" checked={!!t.setupVariant} onChange={(e) => set("setupVariant")(e.target.checked)} />
+            Đây là <b>biến thể</b> của setup
+          </label>
+          {t.setupVariant ? (
+            <input className="input" value={t.setupVariantNote || ""} onChange={(e) => set("setupVariantNote")(e.target.value)}
+              placeholder="Khác mẫu chuẩn ở chỗ nào? (tùy chọn)" />
+          ) : null}
+        </div>
         <Field label="Lỗi của setup" flow="setupCheck" hint="Soi lại lệnh: làm đúng thì chọn 'Không lỗi', mắc lỗi nào thì tick lỗi đó. Bỏ trống = chưa soi.">
           <SetupErrorPicker trade={t} catalog={setupErrors} onChange={setT} />
         </Field>

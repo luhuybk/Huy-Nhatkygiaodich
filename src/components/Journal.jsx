@@ -10,7 +10,7 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { assetGroupInfo, assetGroupOf, assetGroupOptions } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
+import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, VARIANT_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
 import { applyFilters, accountOptions, awaitingJournal, avgPillarScore, brokerPending, openTradeIssues, tradeIssues, issueStatusLabel, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
@@ -193,6 +193,10 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
           <option value="">Vấn đề</option>
           {ISSUE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
+        <select className="input" value={filters.variant || ""} onChange={(e) => set("variant")(e.target.value)}>
+          <option value="">Biến thể setup</option>
+          {VARIANT_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
         <select className="input" value={filters.hasLesson || ""} onChange={(e) => set("hasLesson")(e.target.value)}>
           <option value="">Bài học</option>
           {LESSON_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -316,6 +320,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
               ) : null}
               {fxDetailText(t) ? <DetailRow prose label="Sức mạnh đồng tiền" value={fxDetailText(t)} /> : null}
               <DetailRow label="Setup" value={t.setup} />
+              {t.setupVariant ? <DetailRow prose label="Biến thể setup" value={t.setupVariantNote || "Có — chưa ghi điểm khác"} /> : null}
               <DetailRow label="Bonus" value={t.setupBonus} />
               <DetailRow prose label="Nhận xét Setup" value={t.setupNote} onChange={editNote("setupNote")} />
               <DetailRow label="Lỗi setup"
@@ -710,7 +715,9 @@ export function JournalTable({ trades, resources, onEdit, onEditForm, onDelete, 
               })()),
               images: td(C.images, <Strip items={shots} empty={false} />, { onClick: (e) => e.stopPropagation() }),
               direction: td(C.direction, <span className={`dir-pill ${t.direction}`}>{t.direction === "buy" ? "Buy" : "Sell"}</span>),
-              setup: td(C.setup, t.setup || EMPTY),
+              setup: td(C.setup, t.setup || t.setupVariant ? (
+                <>{t.setup || EMPTY}{t.setupVariant ? <span className="variant-tag" title={t.setupVariantNote || "Biến thể của setup"}>biến thể</span> : null}</>
+              ) : EMPTY),
               timeframe: td(C.timeframe, t.timeframe || EMPTY, { className: "mono" }),
               riskPercent: td(C.riskPercent, t.riskPercent === "" || t.riskPercent === null || t.riskPercent === undefined ? EMPTY : `${t.riskPercent}%`, { className: "mono" }),
               profit: td(C.profit, (

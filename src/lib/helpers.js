@@ -40,7 +40,9 @@ export function emptyTrade() {
     assetGroup: "",
     inTradeImages: [{ link: "", image: "" }], inTradeNote: "",
     riskPercent: "", riskAmount: "", riskAction: "", riskActionReason: "", ratingRisk: 0,
-    setup: "", setupBonus: "", setupNote: "", entryReason: "", ratingKnowledge: 0, structureScore: "",
+    setup: "", setupBonus: "", setupNote: "", entryReason: "",
+    // Lệnh vào theo một biến thể lạ của setup — đánh dấu để sau lọc riêng ra xem lại.
+    setupVariant: false, setupVariantNote: "", ratingKnowledge: 0, structureScore: "",
     partialExits: [],
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "", fees: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
@@ -3453,6 +3455,7 @@ const CSV_COLUMNS = [
   ["Điểm TB", (t) => { const s = avgPillarScore(t); return s === null ? "" : s.toFixed(2); }],
   ["Đánh giá", (t) => (GRADE_OPTIONS.find((g) => g.id === t.tradeGrade) || {}).label || ""],
   ["Tiến độ %", (t) => tradeCompletion(t).percent],
+  ["Biến thể setup", (t) => (t.setupVariant ? t.setupVariantNote || "Có" : "")],
   ["Có bài học", (t) => (t.hasLesson ? "Có" : "")],
   ["Bài học", (t) => t.lessonNote],
   ["Lý do vào lệnh", (t) => t.entryReason],
@@ -3709,6 +3712,8 @@ export function applyFilters(trades, filters, resources) {
       if (filters.issue === "any" && !all) return false;
       if (filters.issue === "done" && !(all && !open)) return false;
     }
+    if (filters.variant === "yes" && !t.setupVariant) return false;
+    if (filters.variant === "no" && t.setupVariant) return false;
     if (filters.hasLesson === "yes" && !t.hasLesson) return false;
     if (filters.hasLesson === "no" && t.hasLesson) return false;
     if (filters.completion) {

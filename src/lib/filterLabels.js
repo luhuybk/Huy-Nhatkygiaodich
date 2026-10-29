@@ -54,6 +54,10 @@ export const ISSUE_FILTERS = [
   { id: "any", label: "Có vấn đề (bất kỳ)", short: "có vấn đề" },
   { id: "done", label: "Vấn đề đã xử lý hết", short: "vấn đề đã xử lý" },
 ];
+export const VARIANT_FILTERS = [
+  { id: "yes", label: "Chỉ lệnh biến thể setup" },
+  { id: "no", label: "Bỏ lệnh biến thể setup" },
+];
 export const LESSON_FILTERS = [
   { id: "yes", label: "Có bài học" },
   { id: "no", label: "Không có bài học" },
@@ -97,6 +101,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.review) parts.push(`Nhìn lại: ${pick(REVIEW_FILTERS, f.review)}`);
   if (f.mistake) parts.push(`Lỗi: ${pick(MISTAKE_FILTERS, f.mistake)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
+  if (f.variant) parts.push(pick(VARIANT_FILTERS, f.variant));
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
   if (f.issue) parts.push(pick(ISSUE_FILTERS, f.issue));
   if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);

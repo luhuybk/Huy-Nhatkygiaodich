@@ -2544,3 +2544,12 @@ button.nt-check:hover { filter: brightness(1.25); }
 .ticket-chip-num { font-family:var(--font-mono, ui-monospace, monospace); max-width:0; overflow:hidden; white-space:nowrap; transition:max-width .2s ease; }
 .ticket-chip:hover .ticket-chip-num, .ticket-chip.open .ticket-chip-num { max-width:120px; }
 .ticket-input { margin-top:6px; font-size:12.5px; }
+
+/* Đánh dấu lệnh vào theo biến thể của setup */
+.variant-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:-4px 0 14px; }
+.variant-row .input { flex:1; min-width:220px; }
+.variant-check { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-dim); cursor:pointer; padding:6px 10px; border:1px dashed var(--border); border-radius:8px; }
+.variant-check input { width:15px; height:15px; accent-color:var(--accent); cursor:pointer; }
+.variant-row.on .variant-check { color:var(--text); border-style:solid; border-color:rgba(var(--accent-rgb),0.6); background:rgba(var(--accent-rgb),0.08); }
+.variant-tag { display:inline-block; margin-left:6px; padding:0 6px; border-radius:999px; font-size:10.5px; font-weight:700; line-height:17px;
+  color:var(--accent); background:rgba(var(--accent-rgb),0.14); vertical-align:1px; }
