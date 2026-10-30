@@ -18,6 +18,9 @@
 // Gửi lại do pg_cron gọi ?tick=1 mỗi phút (supabase-alert-relay-cron.sql). Tick không cần khoá: nó chỉ
 // gửi các tin đã tới hạn, ai gọi thêm cũng không làm tin bị gửi dày hơn.
 // Nút "✅ Đã thấy" (callback ta|<id>) do function telegram-webhook xử lý.
+// Tin TradingView nhắc lại có thêm nút "⏳ Kiểm lại" (tr|<id>): setup chưa đủ thì bấm,
+// tới lúc nến kế tiếp của khung đó đóng (nến đóng trong giờ nghỉ thì 8h45) tick gửi lại tin, lại nhắc
+// như lần đầu cho tới khi bấm một trong hai nút. Khung lấy từ tiền tố tin — xem _shared/alertRecheck.ts.
 //
 // Tắt tạm tin của EA (tin TradingView vẫn gửi): supabase secrets set ALERT_RELAY_EA=off  (bật lại: =on)
 // Gửi sang nhóm riêng: supabase secrets set ALERT_RELAY_CHAT_ID=<chat id nhóm, dạng -100…> [ALERT_RELAY_TOPIC=<id topic>]
@@ -28,6 +31,7 @@
 // Tạo khoá 1 lần: bash scripts/alert-relay-key.sh
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { alertButtons, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -46,6 +50,12 @@ type Settings = { telegramBotToken?: string; telegramChatId?: string };
 type Repeat = {
   id: string; text: string; topic?: number; every: number; times: number; sent: number;
   nextAt: string; createdAt: string; messageIds: number[]; ackedAt?: string; doneAt?: string;
+  tf?: Tf | null;       // khung để kiểm lại theo nến (tin TradingView); null = không có nút ⏳
+  head?: string;        // dòng đầu của vòng kiểm lại, vd "🔁 Kiểm lại setup · nến H4 đóng 16:00"
+  recheckAt?: string;   // đã bấm ⏳: lúc gửi lại tin kiểm lại
+  recheckClose?: string; // giờ nến đóng ứng với recheckAt
+  rechecks?: number;
+  rev?: number;         // tăng mỗi lần sửa — tick chỉ ghi đè bản ghi chưa bị telegram-webhook sửa
 };
 
 function json(body: unknown, status = 200) {
@@ -80,8 +90,6 @@ async function sendTelegram(botToken: string, payload: Record<string, unknown>):
   return "Telegram từ chối sau khi thử lại";
 }
 
-const seenButton = (id: string) => ({ inline_keyboard: [[{ text: "✅ Đã thấy", callback_data: `ta|${id}` }]] });
-
 async function loadOwner(supabase: ReturnType<typeof createClient>) {
   const { data: rows, error } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
   if (error) throw new Error(error.message);
@@ -101,7 +109,7 @@ async function readRepeats(supabase: ReturnType<typeof createClient>, userId: st
 
 async function writeRepeats(supabase: ReturnType<typeof createClient>, userId: string, list: Repeat[]) {
   const cutoff = Date.now() - KEEP_HOURS * 3600 * 1000;
-  const kept = list.filter((r) => !(r.ackedAt || r.doneAt) || Date.parse(r.ackedAt || r.doneAt!) > cutoff);
+  const kept = list.filter((r) => r.recheckAt || !(r.ackedAt || r.doneAt) || Date.parse(r.ackedAt || r.doneAt!) > cutoff);
   return await supabase.from("app_data").upsert(
     { user_id: userId, key: REPEAT_KEY, value: kept, updated_at: new Date().toISOString() },
     { onConflict: "user_id,key" },
@@ -115,6 +123,18 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   if (!owner) return json({ ok: true, skipped: "no settings" });
   const list = await readRepeats(supabase, owner.userId);
   const now = Date.now();
+  const revOf = new Map(list.map((r) => [r.id, r.rev || 0]));
+  // Tới giờ kiểm lại theo nến: mở lại vòng nhắc như cảnh báo mới (lần 1 gửi ngay trong lượt này)
+  for (const r of list) {
+    if (!r.recheckAt || Date.parse(r.recheckAt) > now) continue;
+    r.head = `🔁 Kiểm lại setup · nến ${r.tf || "D"} đóng ${vnTime(Date.parse(r.recheckClose || r.recheckAt), now)}`;
+    r.recheckAt = undefined;
+    r.recheckClose = undefined;
+    r.ackedAt = undefined;
+    r.doneAt = undefined;
+    r.sent = 0;
+    r.nextAt = new Date(now).toISOString();
+  }
   const due = list.filter((r) => !r.ackedAt && !r.doneAt && Date.parse(r.nextAt) <= now);
   if (!due.length) return json({ ok: true, due: 0 });
 
@@ -122,10 +142,13 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   for (const r of due) {
     r.sent += 1;
     const last = r.sent >= r.times;
+    const lines = r.sent > 1 ? [`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`] : [];
+    if (r.head) lines.push(r.head);
+    lines.push(r.text);
     const payload: Record<string, unknown> = {
       chat_id: owner.chatId,
-      text: `🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}\n${r.text}`,
-      reply_markup: seenButton(r.id),
+      text: lines.join("\n"),
+      reply_markup: alertButtons(r.id, r.tf),
     };
     if (r.topic) payload.message_thread_id = r.topic;
     const sent = await sendTelegram(token, payload);
@@ -144,13 +167,15 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     }
     if (last) r.doneAt = new Date().toISOString();
     else r.nextAt = new Date(now + r.every * 60 * 1000).toISOString();
+    r.rev = (r.rev || 0) + 1;
   }
 
-  // Đọc lại trước khi ghi: lúc gửi có thể người dùng vừa bấm "Đã thấy" hoặc có cảnh báo mới
+  // Đọc lại trước khi ghi: lúc gửi có thể người dùng vừa bấm nút (telegram-webhook tăng rev)
+  // hoặc có cảnh báo mới — bản ghi đã bị sửa thì giữ bản mới, chỉ ghi đè bản ghi còn nguyên
   const fresh = await readRepeats(supabase, owner.userId);
   const merged = fresh.map((f) => {
     const mine = due.find((d) => d.id === f.id);
-    return mine && !f.ackedAt ? { ...mine } : f;
+    return mine && (f.rev || 0) === revOf.get(f.id) ? { ...mine } : f;
   });
   const { error } = await writeRepeats(supabase, owner.userId, merged);
   if (error) return json({ error: error.message }, 500);
@@ -199,7 +224,8 @@ Deno.serve(async (req) => {
 
   const repeat = truthy(pick("repeat"));
   const id = repeat ? crypto.randomUUID().replace(/-/g, "").slice(0, 10) : "";
-  if (repeat) payload.reply_markup = seenButton(id);
+  const tf = fromTv ? tfOf(text) : null;
+  if (repeat) payload.reply_markup = alertButtons(id, tf);
 
   const sent = await sendTelegram(owner.settings.telegramBotToken!, payload);
   if (typeof sent !== "number") {
@@ -212,7 +238,7 @@ Deno.serve(async (req) => {
     const times = clampInt(pick("times"), 5, 2, 20);
     const list = await readRepeats(supabase, owner.userId);
     list.push({
-      id, text, every, times, sent: 1,
+      id, text, every, times, sent: 1, tf, rev: 0,
       topic: topic && !Number.isNaN(topic) ? topic : undefined,
       nextAt: new Date(Date.now() + every * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),

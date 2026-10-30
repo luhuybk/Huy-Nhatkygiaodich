@@ -7,6 +7,7 @@
 //                     sl|<tradeId>|closed   lệnh đã kết thúc thật, ngừng nhắc (không đụng vào bản ghi lệnh)
 //   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
 //   Cảnh báo nhắc lại ta|<id>               "✅ Đã thấy" ở tin của alert-relay — ngừng gửi lại
+//                     tr|<id>               "⏳ Kiểm lại" — setup chưa đủ, gửi lại lúc nến kế tiếp đóng
 //
 // Tin dạng bảng (symbol theo dõi, dời SL): mỗi dòng một mã. Bấm nút thì chỉ dòng đó đổi trạng thái,
 // các dòng khác giữ nguyên nút. Tin cũ mỗi mã một tin thì vẫn gỡ nút và ghi thêm dòng kết quả.
@@ -17,6 +18,7 @@
 //   https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { nextRecheck, RECHECK_DAYS, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -181,7 +183,7 @@ async function handle(raw: string): Promise<Response> {
   const ownerRow = (settingsRows || []).find((r) => {
     const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
     if (v?.telegramChatId && String(v.telegramChatId) === String(fromChatId)) return true;
-    return kind === "ta" && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
+    return (kind === "ta" || kind === "tr") && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
   });
   if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
 
@@ -291,29 +293,48 @@ async function handle(raw: string): Promise<Response> {
     }
     notice = "🔕 Đã ngừng nhắc điền cho lệnh này.";
     messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
-  } else if (kind === "ta") {
-    // Cảnh báo nhắc lại (function alert-relay): bấm "Đã thấy" thì ngừng gửi lại,
-    // và gỡ nút ở các tin nhắc trước của cùng cảnh báo.
+  } else if (kind === "ta" || kind === "tr") {
+    // Cảnh báo nhắc lại (function alert-relay). "✅ Đã thấy": ngừng gửi lại, bỏ luôn lịch kiểm lại.
+    // "⏳ Kiểm lại nến sau": ngừng nhắc vòng này, hẹn gửi lại lúc nến kế tiếp của khung đóng.
+    // Cả hai đều gỡ nút ở các tin nhắc trước của cùng cảnh báo.
     const [alertId] = rest;
-    const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as { id?: string; ackedAt?: string; doneAt?: string; messageIds?: number[] }[];
+    type AlertRepeat = {
+      id?: string; ackedAt?: string; doneAt?: string; messageIds?: number[]; createdAt?: string;
+      tf?: Tf | null; recheckAt?: string; recheckClose?: string; rechecks?: number; rev?: number;
+    };
+    const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
     const item = list.find((r) => r.id === alertId);
+    const now = Date.now();
+    const tooOld = !!item && Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
     if (!item) {
       notice = "Cảnh báo này đã quá cũ, không còn nhắc nữa.";
       messageSuffix = "\n\n☑️ Đã xong.";
     } else {
-      if (!item.ackedAt) {
-        item.ackedAt = new Date().toISOString();
-        const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
-        if (saveErr) {
-          await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
-          return json({ error: saveErr.message }, 500);
-        }
+      const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
+      item.ackedAt = item.ackedAt || new Date(now).toISOString();
+      item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;
+      item.recheckClose = recheck ? new Date(recheck.close).toISOString() : undefined;
+      if (recheck) item.rechecks = (item.rechecks || 0) + 1;
+      item.rev = (item.rev || 0) + 1;
+      const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
+      if (saveErr) {
+        await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+        return json({ error: saveErr.message }, 500);
       }
       for (const mid of item.messageIds || []) {
         if (mid !== cb.message?.message_id && fromChatId) await editMarkup(botToken, fromChatId, mid, []);
       }
-      notice = `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`;
-      messageSuffix = `\n\n✅ Đã thấy lúc ${vnClock()}.`;
+      if (recheck) {
+        const when = vnTime(recheck.at, now);
+        notice = `⏳ Sẽ nhắc kiểm lại lúc ${when} (nến ${item.tf || "D"} đóng ${vnTime(recheck.close, now)}).`;
+        messageSuffix = `\n\n⏳ Chưa đủ setup — kiểm lại lúc ${when}.`;
+      } else if (kind === "tr") {
+        notice = `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`;
+        messageSuffix = `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.`;
+      } else {
+        notice = `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`;
+        messageSuffix = `\n\n✅ Đã thấy lúc ${vnClock()}.`;
+      }
     }
   } else {
     await answerCallback(botToken, cb.id, "Lệnh không hợp lệ.");
