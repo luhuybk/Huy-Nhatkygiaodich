@@ -324,7 +324,7 @@ function AppShell({ onSignOut, userEmail }) {
   // Đọc lúc mở app, lúc quay lại tab và mỗi phút khi tab đang mở, để vào lệnh trên điện thoại thì
   // nhật ký đang mở trên máy tính cũng thấy ngay.
   const mt5StateRef = useRef({ trades, resources, loading, busy: false });
-  mt5StateRef.current = { ...mt5StateRef.current, trades, resources, loading };
+  mt5StateRef.current = { ...mt5StateRef.current, trades, resources, loading, capitalPlan, ledger };
   const pullMt5 = useCallback(async () => {
     const st = mt5StateRef.current;
     if (st.loading || st.busy || document.hidden) return;
@@ -334,10 +334,10 @@ function AppShell({ onSignOut, userEmail }) {
       if (!Array.isArray(inbox) || !inbox.length) return;
       const seen = await safeGet(MT5_SEEN_KEY, []);
       const cur = mt5StateRef.current;
-      const r = applyMt5Inbox(inbox, Array.isArray(seen) ? seen : [], cur.trades, cur.resources);
+      const r = applyMt5Inbox(inbox, Array.isArray(seen) ? seen : [], cur.trades, cur.resources, { capitalPlan: cur.capitalPlan, ledger: cur.ledger });
       if (!r) return;
       const changed = r.added.length || r.linked.length || r.closed.length;
-      if (changed) await persistTrades(r.trades);
+      if (changed || r.filled.length) await persistTrades(r.trades);
       await safeSet(MT5_SEEN_KEY, r.seen);
       if (changed) setMt5Toast({ added: r.added.filter((t) => !r.closed.includes(t)), linked: r.linked, closed: r.closed });
     } finally {

@@ -4,8 +4,9 @@
 // app_data "mt5Inbox" (không ghi thẳng vào "trades": app đang mở sẽ ghi đè mất). App đọc hộp này
 // lúc mở / quay lại tab, tạo lệnh, rồi ghi id đã nhận vào "mt5InboxSeen" — khoá riêng của app nên
 // không tranh ghi với function. Xoá lệnh tạo ra thì nó không quay lại, vì id vẫn nằm trong Seen.
-import { accountSyncsTime, accountTimeframes, canonicalSymbol, emptyTrade, isForexSymbol, sessionFromTime, todayStr } from "./helpers.js";
+import { accountBalance, accountSyncsTime, accountTimeframes, canonicalSymbol, emptyTrade, isForexSymbol, sessionFromTime, todayStr } from "./helpers.js";
 import { buildPositions, withBrokerOutcome } from "./brokerCsv.js";
+import { marketForAccount, marketUnitBase } from "./capital.js";
 
 export const MT5_INBOX_KEY = "mt5Inbox";
 export const MT5_SEEN_KEY = "mt5InboxSeen";
@@ -56,6 +57,21 @@ function closeTrade(trade, item, acc) {
   return next === trade ? trade : { ...next, mt5Closed: true };
 }
 
+// EA gửi kèm số tiền mất nếu chạm SL ban đầu (MT5 tự tính, đúng con số Exness hiện) → "Rủi ro (số tiền)".
+// % quy theo gốc vốn của mảng trong bảng Đi vốn — cùng gốc với các nút mức % trong form; tài khoản chưa
+// vào bảng thì theo số dư. Lệnh đã có rủi ro (ghi tay, hoặc đã sửa) thì để nguyên.
+function withMt5Risk(trade, item, acc, ctx) {
+  const risk = Number(item.risk);
+  if (!acc || !(risk > 0) || String(trade.riskAmount ?? "").trim()) return trade;
+  const cur = acc.currency || "USD";
+  // Khác loại tiền (VD tài khoản cent báo USC) thì không đoán quy đổi
+  if (item.currency && item.currency !== cur) return trade;
+  const m = marketForAccount(ctx.capitalPlan, acc.name, ctx.accounts, trade.symbol, trade.assetGroup);
+  const base = m && m.currency === cur ? marketUnitBase(m) : accountBalance(acc, ctx.ledger || [], ctx.trades || []);
+  const pct = base > 0 ? (risk / base) * 100 : null;
+  return { ...trade, riskAmount: String(risk), riskPercent: pct === null ? trade.riskPercent : String(Number(pct.toFixed(2))) };
+}
+
 function openDraft(item, acc, known, trades, resources) {
   const when = new Date((Number(item.time) || 0) * 1000);
   const valid = Number(item.time) > 0 && !Number.isNaN(when.getTime());
@@ -77,8 +93,10 @@ function openDraft(item, acc, known, trades, resources) {
   return draft;
 }
 
-// Trả { trades: danh sách mới, added: [lệnh tạo], linked: [lệnh gắn ticket], closed: [lệnh vừa đóng], seen: id đã xử lý }.
-export function applyMt5Inbox(inbox, seen, trades, resources) {
+// Trả { trades: danh sách mới, added: [lệnh tạo], linked: [lệnh gắn ticket], closed: [lệnh vừa đóng],
+// filled: [lệnh chỉ được điền bù rủi ro], seen: id đã xử lý }.
+// `extra` = { capitalPlan, ledger } để quy rủi ro ra %.
+export function applyMt5Inbox(inbox, seen, trades, resources, extra = {}) {
   const seenSet = new Set(seen || []);
   const fresh = (Array.isArray(inbox) ? inbox : []).filter((x) => x && x.id && !seenSet.has(x.id));
   if (!fresh.length) return null;
@@ -87,6 +105,8 @@ export function applyMt5Inbox(inbox, seen, trades, resources) {
   const added = [];
   const linked = [];
   const closed = [];
+  const filled = []; // chỉ điền bù rủi ro, không đổi gì khác
+  const ctx = { ...extra, accounts: resources.accounts, trades };
   // Gói vào lệnh trước, gói đóng lệnh sau — cùng một lượt có cả hai thì lệnh phải có rồi mới đóng được
   const order = (x) => (x.event === "close" ? 1 : 0);
   fresh.sort((a, b) => order(a) - order(b) || (Number(a.time) || 0) - (Number(b.time) || 0)).forEach((item) => {
@@ -97,10 +117,13 @@ export function applyMt5Inbox(inbox, seen, trades, resources) {
       // Gói vào lệnh đã nhận mà không còn lệnh mang ticket này = bạn đã xoá nó — không đẻ lại
       if (!have && seenSet.has(`${item.login}-${ticket}`)) return;
       // Lỡ mất gói vào lệnh (lệnh vào rồi đóng trong lúc EA tắt): tạo lệnh luôn rồi đóng
-      const base = have || openDraft(item, acc, known, trades, resources);
+      // Gói vào lệnh tới mà chưa có SL thì gói đóng (SL gắn trên lệnh gốc) vẫn điền bù được rủi ro
+      const base = withMt5Risk(have || openDraft(item, acc, known, trades, resources), item, acc, ctx);
       const done = closeTrade(base, item, acc);
       if (have) {
-        if (done !== have) { next = next.map((t) => (t === have ? done : t)); closed.push(done); }
+        if (done !== have) next = next.map((t) => (t === have ? done : t));
+        if (done !== base) closed.push(done);
+        else if (done !== have) filled.push(done);
       } else {
         next.push(done);
         added.push(done);
@@ -110,10 +133,10 @@ export function applyMt5Inbox(inbox, seen, trades, resources) {
     }
     // Cùng ticket đã nằm trong nhật ký (nhận ở máy khác) thì thôi
     if (have) return;
-    const draft = openDraft(item, acc, known, trades, resources);
+    const draft = withMt5Risk(openDraft(item, acc, known, trades, resources), item, acc, ctx);
     const twin = next.find((t) => sameTrade(t, draft));
     if (twin) {
-      next = next.map((t) => (t === twin ? { ...t, ticket: draft.ticket } : t));
+      next = next.map((t) => (t === twin ? withMt5Risk({ ...t, ticket: draft.ticket }, item, acc, ctx) : t));
       linked.push(twin);
       return;
     }
@@ -123,7 +146,7 @@ export function applyMt5Inbox(inbox, seen, trades, resources) {
   // Giữ Seen gọn: chỉ những id còn nằm trong hộp (function tự cắt hộp khi quá dài)
   const inboxIds = new Set((inbox || []).map((x) => x && x.id));
   return {
-    trades: next, added, linked, closed,
+    trades: next, added, linked, closed, filled,
     seen: [...new Set([...(seen || []).filter((id) => inboxIds.has(id)), ...fresh.map((x) => x.id)])],
   };
 }

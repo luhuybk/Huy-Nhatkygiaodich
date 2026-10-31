@@ -5,6 +5,7 @@
 //    "symbol": "EURUSDm", "side": "buy", "time": 1761700000}      (time = giây UTC lúc khớp)
 //   Lệnh đóng hẳn: thêm "event": "close", "volume": 0.5 (lot lúc vào), "fees": -1.2 (hoa hồng + qua đêm),
 //   "closes": [{"time": 1761800000, "lots": 0.2, "profit": 30.5}, ...] (mỗi lần đóng / chốt bớt một dòng).
+//   Lệnh có SL thì cả hai gói kèm "risk": 146.2 (tiền mất nếu chạm SL ban đầu), "currency": "USD".
 //
 // Dùng chung khoá với alert-relay (EA lấy địa chỉ alert-relay trong KeoSL_telegram.txt rồi đổi tên
 // function), nên không phải dán thêm khoá nào lên VPS.
@@ -28,7 +29,7 @@ const KEEP = 1000; // giữ 1000 lệnh gần nhất — đủ để lệnh nào
 type Close = { time: number; lots: number; profit: number };
 type Item = {
   id: string; login: string; accountName: string; ticket: string; symbol: string; side: string; time: number; receivedAt: string;
-  event?: "close"; volume?: number; fees?: number; closes?: Close[];
+  event?: "close"; volume?: number; fees?: number; closes?: Close[]; risk?: number; currency?: string;
 };
 
 function json(body: unknown, status = 200) {
@@ -69,6 +70,11 @@ Deno.serve(async (req) => {
     side: clean(body.side).toLowerCase() === "sell" ? "sell" : "buy",
     receivedAt: new Date().toISOString(),
   };
+  const risk = Number(body.risk);
+  if (Number.isFinite(risk) && risk > 0) {
+    item.risk = Math.round(risk * 100) / 100;
+    item.currency = clean(body.currency, 8).toUpperCase();
+  }
   if (body.event === "close") {
     const closes = (Array.isArray(body.closes) ? body.closes : []).slice(0, 100).map((c: Record<string, unknown>) => ({
       time: Math.round(Number(c?.time)), lots: Number(c?.lots), profit: Number(c?.profit),
