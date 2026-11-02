@@ -644,30 +644,44 @@ const SEASON_LABEL = { winter: "mùa đông", summer: "mùa hè" };
 
 // Mỹ vừa đổi giờ mà giờ gõ tay vẫn theo mùa cũ: hiện danh sách giờ sẽ dời, bấm một lần là xong.
 // Hai lần mỗi năm (Chủ nhật đầu tháng 11: +1 tiếng, Chủ nhật thứ 2 tháng 3: −1 tiếng).
-function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWatchesChange }) {
+function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWatchesChange, force, onClose }) {
   const now = usSeason();
   const base = settings.usSeasonHours || "summer";
-  const delta = now === "winter" ? 1 : -1;
+  const due = now !== base;
+  const [dir, setDir] = useState(now === "winter" ? 1 : -1);
   const [ticks, setTicks] = useState({});
-  const isOn = (key) => (key in ticks ? ticks[key] : seasonShiftDefault(key, settings));
-  const plan = useMemo(() => seasonShiftPlan(settings, watches, accounts, delta, isOn), [settings, watches, accounts, delta, ticks]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (now === base) return null;
-  const sign = delta > 0 ? "+1" : "−1";
+  // Mở tay (đã đúng mùa) thì không tick sẵn gì — mục đã dời rồi mà tick lại là dời hai lần
+  const isOn = (key) => (key in ticks ? ticks[key] : due && seasonShiftDefault(key, settings, watches));
+  const plan = useMemo(() => seasonShiftPlan(settings, watches, accounts, dir, isOn), [settings, watches, accounts, dir, ticks]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!due && !force) return null;
+  const sign = dir > 0 ? "+1" : "−1";
   const picked = plan.changes.filter((c) => isOn(c.key)).map((c) => c.key);
-  const keep = () => onSettingsChange({ ...settings, usSeasonHours: now });
+  const autoWatches = (watches || []).filter((w) => w && watchIsAuto(w));
+  const slotsOn = !!(settings.autoSlots && settings.autoSlots.enabled);
+  const done = (next) => { onSettingsChange({ ...next, usSeasonHours: now }); if (onClose) onClose(); };
   const apply = () => {
-    onSettingsChange({ ...plan.settings, usSeasonHours: now, usSeasonShiftKeys: picked });
+    done({ ...plan.settings, usSeasonShiftKeys: picked });
     if (plan.watches.some((w, i) => w !== (watches || [])[i])) onWatchesChange(plan.watches);
   };
   return (
     <div className="season-banner">
       <div className="season-head">
         <Clock size={14} />
-        <span>
-          Mỹ đã sang <b>giờ {SEASON_LABEL[now]}</b> — nến FX, cổ phiếu Mỹ, hàng hoá đóng {delta > 0 ? "muộn" : "sớm"} hơn
-          1 tiếng theo giờ VN. Lịch <b>theo giờ đóng nến</b> tự đổi rồi; giờ <b>gõ tay</b> thì vẫn theo {SEASON_LABEL[base]} —
-          tick mục cần dời (mục bỏ trống giữ nguyên giờ):
-        </span>
+        {due ? (
+          <span>
+            Mỹ đã sang <b>giờ {SEASON_LABEL[now]}</b> — nến FX, cổ phiếu Mỹ, hàng hoá đóng {dir > 0 ? "muộn" : "sớm"} hơn
+            1 tiếng theo giờ VN. Lịch <b>theo giờ đóng nến</b> tự đổi rồi; giờ <b>gõ tay</b> thì vẫn theo {SEASON_LABEL[base]} —
+            tick mục cần dời (mục bỏ trống giữ nguyên giờ):
+          </span>
+        ) : (
+          <span>
+            Dời tay giờ gõ tay (đang giờ Mỹ {SEASON_LABEL[now]}). Mục đã dời rồi thì đừng tick lại.{" "}
+            <span className="season-dir">
+              <button type="button" className={`btn btn-xs ${dir > 0 ? "btn-primary" : "btn-ghost"}`} onClick={() => setDir(1)}>+1 tiếng</button>
+              <button type="button" className={`btn btn-xs ${dir < 0 ? "btn-primary" : "btn-ghost"}`} onClick={() => setDir(-1)}>−1 tiếng</button>
+            </span>
+          </span>
+        )}
       </div>
       {plan.changes.length ? (
         <ul className="season-list">
@@ -683,15 +697,27 @@ function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWa
           ))}
         </ul>
       ) : (
-        <p className="season-none">Không có giờ gõ tay nào cần dời — mọi lịch đang theo giờ đóng nến.</p>
+        <p className="season-none">Không có giờ gõ tay nào để dời — mọi lịch đang theo giờ đóng nến.</p>
       )}
+      {autoWatches.length ? (
+        <ul className="season-list season-info">
+          {autoWatches.map((w) => (
+            <li key={w.id}>
+              <span className="season-pick">✓ Symbol theo dõi · {w.label || "Nhóm chưa đặt tên"} · khung {w.timeframe}</span>
+              <span>{slotsOn ? "theo nến nhưng nhắc ở các mốc — dời bằng mục \"Mốc nhắc theo nến\"" : "theo giờ đóng nến — tự đổi mùa, không cần dời"}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="season-actions">
         {plan.changes.length ? (
           <button type="button" className="btn btn-primary btn-xs" onClick={apply} disabled={!picked.length}>
             Dời {sign} tiếng{picked.length ? ` (${picked.length} mục)` : ""}
           </button>
         ) : null}
-        <button type="button" className="btn btn-ghost btn-xs" onClick={keep}>{plan.changes.length ? "Giữ nguyên" : "Đã hiểu"}</button>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={() => done(settings)}>
+          {!due ? "Đóng" : plan.changes.length ? "Giữ nguyên" : "Đã hiểu"}
+        </button>
       </div>
     </div>
   );
@@ -705,6 +731,7 @@ export function PlansPanel({
   const s = settings;
   const [open, setOpenRaw] = useState(() => readLocalUi("plansOpen", ""));
   const setOpen = (id) => { setOpenRaw(id); writeLocalUi("plansOpen", id); };
+  const [seasonOpen, setSeasonOpen] = useState(false);
   const telegramReady = !!(s.telegramBotToken && s.telegramChatId);
   const accName = (id, fallback) => ((resources.accounts || []).find((a) => a.id === id) || {}).name || fallback || "?";
 
@@ -741,10 +768,12 @@ export function PlansPanel({
           <button type="button" className="btn btn-ghost btn-xs" onClick={onGoSettings}><Settings2 size={12} /> Mở Cài đặt</button>
         </div>
       ) : null}
-      <SeasonShiftBanner settings={s} watches={watches} accounts={resources.accounts} onSettingsChange={onSettingsChange} onWatchesChange={onWatchesChange} />
+      <SeasonShiftBanner settings={s} watches={watches} accounts={resources.accounts} onSettingsChange={onSettingsChange} onWatchesChange={onWatchesChange}
+        force={seasonOpen} onClose={() => setSeasonOpen(false)} />
       <div className="plan-mode">
         <Clock size={13} /> Giờ đóng nến: {candleModeText(s)} · giờ Mỹ {SEASON_LABEL[usSeason()]}
         <button type="button" className="plan-link" onClick={onGoSettings}>đổi</button>
+        <button type="button" className="plan-link" onClick={() => setSeasonOpen(true)}>dời giờ ±1</button>
       </div>
 
       <PlanSection id="sl" icon={ArrowUpDown} title="Dời SL" summary={slSummary}

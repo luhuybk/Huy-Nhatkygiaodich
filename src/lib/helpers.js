@@ -4155,9 +4155,13 @@ function toMinutes(h) {
 
 // Mục được dời mặc định: chỉ symbol theo dõi — người dùng chọn vậy (VN stock không đổi giờ, kiểm tra setup
 // giữ giờ cố định). Lần dời trước đã tick mục nào thì lần sau tick sẵn đúng mục đó (`usSeasonShiftKeys`).
-export function seasonShiftDefault(key, settings) {
+// Nhóm symbol theo dõi chọn khung nến mà đang ở chế độ "chỉ nhắc ở các mốc" thì chính các mốc quyết định
+// giờ nhắc — muốn nhóm đó nhắc muộn theo thì phải dời mốc, nên khi ấy tick sẵn cả mục mốc.
+export function seasonShiftDefault(key, settings, watches) {
   const saved = settings && settings.usSeasonShiftKeys;
-  return Array.isArray(saved) ? saved.includes(key) : key.startsWith("w:");
+  if (Array.isArray(saved)) return saved.includes(key);
+  if (key === "slots") return (watches || []).some((w) => w && w.enabled && watchIsAuto(w));
+  return key.startsWith("w:");
 }
 
 // `picked(key)` quyết định mục nào thật sự dời; `changes` vẫn liệt kê mọi mục có giờ gõ tay để chọn.
