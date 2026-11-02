@@ -8,6 +8,11 @@
 //   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
 //   Cảnh báo nhắc lại ta|<id>               "✅ Đã thấy" ở tin của alert-relay — ngừng gửi lại
 //                     tr|<id>               "⏳ Kiểm lại" — setup chưa đủ, gửi lại lúc nến kế tiếp đóng
+//   Gõ chữ (tin thường, không phải nút) — trả lời ngay từ thông báo trên màn hình khoá:
+//                     "ok"                  như "✅ Đã thấy"
+//                     "n" (next)            như "⏳ Kiểm lại"
+//     Trả lời (reply) đúng tin cảnh báo thì áp cho cảnh báo đó, không thì cho cảnh báo vừa gửi gần nhất.
+//     Nhóm cảnh báo riêng mà bot bật privacy mode thì bot chỉ thấy tin reply — chat riêng với bot thì gõ thẳng được.
 //
 // Tin dạng bảng (symbol theo dõi, dời SL): mỗi dòng một mã. Bấm nút thì chỉ dòng đó đổi trạng thái,
 // các dòng khác giữ nguyên nút. Tin cũ mỗi mã một tin thì vẫn gỡ nút và ghi thêm dòng kết quả.
@@ -164,6 +169,7 @@ async function handle(raw: string): Promise<Response> {
     return new Response("ok");
   }
 
+  if (update.message?.text) return await handleText(update.message);
   const cb = update.callback_query;
   if (!cb?.data) return json({ ok: true, skipped: "not a callback" });
 
@@ -294,48 +300,13 @@ async function handle(raw: string): Promise<Response> {
     notice = "🔕 Đã ngừng nhắc điền cho lệnh này.";
     messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
   } else if (kind === "ta" || kind === "tr") {
-    // Cảnh báo nhắc lại (function alert-relay). "✅ Đã thấy": ngừng gửi lại, bỏ luôn lịch kiểm lại.
-    // "⏳ Kiểm lại nến sau": ngừng nhắc vòng này, hẹn gửi lại lúc nến kế tiếp của khung đóng.
-    // Cả hai đều gỡ nút ở các tin nhắc trước của cùng cảnh báo.
-    const [alertId] = rest;
-    type AlertRepeat = {
-      id?: string; ackedAt?: string; doneAt?: string; messageIds?: number[]; createdAt?: string;
-      tf?: Tf | null; recheckAt?: string; recheckClose?: string; rechecks?: number; rev?: number;
-    };
-    const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
-    const item = list.find((r) => r.id === alertId);
-    const now = Date.now();
-    const tooOld = !!item && Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
-    if (!item) {
-      notice = "Cảnh báo này đã quá cũ, không còn nhắc nữa.";
-      messageSuffix = "\n\n☑️ Đã xong.";
-    } else {
-      const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
-      item.ackedAt = item.ackedAt || new Date(now).toISOString();
-      item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;
-      item.recheckClose = recheck ? new Date(recheck.close).toISOString() : undefined;
-      if (recheck) item.rechecks = (item.rechecks || 0) + 1;
-      item.rev = (item.rev || 0) + 1;
-      const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
-      if (saveErr) {
-        await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
-        return json({ error: saveErr.message }, 500);
-      }
-      for (const mid of item.messageIds || []) {
-        if (mid !== cb.message?.message_id && fromChatId) await editMarkup(botToken, fromChatId, mid, []);
-      }
-      if (recheck) {
-        const when = vnTime(recheck.at, now);
-        notice = `⏳ Sẽ nhắc kiểm lại lúc ${when} (nến ${item.tf || "D"} đóng ${vnTime(recheck.close, now)}).`;
-        messageSuffix = `\n\n⏳ Chưa đủ setup — kiểm lại lúc ${when}.`;
-      } else if (kind === "tr") {
-        notice = `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`;
-        messageSuffix = `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.`;
-      } else {
-        notice = `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`;
-        messageSuffix = `\n\n✅ Đã thấy lúc ${vnClock()}.`;
-      }
+    const res = await alertAction(supabase, userId, botToken, fromChatId, rest[0], kind, cb.message?.message_id);
+    if ("error" in res) {
+      await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+      return json({ error: res.error }, 500);
     }
+    notice = res.notice;
+    messageSuffix = res.suffix;
   } else {
     await answerCallback(botToken, cb.id, "Lệnh không hợp lệ.");
     return json({ ok: true, skipped: "unknown kind" });
@@ -363,4 +334,118 @@ async function handle(raw: string): Promise<Response> {
   }
 
   return json({ ok: true, kind, rest, editError });
+}
+
+// ───────────── Cảnh báo nhắc lại (function alert-relay) ─────────────
+
+type AlertRepeat = {
+  id?: string; text?: string; ackedAt?: string; doneAt?: string; messageIds?: number[]; createdAt?: string;
+  tf?: Tf | null; recheckAt?: string; recheckClose?: string; rechecks?: number; rev?: number;
+};
+
+// "✅ Đã thấy" (ta): ngừng gửi lại, bỏ luôn lịch kiểm lại. "⏳ Kiểm lại" (tr): ngừng nhắc vòng này, hẹn
+// gửi lại lúc nến kế tiếp của khung đóng. Cả hai gỡ nút ở các tin của cùng cảnh báo (trừ `keepMid` —
+// tin vừa bấm, phần hiển thị của nó do chỗ gọi lo).
+async function alertAction(
+  supabase: ReturnType<typeof createClient>, userId: string, botToken: string, chatId: number | undefined,
+  alertId: string, kind: "ta" | "tr", keepMid?: number,
+): Promise<{ notice: string; suffix: string; item?: AlertRepeat } | { error: string }> {
+  const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
+  const item = list.find((r) => r.id === alertId);
+  const now = Date.now();
+  if (!item) return { notice: "Cảnh báo này đã quá cũ, không còn nhắc nữa.", suffix: "\n\n☑️ Đã xong." };
+  const tooOld = Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
+  const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
+  item.ackedAt = item.ackedAt || new Date(now).toISOString();
+  item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;
+  item.recheckClose = recheck ? new Date(recheck.close).toISOString() : undefined;
+  if (recheck) item.rechecks = (item.rechecks || 0) + 1;
+  item.rev = (item.rev || 0) + 1;
+  const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
+  if (saveErr) return { error: saveErr.message };
+  for (const mid of item.messageIds || []) {
+    if (mid !== keepMid && chatId) await editMarkup(botToken, chatId, mid, []);
+  }
+  if (recheck) {
+    const when = vnTime(recheck.at, now);
+    return {
+      item,
+      notice: `⏳ Sẽ nhắc kiểm lại lúc ${when} (nến ${item.tf || "D"} đóng ${vnTime(recheck.close, now)}).`,
+      suffix: `\n\n⏳ Chưa đủ setup — kiểm lại lúc ${when}.`,
+    };
+  }
+  if (kind === "tr") {
+    return { item, notice: `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`, suffix: `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.` };
+  }
+  return { item, notice: `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`, suffix: `\n\n✅ Đã thấy lúc ${vnClock()}.` };
+}
+
+// Chữ gõ tay → hành động. Bỏ dấu, dấu câu để "OK.", "Ok!", "N" đều nhận.
+function textCommand(raw: string): "ta" | "tr" | null {
+  const t = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  if (["n", "next", "nn", "kl", "kiem lai"].includes(t)) return "tr";
+  if (["ok", "oke", "okay", "k", "da thay", "dt"].includes(t)) return "ta";
+  return null;
+}
+
+async function sendReply(botToken: string, chatId: number, text: string, replyTo?: number, threadId?: number) {
+  const body: Record<string, unknown> = { chat_id: chatId, text, disable_notification: true };
+  if (replyTo) body.reply_parameters = { message_id: replyTo, allow_sending_without_reply: true };
+  if (threadId) body.message_thread_id = threadId;
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+// Cảnh báo còn "sống" để nhận chữ gõ: đang nhắc, hoặc vừa nhắc hết lượt trong 12 tiếng mà chưa bấm gì.
+const LIVE_HOURS = 12;
+
+// Gõ "n" / "ok" thay cho bấm nút — từ thông báo trên màn hình khoá trả lời được bằng chữ nhưng không bấm
+// được nút. Chữ khác thì im lặng bỏ qua (chat này còn dùng cho việc khác).
+async function handleText(msg: Record<string, any>): Promise<Response> {
+  const kind = textCommand(String(msg.text || ""));
+  if (!kind) return json({ ok: true, skipped: "text" });
+  const chatId = msg.chat?.id;
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const { data: settingsRows, error } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
+  if (error) return json({ error: error.message }, 500);
+  const alertChat = (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim();
+  const ownerRow = (settingsRows || []).find((r) => {
+    const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
+    if (!v?.telegramBotToken) return false;
+    return String(v.telegramChatId || "") === String(chatId) || (alertChat !== "" && alertChat === String(chatId));
+  });
+  if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
+  const userId = ownerRow.user_id as string;
+  const botToken = (ownerRow.value as { telegramBotToken: string }).telegramBotToken;
+  const thread = msg.is_topic_message ? msg.message_thread_id : undefined;
+
+  const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
+  const lastMid = (r: AlertRepeat) => Math.max(0, ...(r.messageIds || []));
+  const replyTo = msg.reply_to_message?.message_id;
+  let target = replyTo ? list.find((r) => (r.messageIds || []).includes(replyTo)) : undefined;
+  const cutoff = Date.now() - LIVE_HOURS * 3600 * 1000;
+  const live = list.filter((r) => !r.ackedAt && !r.recheckAt && (!r.doneAt || Date.parse(r.doneAt) > cutoff) && lastMid(r) > 0)
+    .sort((a, b) => lastMid(b) - lastMid(a));
+  if (!target) target = live[0];
+  if (!target) {
+    await sendReply(botToken, chatId, "Không có cảnh báo nào đang chờ — gõ n/ok chỉ dùng cho tin cảnh báo đang nhắc.", msg.message_id, thread);
+    return json({ ok: true, skipped: "no live alert" });
+  }
+  if (kind === "tr" && !target.tf) {
+    await sendReply(botToken, chatId, "Cảnh báo này không có khung nến để kiểm lại — gõ ok để ngừng nhắc.", msg.message_id, thread);
+    return json({ ok: true, skipped: "no tf" });
+  }
+  const res = await alertAction(supabase, userId, botToken, chatId, target.id!, kind);
+  if ("error" in res) {
+    await sendReply(botToken, chatId, "⚠️ Lưu thất bại, gõ lại nhé.", msg.message_id, thread);
+    return json({ error: res.error }, 500);
+  }
+  // Nói rõ là cảnh báo nào (dòng đầu của tin), và còn cảnh báo khác đang nhắc không
+  const title = String(target.text || "").split("\n").find((x) => x.trim()) || "";
+  const others = live.filter((r) => r.id !== target!.id).length;
+  const lines = [title ? `${res.notice}\n› ${title.slice(0, 120)}` : res.notice];
+  if (others) lines.push(`Còn ${others} cảnh báo khác đang nhắc — gõ tiếp n/ok, hoặc trả lời đúng tin muốn xử lý.`);
+  await sendReply(botToken, chatId, lines.join("\n"), msg.message_id, thread);
+  return json({ ok: true, kind, id: target.id });
 }

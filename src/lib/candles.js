@@ -83,6 +83,12 @@ function offsetMin(tz, ms) {
   return Math.round((asUtc - Math.floor(ms / 60000) * 60000) / 60000);
 }
 
+// Mùa giờ của Mỹ lúc `ms`: "winter" (EST, UTC−5) hoặc "summer" (EDT, UTC−4). Nến FX / cổ phiếu Mỹ /
+// hàng hoá xếp theo giờ New York, nên mùa đông đóng muộn hơn mùa hè 1 tiếng theo giờ VN.
+export function usSeason(ms = Date.now()) {
+  return offsetMin(NY_TZ, ms) === -300 ? "winter" : "summer";
+}
+
 // Giờ đồng hồ treo tường ở múi `tz` → thời điểm tuyệt đối. Lặp hai lần cho đúng cả ngày đổi giờ.
 export function wallToMs(tz, dateStr, hhmm) {
   const base = Date.UTC(+dateStr.slice(0, 4), +dateStr.slice(5, 7) - 1, +dateStr.slice(8, 10), +hhmm.slice(0, 2), +hhmm.slice(3, 5));

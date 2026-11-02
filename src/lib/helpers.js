@@ -4138,3 +4138,49 @@ export function tradeImageShots(t) {
   });
   return shots;
 }
+
+// ——— Đổi giờ mùa Mỹ: dời các giờ nhắc GÕ TAY theo nến ±1 tiếng ———
+// Giờ tự tính theo nến đã tự đổi mùa; còn giờ gõ tay (kiểm tra setup, symbol theo dõi không chọn khung,
+// dời SL không bật "theo nến", các mốc nhắc) là giờ VN cố định — sang mùa đông nến đóng muộn 1 tiếng
+// thì nhắc sớm hơn nến. `settings.usSeasonHours` ghi mùa mà các giờ gõ tay đang khớp (thiếu = mùa hè).
+// Việc định kỳ (tổng kết tuần, điền nốt lệnh…) không dính tới nến nên giữ nguyên.
+function shiftHour(h, delta) {
+  const m = ((toMinutes(h) + delta * 60) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+function toMinutes(h) {
+  return Number(String(h).slice(0, 2)) * 60 + Number(String(h).slice(3, 5));
+}
+
+export function seasonShiftPlan(settings, watches, accounts, delta) {
+  const st = settings || {};
+  const changes = [];
+  const accName = (id, fallback) => ((accounts || []).find((a) => a.id === id) || {}).name || fallback || "?";
+  const move = (label, obj, on) => {
+    const hours = (obj && obj.hours) || [];
+    if (!hours.length) return obj;
+    const next = hours.map((h) => shiftHour(h, delta));
+    // Qua nửa đêm thì giờ đó rơi sang ngày khác — ngày chạy trong tuần không tự dời theo
+    const wrapped = hours.some((h, i) => (delta > 0 ? next[i] < h : next[i] > h));
+    changes.push({ label, from: [...hours].sort(), to: [...new Set(next)].sort(), wrapped, on });
+    const patch = { hours: [...new Set(next)].sort() };
+    if (Array.isArray(obj.skip) && obj.skip.length) patch.skip = migrateSkipHours(obj.skip, hours, next);
+    return { ...obj, ...patch };
+  };
+  const schedules = (st.schedules || []).map((sc) => (sc && !sc.auto
+    ? move(`Dời SL · ${accName(sc.accountId, sc.accountName)}${sc.timeframe ? ` · khung ${sc.timeframe}` : ""}`, sc, !!st.enabled && !!sc.enabled)
+    : sc));
+  const setupCheckSchedules = (st.setupCheckSchedules || []).map((sc) => (sc
+    ? move(`Kiểm tra setup · ${accName(sc.accountId, sc.accountName)}`, sc, !!st.setupCheckEnabled && !!sc.enabled)
+    : sc));
+  const nextWatches = (watches || []).map((w) => (w && !watchIsAuto(w)
+    ? move(`Symbol theo dõi · ${w.label || "Nhóm chưa đặt tên"}`, w, !!st.symbolWatchEnabled && !!w.enabled)
+    : w));
+  const slots = st.autoSlots && st.autoSlots.enabled ? move("Mốc nhắc theo nến", st.autoSlots, true) : st.autoSlots;
+  return {
+    changes,
+    settings: { ...st, schedules, setupCheckSchedules, ...(st.autoSlots ? { autoSlots: slots } : {}) },
+    watches: nextWatches,
+  };
+}

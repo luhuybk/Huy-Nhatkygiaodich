@@ -10,11 +10,11 @@ import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
   looksTelexed, mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
-  parseSymbolList, readLocalUi, setupCheckStats, setupCheckStreak, writeLocalUi,
+  parseSymbolList, readLocalUi, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
   watchIsAuto, watchLiveSymbols, watchScheduleHours,
 } from "../lib/helpers.js";
-import { DEFAULT_AUTO_SLOTS, tfHours, vnToday } from "../lib/candles.js";
+import { DEFAULT_AUTO_SLOTS, tfHours, usSeason, vnToday } from "../lib/candles.js";
 
 const WEEKDAY_FULL_LABEL = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
@@ -640,6 +640,54 @@ function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
 
 // ───────────────────────── Tab Lịch nhắc ─────────────────────────
 
+const SEASON_LABEL = { winter: "mùa đông", summer: "mùa hè" };
+
+// Mỹ vừa đổi giờ mà giờ gõ tay vẫn theo mùa cũ: hiện danh sách giờ sẽ dời, bấm một lần là xong.
+// Hai lần mỗi năm (Chủ nhật đầu tháng 11: +1 tiếng, Chủ nhật thứ 2 tháng 3: −1 tiếng).
+function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWatchesChange }) {
+  const now = usSeason();
+  const base = settings.usSeasonHours || "summer";
+  const delta = now === "winter" ? 1 : -1;
+  const plan = useMemo(() => seasonShiftPlan(settings, watches, accounts, delta), [settings, watches, accounts, delta]);
+  if (now === base) return null;
+  const sign = delta > 0 ? "+1" : "−1";
+  const keep = () => onSettingsChange({ ...settings, usSeasonHours: now });
+  const apply = () => {
+    onSettingsChange({ ...plan.settings, usSeasonHours: now });
+    if (plan.watches.some((w, i) => w !== (watches || [])[i])) onWatchesChange(plan.watches);
+  };
+  return (
+    <div className="season-banner">
+      <div className="season-head">
+        <Clock size={14} />
+        <span>
+          Mỹ đã sang <b>giờ {SEASON_LABEL[now]}</b> — nến FX, cổ phiếu Mỹ, hàng hoá đóng {delta > 0 ? "muộn" : "sớm"} hơn
+          1 tiếng theo giờ VN. Lịch <b>theo giờ đóng nến</b> tự đổi rồi; giờ <b>gõ tay</b> thì vẫn theo {SEASON_LABEL[base]}:
+        </span>
+      </div>
+      {plan.changes.length ? (
+        <ul className="season-list">
+          {plan.changes.map((c) => (
+            <li key={c.label} className={c.on ? "" : "season-off"}>
+              <span>{c.label}{c.on ? "" : " (đang tắt)"}</span>
+              <span className="mono">{hoursText(c.from)} → {hoursText(c.to)}</span>
+              {c.wrapped ? <small className="season-warn">qua nửa đêm — xem lại ngày chạy</small> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="season-none">Không có giờ gõ tay nào cần dời — mọi lịch đang theo giờ đóng nến.</p>
+      )}
+      <div className="season-actions">
+        {plan.changes.length ? (
+          <button type="button" className="btn btn-primary btn-xs" onClick={apply}>Dời {sign} tiếng</button>
+        ) : null}
+        <button type="button" className="btn btn-ghost btn-xs" onClick={keep}>{plan.changes.length ? "Giữ nguyên" : "Đã hiểu"}</button>
+      </div>
+    </div>
+  );
+}
+
 
 export function PlansPanel({
   settings, onSettingsChange, resources, trades, watches, onWatchesChange, mutedTrades, onMutedTradesChange,
@@ -684,8 +732,9 @@ export function PlansPanel({
           <button type="button" className="btn btn-ghost btn-xs" onClick={onGoSettings}><Settings2 size={12} /> Mở Cài đặt</button>
         </div>
       ) : null}
+      <SeasonShiftBanner settings={s} watches={watches} accounts={resources.accounts} onSettingsChange={onSettingsChange} onWatchesChange={onWatchesChange} />
       <div className="plan-mode">
-        <Clock size={13} /> Giờ đóng nến: {candleModeText(s)}
+        <Clock size={13} /> Giờ đóng nến: {candleModeText(s)} · giờ Mỹ {SEASON_LABEL[usSeason()]}
         <button type="button" className="plan-link" onClick={onGoSettings}>đổi</button>
       </div>
 
