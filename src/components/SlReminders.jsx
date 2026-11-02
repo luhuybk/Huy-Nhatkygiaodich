@@ -10,7 +10,7 @@ import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
   looksTelexed, mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
-  parseSymbolList, readLocalUi, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
+  parseSymbolList, readLocalUi, seasonShiftDefault, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
   watchIsAuto, watchLiveSymbols, watchScheduleHours,
 } from "../lib/helpers.js";
@@ -648,12 +648,15 @@ function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWa
   const now = usSeason();
   const base = settings.usSeasonHours || "summer";
   const delta = now === "winter" ? 1 : -1;
-  const plan = useMemo(() => seasonShiftPlan(settings, watches, accounts, delta), [settings, watches, accounts, delta]);
+  const [ticks, setTicks] = useState({});
+  const isOn = (key) => (key in ticks ? ticks[key] : seasonShiftDefault(key, settings));
+  const plan = useMemo(() => seasonShiftPlan(settings, watches, accounts, delta, isOn), [settings, watches, accounts, delta, ticks]); // eslint-disable-line react-hooks/exhaustive-deps
   if (now === base) return null;
   const sign = delta > 0 ? "+1" : "−1";
+  const picked = plan.changes.filter((c) => isOn(c.key)).map((c) => c.key);
   const keep = () => onSettingsChange({ ...settings, usSeasonHours: now });
   const apply = () => {
-    onSettingsChange({ ...plan.settings, usSeasonHours: now });
+    onSettingsChange({ ...plan.settings, usSeasonHours: now, usSeasonShiftKeys: picked });
     if (plan.watches.some((w, i) => w !== (watches || [])[i])) onWatchesChange(plan.watches);
   };
   return (
@@ -662,16 +665,20 @@ function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWa
         <Clock size={14} />
         <span>
           Mỹ đã sang <b>giờ {SEASON_LABEL[now]}</b> — nến FX, cổ phiếu Mỹ, hàng hoá đóng {delta > 0 ? "muộn" : "sớm"} hơn
-          1 tiếng theo giờ VN. Lịch <b>theo giờ đóng nến</b> tự đổi rồi; giờ <b>gõ tay</b> thì vẫn theo {SEASON_LABEL[base]}:
+          1 tiếng theo giờ VN. Lịch <b>theo giờ đóng nến</b> tự đổi rồi; giờ <b>gõ tay</b> thì vẫn theo {SEASON_LABEL[base]} —
+          tick mục cần dời (mục bỏ trống giữ nguyên giờ):
         </span>
       </div>
       {plan.changes.length ? (
         <ul className="season-list">
           {plan.changes.map((c) => (
-            <li key={c.label} className={c.on ? "" : "season-off"}>
-              <span>{c.label}{c.on ? "" : " (đang tắt)"}</span>
-              <span className="mono">{hoursText(c.from)} → {hoursText(c.to)}</span>
-              {c.wrapped ? <small className="season-warn">qua nửa đêm — xem lại ngày chạy</small> : null}
+            <li key={c.key} className={c.on ? "" : "season-off"}>
+              <label className="season-pick">
+                <input type="checkbox" checked={isOn(c.key)} onChange={(e) => setTicks((t) => ({ ...t, [c.key]: e.target.checked }))} />
+                {c.label}{c.on ? "" : " (đang tắt)"}
+              </label>
+              <span className="mono">{isOn(c.key) ? `${hoursText(c.from)} → ${hoursText(c.to)}` : `giữ ${hoursText(c.from)}`}</span>
+              {c.wrapped && isOn(c.key) ? <small className="season-warn">qua nửa đêm — xem lại ngày chạy</small> : null}
             </li>
           ))}
         </ul>
@@ -680,7 +687,9 @@ function SeasonShiftBanner({ settings, watches, accounts, onSettingsChange, onWa
       )}
       <div className="season-actions">
         {plan.changes.length ? (
-          <button type="button" className="btn btn-primary btn-xs" onClick={apply}>Dời {sign} tiếng</button>
+          <button type="button" className="btn btn-primary btn-xs" onClick={apply} disabled={!picked.length}>
+            Dời {sign} tiếng{picked.length ? ` (${picked.length} mục)` : ""}
+          </button>
         ) : null}
         <button type="button" className="btn btn-ghost btn-xs" onClick={keep}>{plan.changes.length ? "Giữ nguyên" : "Đã hiểu"}</button>
       </div>

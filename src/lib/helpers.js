@@ -4153,31 +4153,40 @@ function toMinutes(h) {
   return Number(String(h).slice(0, 2)) * 60 + Number(String(h).slice(3, 5));
 }
 
-export function seasonShiftPlan(settings, watches, accounts, delta) {
+// Mục được dời mặc định: chỉ symbol theo dõi — người dùng chọn vậy (VN stock không đổi giờ, kiểm tra setup
+// giữ giờ cố định). Lần dời trước đã tick mục nào thì lần sau tick sẵn đúng mục đó (`usSeasonShiftKeys`).
+export function seasonShiftDefault(key, settings) {
+  const saved = settings && settings.usSeasonShiftKeys;
+  return Array.isArray(saved) ? saved.includes(key) : key.startsWith("w:");
+}
+
+// `picked(key)` quyết định mục nào thật sự dời; `changes` vẫn liệt kê mọi mục có giờ gõ tay để chọn.
+export function seasonShiftPlan(settings, watches, accounts, delta, picked = () => true) {
   const st = settings || {};
   const changes = [];
   const accName = (id, fallback) => ((accounts || []).find((a) => a.id === id) || {}).name || fallback || "?";
-  const move = (label, obj, on) => {
+  const move = (key, label, obj, on) => {
     const hours = (obj && obj.hours) || [];
     if (!hours.length) return obj;
     const next = hours.map((h) => shiftHour(h, delta));
     // Qua nửa đêm thì giờ đó rơi sang ngày khác — ngày chạy trong tuần không tự dời theo
     const wrapped = hours.some((h, i) => (delta > 0 ? next[i] < h : next[i] > h));
-    changes.push({ label, from: [...hours].sort(), to: [...new Set(next)].sort(), wrapped, on });
+    changes.push({ key, label, from: [...hours].sort(), to: [...new Set(next)].sort(), wrapped, on });
+    if (!picked(key)) return obj;
     const patch = { hours: [...new Set(next)].sort() };
     if (Array.isArray(obj.skip) && obj.skip.length) patch.skip = migrateSkipHours(obj.skip, hours, next);
     return { ...obj, ...patch };
   };
   const schedules = (st.schedules || []).map((sc) => (sc && !sc.auto
-    ? move(`Dời SL · ${accName(sc.accountId, sc.accountName)}${sc.timeframe ? ` · khung ${sc.timeframe}` : ""}`, sc, !!st.enabled && !!sc.enabled)
+    ? move(`sl:${sc.accountId}~${sc.timeframe || ""}`, `Dời SL · ${accName(sc.accountId, sc.accountName)}${sc.timeframe ? ` · khung ${sc.timeframe}` : ""}`, sc, !!st.enabled && !!sc.enabled)
     : sc));
   const setupCheckSchedules = (st.setupCheckSchedules || []).map((sc) => (sc
-    ? move(`Kiểm tra setup · ${accName(sc.accountId, sc.accountName)}`, sc, !!st.setupCheckEnabled && !!sc.enabled)
+    ? move(`sc:${sc.accountId}`, `Kiểm tra setup · ${accName(sc.accountId, sc.accountName)}`, sc, !!st.setupCheckEnabled && !!sc.enabled)
     : sc));
   const nextWatches = (watches || []).map((w) => (w && !watchIsAuto(w)
-    ? move(`Symbol theo dõi · ${w.label || "Nhóm chưa đặt tên"}`, w, !!st.symbolWatchEnabled && !!w.enabled)
+    ? move(`w:${w.id}`, `Symbol theo dõi · ${w.label || "Nhóm chưa đặt tên"}`, w, !!st.symbolWatchEnabled && !!w.enabled)
     : w));
-  const slots = st.autoSlots && st.autoSlots.enabled ? move("Mốc nhắc theo nến", st.autoSlots, true) : st.autoSlots;
+  const slots = st.autoSlots && st.autoSlots.enabled ? move("slots", "Mốc nhắc theo nến", st.autoSlots, true) : st.autoSlots;
   return {
     changes,
     settings: { ...st, schedules, setupCheckSchedules, ...(st.autoSlots ? { autoSlots: slots } : {}) },

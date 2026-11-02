@@ -1867,7 +1867,7 @@ body.printing-trades { overflow: hidden; }
 .season-head svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
 .season-list { list-style: none; margin: 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 3px; }
 .season-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-.season-list li > span:first-child { min-width: 200px; }
+.season-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 240px; cursor: pointer; }
 .season-off { color: var(--text-dim); }
 .season-warn { color: var(--warn, #e0a84a); }
 .season-none { margin: 0 0 0 22px; color: var(--text-dim); }
