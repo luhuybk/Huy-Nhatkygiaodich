@@ -6,7 +6,7 @@
 // không tranh ghi với function. Xoá lệnh tạo ra thì nó không quay lại, vì id vẫn nằm trong Seen.
 import { accountBalance, accountSyncsTime, accountTimeframes, canonicalSymbol, emptyTrade, isForexSymbol, sessionFromTime, todayStr } from "./helpers.js";
 import { buildPositions, withBrokerOutcome } from "./brokerCsv.js";
-import { marketForAccount, marketUnitBase } from "./capital.js";
+import { marketForAccount, marketTierList, marketUnitBase, pickedTier, thisWeekKey } from "./capital.js";
 
 export const MT5_INBOX_KEY = "mt5Inbox";
 export const MT5_SEEN_KEY = "mt5InboxSeen";
@@ -59,7 +59,8 @@ function closeTrade(trade, item, acc) {
 
 // EA gửi kèm số tiền mất nếu chạm SL ban đầu (MT5 tự tính, đúng con số Exness hiện) → "Rủi ro (số tiền)".
 // % quy theo gốc vốn của mảng trong bảng Đi vốn — cùng gốc với các nút mức % trong form; tài khoản chưa
-// vào bảng thì theo số dư. Lệnh đã có rủi ro (ghi tay, hoặc đã sửa) thì để nguyên.
+// vào bảng thì theo số dư. Có mảng thì điền luôn ô Quản trị vốn. Lệnh đã có rủi ro (ghi tay, hoặc đã sửa)
+// thì để nguyên.
 function withMt5Risk(trade, item, acc, ctx) {
   const risk = Number(item.risk);
   if (!acc || !(risk > 0) || String(trade.riskAmount ?? "").trim()) return trade;
@@ -68,8 +69,21 @@ function withMt5Risk(trade, item, acc, ctx) {
   if (item.currency && item.currency !== cur) return trade;
   const m = marketForAccount(ctx.capitalPlan, acc.name, ctx.accounts, trade.symbol, trade.assetGroup);
   const base = m && m.currency === cur ? marketUnitBase(m) : accountBalance(acc, ctx.ledger || [], ctx.trades || []);
-  const pct = base > 0 ? (risk / base) * 100 : null;
-  return { ...trade, riskAmount: String(risk), riskPercent: pct === null ? trade.riskPercent : String(Number(pct.toFixed(2))) };
+  let pct = base > 0 ? (risk / base) * 100 : null;
+  let action = "";
+  if (pct !== null && m && m.currency === cur) {
+    // Lot làm tròn nên tiền thật lệch mức một chút (34,24$ trên gốc 3.000$ = 1,14% thay vì 1,2%) — gần
+    // mức đi vốn nào (trong 15%) thì ghi đúng mức đó như khi bấm nút mức. Tiền giữ số thật để R đúng.
+    const near = marketTierList(m).map((x) => x.pct).find((x) => Math.abs(pct - x) <= x * 0.15);
+    if (near !== undefined) pct = near;
+    // Quản trị vốn: vượt mức tuần này = Nâng vốn, còn lại = Giữ vốn. "Giảm risk" là quyết định có chủ ý
+    // nên để bạn tự chọn.
+    const week = pickedTier(ctx.capitalPlan, m.id, thisWeekKey(trade.entryDate || undefined)).pct;
+    action = week !== null && pct > week * 1.15 ? "Nâng vốn" : "Giữ vốn";
+  }
+  const next = { ...trade, riskAmount: String(risk), riskPercent: pct === null ? trade.riskPercent : String(Number(pct.toFixed(2))) };
+  if (action && !String(trade.riskAction || "").trim() && (ctx.riskActions || []).includes(action)) next.riskAction = action;
+  return next;
 }
 
 function openDraft(item, acc, known, trades, resources) {
@@ -106,7 +120,7 @@ export function applyMt5Inbox(inbox, seen, trades, resources, extra = {}) {
   const linked = [];
   const closed = [];
   const filled = []; // chỉ điền bù rủi ro, không đổi gì khác
-  const ctx = { ...extra, accounts: resources.accounts, trades };
+  const ctx = { ...extra, accounts: resources.accounts, riskActions: resources.riskActions, trades };
   // Gói vào lệnh trước, gói đóng lệnh sau — cùng một lượt có cả hai thì lệnh phải có rồi mới đóng được
   const order = (x) => (x.event === "close" ? 1 : 0);
   fresh.sort((a, b) => order(a) - order(b) || (Number(a.time) || 0) - (Number(b.time) || 0)).forEach((item) => {
