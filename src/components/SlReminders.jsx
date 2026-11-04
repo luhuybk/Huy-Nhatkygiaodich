@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Clock, Settings2, Flame,
+  CalendarDays, Clock, Settings2, Flame, Hourglass,
 } from "lucide-react";
+import { AlertRechecksBody, alertSummary, useAlertRepeats } from "./AlertRechecks.jsx";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
 import { LifeHubExport } from "./Timeline.jsx";
@@ -868,6 +869,7 @@ export function PlansPanel({
     return on.map((w) => `${w.label || "Nhóm"} ${watchLiveSymbols(w).length} mã ${watchIsAuto(w) ? w.timeframe : hoursText(w.hours)}`).join(" · ");
   })();
   const hotOn = s.hotEnabled !== false;
+  const alertData = useAlertRepeats(telegramReady);
   const hotSummary = (() => {
     const list = s.hotSymbols || [];
     if (!list.length) return "Chưa có mã nào — thêm mã để cảnh báo TradingView của mã đó nổi bật trên Telegram";
@@ -907,6 +909,10 @@ export function PlansPanel({
       <PlanSection id="hot" icon={Flame} title="Mã tiềm năng" summary={hotSummary}
         on={hotOn} onToggle={(v) => onSettingsChange({ ...s, hotEnabled: v })} open={open === "hot"} onOpen={setOpen}>
         <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} />
+      </PlanSection>
+      <PlanSection id="alerts" icon={Hourglass} title="Cảnh báo nhắc lại" summary={alertSummary(alertData.list)}
+        open={open === "alerts"} onOpen={setOpen}>
+        <AlertRechecksBody data={alertData} resources={resources} settings={s} />
       </PlanSection>
       <PlanSection id="sl" icon={ArrowUpDown} title="Dời SL" summary={slSummary}
         on={!!s.enabled} onToggle={(v) => onSettingsChange({ ...s, enabled: v })} open={open === "sl"} onOpen={setOpen}>

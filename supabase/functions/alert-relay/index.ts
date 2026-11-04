@@ -158,7 +158,9 @@ async function tick(supabase: ReturnType<typeof createClient>) {
       text: lines.join("\n"),
       reply_markup: alertButtons(r.id, r.tf),
     };
-    if (r.topic) payload.message_thread_id = r.topic;
+    // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
+    const topic = r.topic || ALERT_TOPIC;
+    if (topic) payload.message_thread_id = topic;
     const sent = await sendTelegram(token, payload);
     if (typeof sent === "number") {
       const prev = r.messageIds[r.messageIds.length - 1];
