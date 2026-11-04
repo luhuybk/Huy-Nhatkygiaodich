@@ -102,6 +102,9 @@ Deno.serve(async (req) => {
   if (!userId) return json({ ok: false, error: "no owner" }, 500);
   // "test": true → chỉ kiểm khoá + dữ liệu, không ghi gì (thử đường đi mà không đẻ lệnh giả)
   if (body.test === true) return json({ ok: true, test: true, item });
+  // "test": "fill" → không ghi hộp chờ, chỉ gửi thử tin 📥 Khớp lệnh (bỏ qua luật "too late") và trả lý do
+  // nếu không gửi được — để soát cấu hình (Số MT5, Khung, Telegram) mà không phải chờ lệnh thật.
+  if (body.test === "fill") return json({ ok: true, test: "fill", ...(await fillMessage(supabase, userId, item, true)) });
 
   // Đọc-sửa-ghi cả khối: hai MT5 báo cùng lúc thì một bên có thể ghi đè bên kia, nên ghi xong đọc
   // lại kiểm, mất thì ghi lại (tối đa 3 lần).
@@ -125,7 +128,8 @@ Deno.serve(async (req) => {
   if (!stored) return json({ ok: false, error: "write lost" }, 503);
   let fill: unknown;
   if (!item.event && FILL_TG) {
-    try { fill = await fillMessage(supabase, userId, item); } catch (e) { fill = String((e as Error).message || e); }
+    try { fill = (await fillMessage(supabase, userId, item)).fill; } catch (e) { fill = String((e as Error).message || e); }
+    console.log("fill", item.id, item.symbol, item.accountName, JSON.stringify(fill)); // EA không in khi thành công → xem ở Logs
   }
   return json({ ok: true, id: item.id, fill });
 });
@@ -155,20 +159,24 @@ async function accountTf(supabase: ReturnType<typeof createClient>, userId: stri
   return { acc, tf: (last?.timeframe as Tf) || null };
 }
 
-async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item) {
-  const { tf } = await accountTf(supabase, userId, item);
-  if (!tf) return "no tf";
+async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item, test = false) {
+  const { acc, tf } = await accountTf(supabase, userId, item);
+  const info: Record<string, unknown> = { account: acc?.name || null, mt5Login: acc?.mt5Login || null, timeframes: acc?.timeframes || null, tf };
+  if (!tf) return { ...info, fill: acc ? "no tf" : "no account" };
   const now = Date.now();
   const plan = reentryPlan(tf, item.time * 1000, isCryptoSymbol(item.symbol));
-  if (!plan.useful || now >= plan.eaAt) return "too late"; // EA tự kéo trước khi kịp nhắc / lệnh cũ quét bù
+  Object.assign(info, { close: vnTime(plan.close, now), remindAt: vnTime(plan.at, now), eaAt: vnTime(plan.eaAt, now) });
+  // EA tự kéo trước khi kịp nhắc / lệnh cũ quét bù
+  if (!test && (!plan.useful || now >= plan.eaAt)) return { ...info, fill: "too late" };
   const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", "slReminderSettings").maybeSingle();
   const settings = (data?.value || {}) as { telegramBotToken?: string; telegramChatId?: string };
   const chatId = ALERT_CHAT_ID || String(settings.telegramChatId || "");
-  if (!settings.telegramBotToken || !chatId) return "no telegram";
+  if (!settings.telegramBotToken || !chatId) return { ...info, fill: "no telegram" };
 
   const side = item.side === "sell" ? "Sell" : "Buy";
   const late = plan.at > plan.close + 5 * 60 * 1000; // nến vào lệnh đóng trong giờ nghỉ → nhắc 8h45
   const lines = [
+    ...(test ? [`🧪 TIN THỬ — không phải lệnh thật${plan.useful ? "" : " (lệnh thật giờ này sẽ không có tin: EA tự kéo trước lúc nhắc)"}`] : []),
     `📥 Khớp lệnh · ${item.symbol} ${side}`,
     `${item.accountName || item.login} · ${tf} · khớp ${vnTime(item.time * 1000, now)}`,
     `Nến vào lệnh đóng ${vnTime(plan.close, now)} — EA bỏ qua nến này, tự kéo SL từ nến đóng ${vnTime(plan.eaAt, now)}.`,
@@ -183,5 +191,7 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
   const res = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
   });
-  return res.ok ? "sent" : `telegram ${res.status}`;
+  if (res.ok) return { ...info, fill: "sent" };
+  const why = await res.text().catch(() => "");
+  return { ...info, fill: `telegram ${res.status}`, telegram: why.slice(0, 300) };
 }
