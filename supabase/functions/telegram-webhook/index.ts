@@ -28,6 +28,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { isCryptoSymbol, nextRecheck, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -189,11 +190,14 @@ async function handle(raw: string): Promise<Response> {
   if (error) return json({ error: error.message }, 500);
 
   // Nút "✅ Đã thấy" của alert-relay có thể nằm ở nhóm cảnh báo riêng (ALERT_RELAY_CHAT_ID)
+  // — và nhóm vào lệnh MT5 (_shared/mt5Fill.ts: 🔁 Nến re-entry, ✅ Đã dời)
   const alertChat = (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim();
+  const fillChatId = fillChat().chatId;
   const ownerRow = (settingsRows || []).find((r) => {
     const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
     if (v?.telegramChatId && String(v.telegramChatId) === String(fromChatId)) return true;
-    return ["ta", "tr", "rn", "rx"].includes(kind) && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
+    if (!["ta", "tr", "rn", "rx"].includes(kind) || !v?.telegramBotToken) return false;
+    return (alertChat !== "" && alertChat === String(fromChatId)) || (fillChatId !== "" && fillChatId === String(fromChatId));
   });
   if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
 
@@ -305,7 +309,7 @@ async function handle(raw: string): Promise<Response> {
     messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
   } else if (kind === "rn" || kind === "rx") {
     // Tin khớp lệnh: không gỡ chữ, chỉ đổi nút — 🔁 ↔ ↩️ để bấm nhầm còn đổi lại được
-    const res = await reentryAction(supabase, userId, rest[0], rest[1], kind);
+    const res = await reentryAction(supabase, userId, rest[0], rest[1], kind, fromChatId, cb.message?.message_thread_id);
     if ("error" in res) {
       await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
       return json({ error: res.error }, 500);
@@ -362,6 +366,7 @@ type AlertRepeat = {
   tf?: Tf | null; recheckAt?: string; recheckClose?: string; rechecks?: number; rev?: number;
   every?: number; times?: number; sent?: number; nextAt?: string;
   kind?: "reentry"; candleTf?: Tf; ref?: string; // nhắc dời SL tay nến re-entry: khung nến, <login>-<ticket>
+  chat?: string; topic?: number; // nhóm/topic gửi nhắc (nhóm của tin vào lệnh); trống = nhóm cảnh báo
 };
 
 type InboxItem = { id?: string; login?: string; ticket?: string; symbol?: string; side?: string; time?: number; accountName?: string };
@@ -369,6 +374,7 @@ type InboxItem = { id?: string; login?: string; ticket?: string; symbol?: string
 // 🔁 Nến re-entry / ↩️ Bỏ nhắc. state: armed = đã hẹn, idle = chưa hẹn (còn nút 🔁), final = hết nút
 async function reentryAction(
   supabase: ReturnType<typeof createClient>, userId: string, ref: string, tfRaw: string | undefined, kind: "rn" | "rx",
+  chatId?: number, threadId?: number,
 ): Promise<{ notice: string; state: "armed" | "idle" | "final"; when?: string } | { error: string }> {
   const [login, ticket] = String(ref || "").split("-");
   if (!login || !ticket) return { notice: "Nút không hợp lệ.", state: "final" };
@@ -401,11 +407,12 @@ async function reentryAction(
   }
   const at = Math.max(plan.at, now); // bấm muộn (nến vào lệnh đã đóng) → nhắc ngay ở lượt tick kế
   const iso = (ms: number) => new Date(ms).toISOString();
-  const side = it.side === "sell" ? "Sell" : "Buy";
+  const side = it.side === "sell" ? "🔴 SELL" : "🟢 BUY";
   const record: AlertRepeat = {
     id, kind: "reentry", ref: `${login}-${ticket}`, candleTf: tf, tf: null,
-    text: `✋ ${it.symbol} ${side} · ${it.accountName || login} — khớp ${vnTime(it.time * 1000, now)}`,
+    text: `${shortSymbol(it.symbol)} ${side} · ${it.accountName || login} · vào ${vnTime(it.time * 1000, now)}`,
     every: 2, times: 5, sent: 0, rev: 0, createdAt: iso(now), messageIds: [],
+    ...(chatId ? { chat: String(chatId) } : {}), ...(threadId ? { topic: threadId } : {}),
     ackedAt: iso(now), nextAt: iso(at), recheckAt: iso(at), recheckClose: iso(plan.close),
   };
   const { error } = await writeValue(supabase, userId, "alertRepeats", [...list.filter((r) => r.id !== id), record]);

@@ -69,6 +69,7 @@ type Repeat = {
   rev?: number;         // tăng mỗi lần sửa — tick chỉ ghi đè bản ghi chưa bị telegram-webhook sửa
   // Nhắc dời SL tay nến re-entry (bấm 🔁 ở tin khớp lệnh của mt5-journal): khung nến vào lệnh, <login>-<ticket>
   kind?: "reentry"; candleTf?: Tf; ref?: string;
+  chat?: string;        // nhóm khác nhóm cảnh báo (nhắc re-entry đi vào nhóm vào lệnh MT5); trống = owner.chatId
 };
 
 const CORS = {
@@ -162,7 +163,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     if (!r.recheckAt || Date.parse(r.recheckAt) > now) continue;
     const closeAt = vnTime(Date.parse(r.recheckClose || r.recheckAt), now);
     r.head = r.kind === "reentry"
-      ? `✋ Nến re-entry ${r.candleTf || ""} đã đóng ${closeAt} — dời SL tay 1 lần (nến sau EA tự kéo)`
+      ? `✋ DỜI SL TAY · nến ${r.candleTf || ""} đóng ${closeAt}`
       : `🔁 Kiểm lại setup · nến ${r.tf || "D"} đóng ${closeAt}`;
     r.recheckAt = undefined;
     r.recheckClose = undefined;
@@ -185,13 +186,14 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
     if (r.head) lines.push(r.head);
     lines.push(r.text);
+    const chat = r.chat || owner.chatId;
     const payload: Record<string, unknown> = {
-      chat_id: owner.chatId,
+      chat_id: chat,
       text: lines.join("\n"),
       reply_markup: alertButtons(r.id, r.tf, r.kind),
     };
     // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
-    const topic = r.topic || ALERT_TOPIC;
+    const topic = r.topic || (r.chat ? 0 : ALERT_TOPIC);
     if (topic) payload.message_thread_id = topic;
     const sent = await sendTelegram(token, payload);
     if (typeof sent === "number") {
@@ -200,7 +202,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
         await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chat_id: owner.chatId, message_id: prev, reply_markup: { inline_keyboard: [] } }),
+          body: JSON.stringify({ chat_id: chat, message_id: prev, reply_markup: { inline_keyboard: [] } }),
         }).catch(() => {});
       }
       if (sent) r.messageIds.push(sent);
@@ -262,7 +264,8 @@ async function clean(req: Request, supabase: ReturnType<typeof createClient>, mo
   if (!owner) return json({ error: "Chưa điền Bot Token / Chat ID" }, 400);
   if (!who?.user || who.user.id !== owner.userId) return json({ error: "Không có quyền" }, 401);
   const token = owner.settings.telegramBotToken!;
-  const list = await readRepeats(supabase, owner.userId);
+  // Id tin chỉ có nghĩa trong nhóm của nó — bản ghi ở nhóm khác (nhắc re-entry) không đụng tới
+  const list = (await readRepeats(supabase, owner.userId)).filter((r) => !r.chat || r.chat === owner.chatId);
   const keep = new Set<number>();
   for (const r of list) {
     if (!r.ackedAt && !r.doneAt && r.messageIds.length) keep.add(r.messageIds[r.messageIds.length - 1]);

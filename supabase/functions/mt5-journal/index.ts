@@ -16,15 +16,17 @@
 // Gửi trùng (EA khởi động lại, mạng chập chờn) thì trả ok + dup, không thêm lần hai.
 // Thêm "test": true vào JSON để thử khoá + đường đi mà không ghi lệnh nào.
 //
-// Lệnh mới khớp → tin Telegram (nhóm cảnh báo của alert-relay) kèm nút "🔁 Nến re-entry" (rn|<login>-<ticket>|<khung>,
-// telegram-webhook xử lý): EA bỏ qua nến vào lệnh, nến vào là re-entry thì bấm để được nhắc dời SL tay 1 lần
-// lúc nến đó đóng. Khung lấy ở Tài khoản (ô Số MT5 + Khung). Chỉ gửi khi nhắc còn kịp trước lần EA tự kéo.
+// Lệnh mới khớp → tin "📥 Vào lệnh" vào nhóm riêng (_shared/mt5Fill.ts). Còn kịp nhắc trước lần EA tự kéo
+// thì kèm nút "🔁 Nến re-entry" (rn|<login>-<ticket>|<khung>, telegram-webhook xử lý): EA bỏ qua nến vào lệnh,
+// nến vào là re-entry thì bấm để được nhắc dời SL tay 1 lần lúc nến đó đóng. Khung lấy ở Tài khoản
+// (ô Số MT5 + Khung). Gói đến muộn quá 30 phút (quét bù lịch sử lúc gắn EA) thì không báo.
 // Tắt: supabase secrets set MT5_FILL_TELEGRAM=off
 //
 // Deploy: supabase functions deploy mt5-journal --no-verify-jwt
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { isCryptoSymbol, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -32,8 +34,7 @@ const RELAY_KEY = Deno.env.get("ALERT_RELAY_KEY") || "";
 const INBOX_KEY = "mt5Inbox";
 const KEEP = 1000; // giữ 1000 lệnh gần nhất — đủ để lệnh nào cũng kịp được app nhận
 const FILL_TG = (Deno.env.get("MT5_FILL_TELEGRAM") || "").toLowerCase() !== "off";
-const ALERT_CHAT_ID = (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim();
-const ALERT_TOPIC = Number(Deno.env.get("ALERT_RELAY_TOPIC") || 0);
+const FILL_FRESH_MS = 30 * 60 * 1000; // gói vào lệnh đến muộn hơn thế = quét bù lịch sử, không báo
 const TFS: Tf[] = ["H4", "H8", "D"];
 
 type Close = { time: number; lots: number; profit: number };
@@ -102,7 +103,7 @@ Deno.serve(async (req) => {
   if (!userId) return json({ ok: false, error: "no owner" }, 500);
   // "test": true → chỉ kiểm khoá + dữ liệu, không ghi gì (thử đường đi mà không đẻ lệnh giả)
   if (body.test === true) return json({ ok: true, test: true, item });
-  // "test": "fill" → không ghi hộp chờ, chỉ gửi thử tin 📥 Khớp lệnh (bỏ qua luật "too late") và trả lý do
+  // "test": "fill" → không ghi hộp chờ, chỉ gửi thử tin 📥 Vào lệnh (bỏ qua luật gói cũ) và trả lý do
   // nếu không gửi được — để soát cấu hình (Số MT5, Khung, Telegram) mà không phải chờ lệnh thật.
   if (body.test === "fill") return json({ ok: true, test: "fill", ...(await fillMessage(supabase, userId, item, true)) });
 
@@ -159,35 +160,43 @@ async function accountTf(supabase: ReturnType<typeof createClient>, userId: stri
   return { acc, tf: (last?.timeframe as Tf) || null };
 }
 
+const money = (v: number, cur?: string) => {
+  const n = Math.round(v * 10) / 10;
+  const t = n.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
+  return !cur || cur === "USD" ? `${t}$` : `${t} ${cur}`;
+};
+
 async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item, test = false) {
   const { acc, tf } = await accountTf(supabase, userId, item);
   const info: Record<string, unknown> = { account: acc?.name || null, mt5Login: acc?.mt5Login || null, timeframes: acc?.timeframes || null, tf };
-  if (!tf) return { ...info, fill: acc ? "no tf" : "no account" };
   const now = Date.now();
-  const plan = reentryPlan(tf, item.time * 1000, isCryptoSymbol(item.symbol));
-  Object.assign(info, { close: vnTime(plan.close, now), remindAt: vnTime(plan.at, now), eaAt: vnTime(plan.eaAt, now) });
-  // EA tự kéo trước khi kịp nhắc / lệnh cũ quét bù
-  if (!test && (!plan.useful || now >= plan.eaAt)) return { ...info, fill: "too late" };
+  const fillMs = item.time * 1000;
+  if (!test && now - fillMs > FILL_FRESH_MS) return { ...info, fill: "old" };
+  const plan = tf ? reentryPlan(tf, fillMs, isCryptoSymbol(item.symbol)) : null;
+  // Nút 🔁 chỉ khi nhắc còn kịp trước lần EA tự kéo (nến vào đóng lúc nghỉ đêm thì thường EA kéo trước 8h45)
+  const canRemind = !!plan && plan.useful && now < plan.eaAt;
+  if (plan) Object.assign(info, { close: vnTime(plan.close, now), remindAt: vnTime(plan.at, now), eaAt: vnTime(plan.eaAt, now), button: canRemind });
   const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", "slReminderSettings").maybeSingle();
-  const settings = (data?.value || {}) as { telegramBotToken?: string; telegramChatId?: string };
-  const chatId = ALERT_CHAT_ID || String(settings.telegramChatId || "");
+  const settings = (data?.value || {}) as { telegramBotToken?: string };
+  const { chatId, topic } = fillChat();
   if (!settings.telegramBotToken || !chatId) return { ...info, fill: "no telegram" };
 
-  const side = item.side === "sell" ? "Sell" : "Buy";
-  const late = plan.at > plan.close + 5 * 60 * 1000; // nến vào lệnh đóng trong giờ nghỉ → nhắc 8h45
+  // 📥 XAUUSD 🟢 BUY
+  // Trading - Ngắn · H4 · 14:05 · R 34,2$
+  // 🔁 Re-entry? Bấm → nhắc dời SL 17:01
+  const side = item.side === "sell" ? "🔴 SELL" : "🟢 BUY";
+  const meta = [acc?.name || item.accountName || item.login, tf, vnTime(fillMs, now)];
+  if (item.risk) meta.push(`R ${money(item.risk, item.currency)}`);
   const lines = [
-    ...(test ? [`🧪 TIN THỬ — không phải lệnh thật${plan.useful ? "" : " (lệnh thật giờ này sẽ không có tin: EA tự kéo trước lúc nhắc)"}`] : []),
-    `📥 Khớp lệnh · ${item.symbol} ${side}`,
-    `${item.accountName || item.login} · ${tf} · khớp ${vnTime(item.time * 1000, now)}`,
-    `Nến vào lệnh đóng ${vnTime(plan.close, now)} — EA bỏ qua nến này, tự kéo SL từ nến đóng ${vnTime(plan.eaAt, now)}.`,
-    `Nến vào là re-entry → bấm 🔁, mình nhắc dời SL tay lúc ${vnTime(plan.at, now)}${late ? " (nến đóng lúc bạn nghỉ)" : ""}.`,
+    `${test ? "🧪 THỬ · " : ""}📥 ${shortSymbol(item.symbol)} ${side}`,
+    meta.filter(Boolean).join(" · "),
   ];
-  const payload: Record<string, unknown> = {
-    chat_id: chatId,
-    text: lines.join("\n"),
-    reply_markup: { inline_keyboard: [[{ text: "🔁 Nến re-entry", callback_data: `rn|${item.login}-${item.ticket}|${tf}` }]] },
-  };
-  if (ALERT_TOPIC) payload.message_thread_id = ALERT_TOPIC;
+  if (canRemind) lines.push(`🔁 Re-entry? Bấm → nhắc dời SL ${vnTime(plan!.at, now)}`);
+  const payload: Record<string, unknown> = { chat_id: chatId, text: lines.join("\n") };
+  if (canRemind) {
+    payload.reply_markup = { inline_keyboard: [[{ text: "🔁 Nến re-entry", callback_data: `rn|${item.login}-${item.ticket}|${tf}` }]] };
+  }
+  if (topic) payload.message_thread_id = topic;
   const res = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
   });
