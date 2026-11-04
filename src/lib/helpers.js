@@ -1,5 +1,5 @@
 import { supabase } from "../supabaseClient.js";
-import { DEFAULT_RESOURCES, GRADE_OPTIONS, LEGACY_DEFAULT_SYMBOLS, NOTE_TYPES, structureScoreNumber, SYMBOL_CATALOG, SYMBOL_CATALOG_VERSION, WEEKDAY_LABEL } from "./constants.js";
+import { DEFAULT_RESOURCES, GRADE_OPTIONS, LEGACY_DEFAULT_SYMBOLS, LEGACY_SYMBOL_ALIASES, NOTE_TYPES, structureScoreNumber, SYMBOL_CATALOG, SYMBOL_CATALOG_VERSION, WEEKDAY_LABEL } from "./constants.js";
 // Vòng import với assetGroups.js là cố ý: hai bên chỉ gọi nhau bên trong hàm, không dùng lúc nạp module.
 import { assetGroupInfo, assetGroupOf } from "./assetGroups.js";
 import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours, tradeAutoHours } from "./candles.js";
@@ -1743,12 +1743,29 @@ export async function safeGet(key, fallback) {
   }
 }
 
-export async function safeSet(key, value) {
+// Chỉ đọc dấu thời gian lần ghi gần nhất (nhẹ, không tải giá trị) — để biết nơi khác vừa lưu chưa
+export async function safeGetStamp(key) {
+  if (!currentUserId) return { ok: false, stamp: null };
+  try {
+    const { data, error } = await supabase
+      .from("app_data")
+      .select("updated_at")
+      .eq("user_id", currentUserId)
+      .eq("key", key)
+      .maybeSingle();
+    if (error) return { ok: false, stamp: null };
+    return { ok: true, stamp: data ? data.updated_at : null };
+  } catch (e) {
+    return { ok: false, stamp: null };
+  }
+}
+
+export async function safeSet(key, value, stamp) {
   if (!currentUserId) return false;
   try {
     const { error } = await supabase
       .from("app_data")
-      .upsert({ user_id: currentUserId, key, value, updated_at: new Date().toISOString() }, { onConflict: "user_id,key" });
+      .upsert({ user_id: currentUserId, key, value, updated_at: stamp || new Date().toISOString() }, { onConflict: "user_id,key" });
     if (error) { console.error("storage set failed", key, error); return false; }
     return true;
   } catch (e) {
@@ -1776,16 +1793,20 @@ export function normalizeResources(rs) {
   const savedCatalogV = rs ? Number(rs.symbolCatalogV) || 0 : SYMBOL_CATALOG_VERSION;
   if (savedCatalogV < SYMBOL_CATALOG_VERSION) {
     const catalog = SYMBOL_CATALOG.flatMap((g) => g.symbols);
-    const inCatalog = new Set(catalog);
-    const legacy = new Set(LEGACY_DEFAULT_SYMBOLS);
+    // So theo mã bỏ dấu: USDJPY và USD/JPY là một — giữ cách viết của danh sách chuẩn
+    const compact = (x) => String(x || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const inCatalog = new Set(catalog.map(compact));
+    const legacy = new Set([...LEGACY_DEFAULT_SYMBOLS, ...LEGACY_SYMBOL_ALIASES]);
     const seen = new Set();
-    const others = (merged.symbols || []).filter((x) => {
-      const k = String(x || "").trim().toUpperCase();
-      if (!k || inCatalog.has(k) || legacy.has(k) || seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
     const groups = { ...merged.symbolGroups };
+    const others = (merged.symbols || []).filter((x) => {
+      const raw = String(x || "").trim().toUpperCase();
+      const k = compact(x);
+      const drop = !k || inCatalog.has(k) || legacy.has(raw) || seen.has(k);
+      if (drop) delete groups[x];
+      else seen.add(k);
+      return !drop;
+    });
     LEGACY_DEFAULT_SYMBOLS.forEach((x) => { delete groups[x]; });
     SYMBOL_CATALOG.forEach((g) => g.symbols.forEach((x) => { groups[x] = g.group; }));
     merged.symbols = [...catalog, ...others];

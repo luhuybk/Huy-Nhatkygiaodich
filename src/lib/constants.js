@@ -112,18 +112,22 @@ export function sortStructureScores(list) {
 // Các mã FX / hàng hoá đang giao dịch, chia nhóm và xếp đúng như watchlist TradingView của bạn.
 // Tăng SYMBOL_CATALOG_VERSION khi sửa danh sách để tài khoản đang dùng được cập nhật một lần
 // (normalizeResources) — sau đó gỡ / đổi nhóm ở Tài nguyên thì giữ nguyên, không bị thêm lại.
+// Cặp FX viết có "/" như nhật ký vẫn ghi (canonicalSymbol); mã từ Exness / TradingView (EURUSD, EURUSDm,
+// OANDA:EURUSD) được so sau khi bỏ dấu nên vẫn khớp.
 export const SYMBOL_CATALOG = [
   { group: "Forex", symbols: [
-    "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD",
-    "EURUSD", "EURAUD", "EURCAD", "EURCHF", "EURJPY", "EURNZD", "EURGBP",
-    "GBPUSD", "GBPJPY", "GBPCAD", "GBPAUD", "GBPCHF", "GBPNZD",
-    "NZDUSD", "NZDJPY", "NZDCHF", "NZDCAD", "CADCHF", "CADJPY", "CHFJPY",
+    "USD/JPY", "USD/CHF", "USD/CAD", "AUD/USD", "AUD/CAD", "AUD/CHF", "AUD/JPY", "AUD/NZD",
+    "EUR/USD", "EUR/AUD", "EUR/CAD", "EUR/CHF", "EUR/JPY", "EUR/NZD", "EUR/GBP",
+    "GBP/USD", "GBP/JPY", "GBP/CAD", "GBP/AUD", "GBP/CHF", "GBP/NZD",
+    "NZD/USD", "NZD/JPY", "NZD/CHF", "NZD/CAD", "CAD/CHF", "CAD/JPY", "CHF/JPY",
   ] },
   { group: "Vàng bạc", symbols: ["XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"] },
   { group: "Hàng hóa", symbols: ["XCUUSD", "XALUSD", "XNIUSD", "XPBUSD", "XPDUSD", "XPTUSD", "XZNUSD"] },
   { group: "Năng lượng", symbols: ["XTIUSD", "XBRUSD", "XNGUSD"] },
 ];
-export const SYMBOL_CATALOG_VERSION = 1;
+export const SYMBOL_CATALOG_VERSION = 2; // 2: cặp FX viết có "/", gộp bản trùng viết liền (USDJPY ↔ USD/JPY)
+// Mã viết tắt cũ trùng với mã trong danh sách — bỏ khỏi gợi ý (lệnh cũ ghi mã này vẫn giữ nguyên)
+export const LEGACY_SYMBOL_ALIASES = ["XAU", "XAG"];
 // Mã mặc định đời đầu (hợp đồng tương lai) không giao dịch — bỏ khỏi gợi ý khi cập nhật danh sách
 export const LEGACY_DEFAULT_SYMBOLS = ["GC", "CL", "ES", "NQ"];
 const catalogGroups = () => Object.fromEntries(SYMBOL_CATALOG.flatMap((g) => g.symbols.map((sym) => [sym, g.group])));

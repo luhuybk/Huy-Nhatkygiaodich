@@ -14,7 +14,7 @@ import {
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS, SYMBOL_CATALOG_VERSION } from "./lib/constants.js";
 import {
-  safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
+  safeGet, safeGetStamp, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
   shouldSnapshot, makeSnapshot, pruneBackups, normalizeSymbolWatch, watchSymbolsNeedFix, writeLocalUi, mergeSetupCheckLog, accountColor, emptyFlow, openAccounts, todayStr } from "./lib/helpers.js";
 import { ReminderBell } from "./components/ReminderBell.jsx";
@@ -23,6 +23,7 @@ import { buildLinkIndex } from "./lib/linkIndex.js";
 import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib/storage.js";
 import { normalizeJourneyLog } from "./lib/journeyLog.js";
 import { applyMt5Inbox, MT5_INBOX_KEY, MT5_SEEN_KEY } from "./lib/mt5Inbox.js";
+import { createTradeSync, mergeTrades } from "./lib/tradeSync.js";
 import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
@@ -115,6 +116,11 @@ const QUICK_JUMP_KEY = IS_MAC ? "⌘J" : "Ctrl+J";
 function AppShell({ onSignOut, userEmail }) {
   const [loading, setLoading] = useState(true);
   const [trades, setTrades] = useState([]);
+  const tradeSync = useMemo(() => createTradeSync({
+    getStamp: () => safeGetStamp("trades"),
+    get: () => safeGet("trades", null),
+    set: (value, stamp) => safeSet("trades", value, stamp),
+  }), []);
   const [resources, setResources] = useState(DEFAULT_RESOURCES);
   const [ledger, setLedger] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -197,6 +203,7 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("journeyLog", null),
       ]);
       setTrades(ts);
+      tradeSync.loaded(ts);
       const normRs = normalizeResources(rs);
       setResources(normRs);
       // Danh sách mã vừa cập nhật theo SYMBOL_CATALOG: ghi lại ngay để chỉ cập nhật một lần, và bot /
@@ -304,7 +311,7 @@ function AppShell({ onSignOut, userEmail }) {
     const queue = pendingSaves;
     const stillBad = [];
     for (const item of queue) {
-      const ok = await safeSet(item.key, item.value);
+      const ok = item.key === "trades" ? (await tradeSync.save(item.value)).ok : await safeSet(item.key, item.value);
       if (!ok) stillBad.push(item);
     }
     // Trong lúc đang thử lại người dùng vẫn có thể sửa tiếp và hỏng thêm — giữ lại những key
@@ -323,7 +330,14 @@ function AppShell({ onSignOut, userEmail }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [pendingSaves.length]);
 
-  const persistTrades = useCallback(async (next) => { setTrades(next); noteSave("trades", next, await safeSet("trades", next)); }, []);
+  // Lưu qua tradeSync: nơi khác (tab / máy khác) vừa lưu thì gộp theo từng lệnh, từng ô — không ghi đè
+  // cả khối (lib/tradeSync.js). Đã gộp thì cập nhật lại danh sách đang hiện.
+  const persistTrades = useCallback(async (next) => {
+    setTrades(next);
+    const { ok, value } = await tradeSync.save(next);
+    if (value !== next) setTrades((cur) => (cur === next ? value : mergeTrades(next, cur, value)));
+    noteSave("trades", value, ok);
+  }, [tradeSync]);
   // Lệnh mới khớp trên MT5 (EA trên VPS gửi về) thành lệnh trong nhật ký — xem lib/mt5Inbox.js.
   // Đọc lúc mở app, lúc quay lại tab và mỗi phút khi tab đang mở, để vào lệnh trên điện thoại thì
   // nhật ký đang mở trên máy tính cũng thấy ngay.
@@ -334,6 +348,12 @@ function AppShell({ onSignOut, userEmail }) {
     if (st.loading || st.busy || document.hidden) return;
     st.busy = true;
     try {
+      // Tab để lâu / máy khác vừa lưu: kéo bản mới về trước, để màn hình không hiện danh sách cũ
+      const fresh = await tradeSync.refresh();
+      if (fresh) {
+        setTrades((cur) => mergeTrades(fresh.from, cur, fresh.to));
+        mt5StateRef.current.trades = mergeTrades(fresh.from, mt5StateRef.current.trades, fresh.to);
+      }
       const inbox = await safeGet(MT5_INBOX_KEY, []);
       if (!Array.isArray(inbox) || !inbox.length) return;
       const seen = await safeGet(MT5_SEEN_KEY, []);
@@ -347,7 +367,7 @@ function AppShell({ onSignOut, userEmail }) {
     } finally {
       mt5StateRef.current.busy = false;
     }
-  }, [persistTrades]);
+  }, [persistTrades, tradeSync]);
   useEffect(() => {
     if (loading) return undefined;
     pullMt5();
