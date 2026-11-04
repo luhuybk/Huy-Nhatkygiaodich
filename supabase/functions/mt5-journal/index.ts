@@ -25,7 +25,7 @@
 // Deploy: supabase functions deploy mt5-journal --no-verify-jwt
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { isCryptoSymbol, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { isCryptoSymbol, normTf, reentryPlan, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -35,7 +35,6 @@ const INBOX_KEY = "mt5Inbox";
 const KEEP = 1000; // giữ 1000 lệnh gần nhất — đủ để lệnh nào cũng kịp được app nhận
 const FILL_TG = (Deno.env.get("MT5_FILL_TELEGRAM") || "").toLowerCase() !== "off";
 const FILL_FRESH_MS = 30 * 60 * 1000; // gói vào lệnh đến muộn hơn thế = quét bù lịch sử, không báo
-const TFS: Tf[] = ["H4", "H8", "D"];
 
 type Close = { time: number; lots: number; profit: number };
 type Item = {
@@ -151,20 +150,14 @@ async function accountTf(supabase: ReturnType<typeof createClient>, userId: stri
   const acc = list.find((a) => String(a.mt5Login || "").replace(/\D/g, "") === item.login) ||
     list.find((a) => a.name!.trim().toLowerCase() === item.accountName.trim().toLowerCase());
   if (!acc) return { acc: null, tf: null };
-  const own = (acc.timeframes || []).find((t) => TFS.includes(t as Tf)) as Tf | undefined;
+  const own = (acc.timeframes || []).map(normTf).find(Boolean);
   if (own) return { acc, tf: own };
   const trades = (await readKey(supabase, userId, "trades")) as { account?: string; timeframe?: string; entryDate?: string; entryTime?: string }[] | null;
   const last = (Array.isArray(trades) ? trades : [])
-    .filter((t) => t && t.account === acc.name && TFS.includes(t.timeframe as Tf))
+    .filter((t) => t && t.account === acc.name && normTf(t.timeframe))
     .sort((a, b) => `${b.entryDate || ""} ${b.entryTime || ""}`.localeCompare(`${a.entryDate || ""} ${a.entryTime || ""}`))[0];
-  return { acc, tf: (last?.timeframe as Tf) || null };
+  return { acc, tf: last ? normTf(last.timeframe) : null };
 }
-
-const money = (v: number, cur?: string) => {
-  const n = Math.round(v * 10) / 10;
-  const t = n.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
-  return !cur || cur === "USD" ? `${t}$` : `${t} ${cur}`;
-};
 
 async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item, test = false) {
   const { acc, tf } = await accountTf(supabase, userId, item);
@@ -182,11 +175,10 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
   if (!settings.telegramBotToken || !chatId) return { ...info, fill: "no telegram" };
 
   // 📥 XAUUSD 🟢 BUY
-  // Trading - Ngắn · H4 · 14:05 · R 34,2$
+  // Trading - Ngắn · H4 · 14:05
   // 🔁 Re-entry? Bấm → nhắc dời SL 17:01
   const side = item.side === "sell" ? "🔴 SELL" : "🟢 BUY";
   const meta = [acc?.name || item.accountName || item.login, tf, vnTime(fillMs, now)];
-  if (item.risk) meta.push(`R ${money(item.risk, item.currency)}`);
   const lines = [
     `${test ? "🧪 THỬ · " : ""}📥 ${shortSymbol(item.symbol)} ${side}`,
     meta.filter(Boolean).join(" · "),

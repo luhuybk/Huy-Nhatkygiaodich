@@ -27,7 +27,7 @@
 //   https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { isCryptoSymbol, nextRecheck, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { isCryptoSymbol, nextRecheck, normTf, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -400,7 +400,7 @@ async function reentryAction(
   const it = inbox.find((x) => x.id === `${login}-${ticket}`);
   if (!it?.time) return { notice: "Không tìm thấy lệnh này trong hộp chờ nữa.", state: "final" };
   if (inbox.some((x) => x.id === `${login}-${ticket}-close`)) return { notice: "Lệnh này đã đóng rồi.", state: "final" };
-  const tf = (["H4", "H8", "D"].includes(String(tfRaw)) ? tfRaw : "H4") as Tf;
+  const tf = normTf(tfRaw) || "H4";
   const plan = reentryPlan(tf, it.time * 1000, isCryptoSymbol(it.symbol || ""));
   if (now >= plan.eaAt) {
     return { notice: `EA đã tự kéo SL từ nến đóng ${vnTime(plan.eaAt, now)} rồi — không cần dời tay nữa.`, state: "final" };

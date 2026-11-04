@@ -7,7 +7,18 @@
 // Nến dựng theo giờ New York như TradingView (mốc 17:00 NY, tự đổi giờ mùa hè/đông). Nến đóng trong
 // giờ nghỉ (sau 0h tới trước 8h45 giờ VN) thì dồn sang 8h45; khung D chỉ nhắc lúc 8h45.
 
-export type Tf = "H4" | "H8" | "D";
+export type Tf = "H1" | "H2" | "H3" | "H4" | "H6" | "H8" | "H12" | "D";
+const TF_HOURS: Record<Tf, number> = { H1: 1, H2: 2, H3: 3, H4: 4, H6: 6, H8: 8, H12: 12, D: 24 };
+
+// Ô Khung của tài khoản có thể ghi "H3", "4H", "D1", "Daily"… → khung chuẩn; khung không chia hết 24 giờ
+// (H5, M15…) thì null — mốc nến của nó không trùng mốc ngày nên không tính giờ đóng được
+export function normTf(v: unknown): Tf | null {
+  const t = String(v ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  if (["D", "D1", "1D", "DAILY", "NGÀY", "NGAY"].includes(t)) return "D";
+  const m = t.match(/^H(\d{1,2})$/) || t.match(/^(\d{1,2})H$/);
+  const k = m ? `H${Number(m[1])}` : "";
+  return k in TF_HOURS ? (k as Tf) : null;
+}
 
 export const RECHECK_DAYS = 7; // quá 7 ngày kể từ lúc cảnh báo bắn thì thôi, không nhắc nến nữa
 
@@ -58,9 +69,9 @@ function restShift(close: number) {
 
 // Lúc gửi tin kiểm lại kế tiếp (ms UTC) và giờ nến đóng tương ứng. allWeek = crypto (nến 0h UTC, có cuối tuần).
 export function nextRecheck(tf: Tf, nowMs: number, allWeek = false): { at: number; close: number } {
-  const step = tf === "H4" ? 4 * HOUR : tf === "H8" ? 8 * HOUR : 24 * HOUR;
+  const step = (TF_HOURS[tf] || 24) * HOUR;
   if (allWeek) {
-    const close = Math.floor(nowMs / step) * step + step; // 24 chia hết cho 4 và 8 nên mốc 0h UTC luôn trùng
+    const close = Math.floor(nowMs / step) * step + step; // mọi khung đều chia hết 24 giờ nên mốc 0h UTC luôn trùng
     return { at: restShift(close), close };
   }
   // "Giờ treo tường" New York biểu diễn bằng ms như thể là UTC; mốc nến = 17:00 NY hôm trước
