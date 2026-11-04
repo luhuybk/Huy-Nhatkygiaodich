@@ -12,7 +12,7 @@ import {
   NotebookPen, Globe2, Search,
 } from "lucide-react";
 import "./styles.css";
-import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS } from "./lib/constants.js";
+import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS, SYMBOL_CATALOG_VERSION } from "./lib/constants.js";
 import {
   safeGet, safeSet, normalizeResources, emptyTrade, emptyReminder, emptySlReminderSettings, accountOpenRisk,
   setCurrentUserId, uid, RESOURCE_TRADE_FIELDS, renameInList, renameChecklistKey, renameInArrayField, renameSetupInErrors,
@@ -197,7 +197,11 @@ function AppShell({ onSignOut, userEmail }) {
         safeGet("journeyLog", null),
       ]);
       setTrades(ts);
-      setResources(normalizeResources(rs));
+      const normRs = normalizeResources(rs);
+      setResources(normRs);
+      // Danh sách mã vừa cập nhật theo SYMBOL_CATALOG: ghi lại ngay để chỉ cập nhật một lần, và bot /
+      // máy khác đọc thẳng cơ sở dữ liệu cũng thấy đúng danh sách mới.
+      if (rs && (Number(rs.symbolCatalogV) || 0) < SYMBOL_CATALOG_VERSION) await safeSet("resources", normRs);
       setLedger(lg);
       setNotes(nt);
       setLessons(ls);

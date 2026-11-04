@@ -358,7 +358,9 @@ const BACKSPACE_AFTER_EDIT_MS = 800;
 const BACKSPACE_MIN_GAP_MS = 150;
 const SYMBOL_SUGGEST_SHOWN = 12;
 
-function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus, hideDone }) {
+// `groupOf` + `order` (Tài nguyên → Symbol): lúc chưa gõ gì, gợi ý chia theo nhóm (Forex, Vàng bạc…)
+// đúng thứ tự trong Tài nguyên; mã chưa có nhóm (cổ phiếu hay đánh…) gom vào "Khác".
+function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus, hideDone, groupOf, order }) {
   const [text, setText] = useState("");
   const [armed, setArmed] = useState(false); // chip cuối đang tô đỏ, chờ Backspace lần 2
   const lastEditAt = useRef(0);
@@ -380,6 +382,23 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
     const rest = (suggestions || []).filter((sym) => !chosen.has(sym));
     return (q ? rest.filter((sym) => sym.includes(q)) : rest).slice(0, SYMBOL_SUGGEST_SHOWN);
   }, [suggestions, chosen, text, known]);
+  const hintGroups = useMemo(() => {
+    if (text.trim() || !groupOf || !Object.keys(groupOf).length) return null;
+    const rank = new Map((order || []).map((sym, i) => [String(sym).toUpperCase(), i]));
+    const byGroup = new Map();
+    const loose = [];
+    [...new Set(suggestions || [])].filter((sym) => !chosen.has(sym)).forEach((sym) => {
+      const g = String(groupOf[sym] || "").trim();
+      if (!g) { loose.push(sym); return; }
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(sym);
+    });
+    const at = (sym) => (rank.has(sym) ? rank.get(sym) : 1e9);
+    const out = [...byGroup].map(([name, list]) => ({ name, list: list.sort((a, b) => at(a) - at(b)) }))
+      .sort((a, b) => at(a.list[0]) - at(b.list[0]));
+    if (loose.length) out.push({ name: "Khác", list: loose.slice(0, SYMBOL_SUGGEST_SHOWN) });
+    return out;
+  }, [suggestions, chosen, text, groupOf, order]);
 
   // Gõ hoặc dán có dấu phân cách thì chốt luôn phần trước dấu, giữ lại đuôi đang gõ dở.
   const onType = (raw) => {
@@ -451,7 +470,20 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
           Sai thì gõ lại sau khi chuyển bộ gõ sang tiếng Anh.
         </p>
       ) : null}
-      {hints.length && (focused || text || !shown.length) ? (
+      {hintGroups && hintGroups.length && (focused || !shown.length) ? (
+        <div className="symbol-hint-groups">
+          {hintGroups.map((g) => (
+            <div key={g.name} className="symbol-hints">
+              <span className="field-hint symbol-hint-group">{g.name}</span>
+              {g.list.map((sym) => (
+                <button key={sym} type="button" className="symbol-hint-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => { onAdd([sym]); setText(""); }}>
+                  + {sym}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : !hintGroups && hints.length && (focused || text || !shown.length) ? (
         <div className="symbol-hints">
           <span className="field-hint">Gợi ý:</span>
           {hints.map((sym) => (
@@ -489,7 +521,7 @@ function HotBody({ settings, onChange, resources, trades, watches }) {
   const save = (next) => onChange({ ...settings, hotSymbols: next });
   const suggestions = useMemo(() => {
     const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).filter((x) => !x.done).map((x) => x.name)))];
-    return [...used, ...symbolSuggestions(resources, trades, used, 40)];
+    return [...used, ...symbolSuggestions(resources, trades, used, 300)];
   }, [watches, resources, trades]);
   const add = (names) => {
     const have = new Set(list.map((h) => h.name));
@@ -504,7 +536,7 @@ function HotBody({ settings, onChange, resources, trades, watches }) {
         luôn có chuông và nhắc lại tới khi bạn gõ <b>ok</b> / <b>n</b>. Tin <b>Kiểm tra setup</b> cũng liệt kê các mã này đầu tiên,
         kèm đã báo lúc mấy giờ, đã xử lý chưa.
       </p>
-      <SymbolBox items={list} suggestions={suggestions} onAdd={add} onRemove={(x) => save(list.filter((h) => h.id !== x.id))}
+      <SymbolBox items={list} suggestions={suggestions} onAdd={add} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols} onRemove={(x) => save(list.filter((h) => h.id !== x.id))}
         placeholder="EURUSD XAUUSD NVDA" />
       {list.length ? (
         <div className="hot-list">
@@ -564,7 +596,7 @@ function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
   // Symbol đang nằm trong các nhóm khác đứng đầu gợi ý — đó là cách viết quen tay ở màn hình này.
   const suggestions = useMemo(() => {
     const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).map((x) => x.name)))];
-    return [...used, ...symbolSuggestions(resources, trades, used, 40)];
+    return [...used, ...symbolSuggestions(resources, trades, used, 300)];
   }, [watches, resources, trades]);
 
   const updateWatch = (id, patch) => onWatchesChange(watches.map((w) => (w.id === id ? { ...w, ...patch } : w)));
@@ -644,7 +676,7 @@ function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
                   <DayChips days={w.activeDays} onToggle={(d) => updateWatch(w.id, { activeDays: toggleIn(w.activeDays, d) })} />
                   <ConfirmButton onConfirm={() => removeWatch(w.id)} />
                 </div>
-                <SymbolBox items={symbols} suggestions={suggestions} hideDone={hideDone}
+                <SymbolBox items={symbols} suggestions={suggestions} hideDone={hideDone} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols}
                   onAdd={(names) => addWatchSymbols(w, names)}
                   onRemove={(x) => removeWatchSymbol(w, x)}
                   onToggle={(x) => toggleSymbol(w, x.id)} />
@@ -710,7 +742,7 @@ function WatchBody({ settings, watches, resources, trades, onWatchesChange }) {
             )}
           </div>
           <Field label="Các mã" hint="Gõ tên rồi phím cách hoặc Enter — hoặc bấm gợi ý.">
-            <SymbolBox items={draft.symbols.map((name) => ({ name }))} suggestions={suggestions} autoFocus={watches.length > 0}
+            <SymbolBox items={draft.symbols.map((name) => ({ name }))} suggestions={suggestions} autoFocus={watches.length > 0} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols}
               onAdd={addDraftSymbols}
               onRemove={(x) => setDraft((p) => ({ ...p, symbols: p.symbols.filter((n) => n !== x.name) }))}
               onSubmitEmpty={addWatch} />

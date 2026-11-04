@@ -1,5 +1,5 @@
 import { supabase } from "../supabaseClient.js";
-import { DEFAULT_RESOURCES, GRADE_OPTIONS, NOTE_TYPES, structureScoreNumber, WEEKDAY_LABEL } from "./constants.js";
+import { DEFAULT_RESOURCES, GRADE_OPTIONS, LEGACY_DEFAULT_SYMBOLS, NOTE_TYPES, structureScoreNumber, SYMBOL_CATALOG, SYMBOL_CATALOG_VERSION, WEEKDAY_LABEL } from "./constants.js";
 // Vòng import với assetGroups.js là cố ý: hai bên chỉ gọi nhau bên trong hàm, không dùng lúc nạp module.
 import { assetGroupInfo, assetGroupOf } from "./assetGroups.js";
 import { autoScheduleHours, DEFAULT_AUTO_QUIET, DEFAULT_AUTO_SLOTS, tfHours, tradeAutoHours } from "./candles.js";
@@ -1769,6 +1769,29 @@ export function normalizeResources(rs) {
   if (!merged.sessions || !merged.sessions.length) merged.sessions = DEFAULT_RESOURCES.sessions;
   merged.fxRates = { ...DEFAULT_RESOURCES.fxRates, ...(merged.fxRates || {}), USD: 1 };
   if (!merged.setupGroups || typeof merged.setupGroups !== "object" || Array.isArray(merged.setupGroups)) merged.setupGroups = {};
+  if (!merged.symbolGroups || typeof merged.symbolGroups !== "object" || Array.isArray(merged.symbolGroups)) merged.symbolGroups = {};
+  // Cập nhật một lần theo SYMBOL_CATALOG: đủ mã FX / hàng hoá đang giao dịch, đúng thứ tự và nhóm như
+  // watchlist; bỏ 4 mã mặc định đời đầu (GC, CL, ES, NQ). Mã khác bạn tự thêm (cổ phiếu…) giữ nguyên ở sau.
+  // Đọc phiên bản từ dữ liệu đã lưu (rs), không phải `merged` — merged đã trộn số phiên bản mặc định.
+  const savedCatalogV = rs ? Number(rs.symbolCatalogV) || 0 : SYMBOL_CATALOG_VERSION;
+  if (savedCatalogV < SYMBOL_CATALOG_VERSION) {
+    const catalog = SYMBOL_CATALOG.flatMap((g) => g.symbols);
+    const inCatalog = new Set(catalog);
+    const legacy = new Set(LEGACY_DEFAULT_SYMBOLS);
+    const seen = new Set();
+    const others = (merged.symbols || []).filter((x) => {
+      const k = String(x || "").trim().toUpperCase();
+      if (!k || inCatalog.has(k) || legacy.has(k) || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const groups = { ...merged.symbolGroups };
+    LEGACY_DEFAULT_SYMBOLS.forEach((x) => { delete groups[x]; });
+    SYMBOL_CATALOG.forEach((g) => g.symbols.forEach((x) => { groups[x] = g.group; }));
+    merged.symbols = [...catalog, ...others];
+    merged.symbolGroups = groups;
+    merged.symbolCatalogV = SYMBOL_CATALOG_VERSION;
+  }
   // Dọn một lần hai mục checklist đã có chỗ khác lo: ảnh vào/ra lệnh nằm trong % hoàn thành,
   // còn review nguội thành mục "Nhìn lại sau" có hạn ngày. Cờ checklistTrimmed để nếu bạn tự
   // thêm lại đúng hai tên đó thì lần sau không bị dọn nữa — dọn một lần rồi thôi.

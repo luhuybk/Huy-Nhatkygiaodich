@@ -144,6 +144,7 @@ export function ResourceManager({ resources, onChange }) {
   const [activeChild, setActiveChild] = useNavTab("resourcesChild", group.children ? group.children[0].key : null);
   const selectGroup = (g) => { setActiveGroup(g.key); setActiveChild(g.children ? g.children[0].key : null); };
   const childDef = group.children ? (group.children.find((c) => c.key === activeChild) || group.children[0]) : null;
+  const gk = childDef && childDef.grouped ? childDef.groupsKey || "setupGroups" : "";
   // Thang số luôn tự xếp tăng dần, kể cả sau khi đổi tên một mức (sửa 7 thành 7.5 thì nó phải
   // nhảy đúng chỗ). Danh sách chữ thì giữ nguyên thứ tự bạn kéo.
   const arrange = (list) => (childDef && childDef.numeric ? sortStructureScores(list) : list);
@@ -172,16 +173,16 @@ export function ResourceManager({ resources, onChange }) {
             placeholder={childDef.numeric ? "Thêm một mức điểm, VD 12 hoặc 11.5..." : `Thêm mục cho "${childDef.label}"...`}
             normalize={childDef.numeric ? normalizeStructureScore : undefined}
             sorted={!!childDef.numeric}
-            groups={childDef.grouped ? resources.setupGroups || {} : undefined}
-            onSetGroup={childDef.grouped ? (item, g) => onChange({ ...resources, setupGroups: withGroup(resources.setupGroups, item, g) }) : undefined}
+            groups={gk ? resources[gk] || {} : undefined}
+            onSetGroup={gk ? (item, g) => onChange({ ...resources, [gk]: withGroup(resources[gk], item, g) }) : undefined}
             onAdd={(v) => onChange({ ...resources, [childDef.key]: arrange([...(resources[childDef.key] || []), v]) })}
             onRemove={(item) => onChange({
               ...resources, [childDef.key]: (resources[childDef.key] || []).filter((x) => x !== item),
-              ...(childDef.grouped ? { setupGroups: withGroup(resources.setupGroups, item, "") } : {}),
+              ...(gk ? { [gk]: withGroup(resources[gk], item, "") } : {}),
             })}
             onSetList={(next, rename) => {
-              const regroup = childDef.grouped && rename
-                ? { setupGroups: withGroup(withGroup(resources.setupGroups, rename.renamedFrom, ""), rename.renamedTo, (resources.setupGroups || {})[rename.renamedFrom] || "") }
+              const regroup = gk && rename
+                ? { [gk]: withGroup(withGroup(resources[gk], rename.renamedFrom, ""), rename.renamedTo, (resources[gk] || {})[rename.renamedFrom] || "") }
                 : {};
               onChange({ ...resources, [childDef.key]: arrange(next), ...regroup }, rename ? { ...rename, resourceKey: childDef.key } : null);
             }} />

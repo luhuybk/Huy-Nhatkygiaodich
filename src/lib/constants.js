@@ -15,12 +15,13 @@ export const TEXT = "var(--text)";
 export const RESOURCE_GROUPS = [
   {
     key: "symbols", label: "Symbol", children: [
-      { key: "symbols", label: "Symbol", hint: "Danh sách symbol gợi ý khi nhập lệnh — vẫn có thể gõ tự do symbol khác (cổ phiếu VN/US...)" },
+      { key: "symbols", label: "Symbol", grouped: true, groupsKey: "symbolGroups",
+        hint: "Danh sách symbol gợi ý khi nhập lệnh và ở ô nhập mã của Lịch nhắc (gợi ý chia theo nhóm ở ô bên phải: Forex, Vàng bạc, Hàng hóa, Năng lượng…). Vẫn gõ tự do được symbol khác — cổ phiếu VN/US thì thêm vào đây kèm nhóm, VD US Stock, VN Stock." },
     ]
   },
   {
     key: "knowledge", label: "Kiến thức", children: [
-      { key: "setups", label: "Setup", grouped: true,
+      { key: "setups", label: "Setup", grouped: true, groupsKey: "setupGroups",
         hint: "Các mẫu hình vào lệnh (RB, IRB, ARB...). Gõ tên nhóm ở ô bên phải (VD Range, Trend) để ô chọn setup khi ghi lệnh tách thành từng nhóm có tiêu đề — bỏ trống thì setup nằm trên cùng, không thuộc nhóm nào." },
       { key: "setupBonus", label: "Bonus", hint: "Điểm cộng thêm cho setup (hợp lưu, volume, tin tức...)" },
       { key: "setupNotes", label: "Nhận xét setup", hint: "Đánh giá việc áp dụng setup (Tốt, Tệ, Sai setup...)" },
@@ -108,15 +109,30 @@ export function sortStructureScores(list) {
   return [...nums, ...uniq.filter((x) => structureScoreNumber(x) === null)];
 }
 
+// Các mã FX / hàng hoá đang giao dịch, chia nhóm và xếp đúng như watchlist TradingView của bạn.
+// Tăng SYMBOL_CATALOG_VERSION khi sửa danh sách để tài khoản đang dùng được cập nhật một lần
+// (normalizeResources) — sau đó gỡ / đổi nhóm ở Tài nguyên thì giữ nguyên, không bị thêm lại.
+export const SYMBOL_CATALOG = [
+  { group: "Forex", symbols: [
+    "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD",
+    "EURUSD", "EURAUD", "EURCAD", "EURCHF", "EURJPY", "EURNZD", "EURGBP",
+    "GBPUSD", "GBPJPY", "GBPCAD", "GBPAUD", "GBPCHF", "GBPNZD",
+    "NZDUSD", "NZDJPY", "NZDCHF", "NZDCAD", "CADCHF", "CADJPY", "CHFJPY",
+  ] },
+  { group: "Vàng bạc", symbols: ["XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"] },
+  { group: "Hàng hóa", symbols: ["XCUUSD", "XALUSD", "XNIUSD", "XPBUSD", "XPDUSD", "XPTUSD", "XZNUSD"] },
+  { group: "Năng lượng", symbols: ["XTIUSD", "XBRUSD", "XNGUSD"] },
+];
+export const SYMBOL_CATALOG_VERSION = 1;
+// Mã mặc định đời đầu (hợp đồng tương lai) không giao dịch — bỏ khỏi gợi ý khi cập nhật danh sách
+export const LEGACY_DEFAULT_SYMBOLS = ["GC", "CL", "ES", "NQ"];
+const catalogGroups = () => Object.fromEntries(SYMBOL_CATALOG.flatMap((g) => g.symbols.map((sym) => [sym, g.group])));
+
 export const DEFAULT_RESOURCES = {
   accounts: [],
-  symbols: [
-    "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "CADCHF", "CADJPY", "CHFJPY",
-    "EURAUD", "EURCAD", "EURCHF", "EURGBP", "EURJPY", "EURNZD", "EURUSD",
-    "GBPAUD", "GBPCAD", "GBPCHF", "GBPJPY", "GBPNZD", "GBPUSD",
-    "NZDCAD", "NZDCHF", "NZDJPY", "NZDUSD", "USDCAD", "USDCHF", "USDJPY",
-    "XAUUSD", "XAGUSD", "GC", "CL", "ES", "NQ",
-  ],
+  symbols: SYMBOL_CATALOG.flatMap((g) => g.symbols),
+  symbolGroups: catalogGroups(),
+  symbolCatalogV: SYMBOL_CATALOG_VERSION,
   setups: ["KHÔNG CÓ SETUP", "RB", "IRB", "ARB", "FB", "DD", "SB", "BB"],
   // Nhóm của từng setup theo TÊN ({ RB: "Range" }) — tách riêng khỏi `setups` để mọi chỗ khác
   // vẫn đọc danh sách tên như cũ.
