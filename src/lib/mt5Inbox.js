@@ -107,12 +107,27 @@ function openDraft(item, acc, known, trades, resources) {
   return draft;
 }
 
+function lostClose(t) {
+  const blank = (v) => v === undefined || v === null || String(v).trim() === "";
+  return !t.mt5Closed && !t.brokerFilled && blank(t.exitDate) && blank(t.profit) && !(t.partialExits || []).length;
+}
+
 // Trả { trades: danh sách mới, added: [lệnh tạo], linked: [lệnh gắn ticket], closed: [lệnh vừa đóng],
 // filled: [lệnh chỉ được điền bù rủi ro], seen: id đã xử lý }.
 // `extra` = { capitalPlan, ledger } để quy rủi ro ra %.
 export function applyMt5Inbox(inbox, seen, trades, resources, extra = {}) {
   const seenSet = new Set(seen || []);
-  const fresh = (Array.isArray(inbox) ? inbox : []).filter((x) => x && x.id && !seenSet.has(x.id));
+  const all = Array.isArray(inbox) ? inbox : [];
+  const fresh = all.filter((x) => x && x.id && !seenSet.has(x.id));
+  // Gói đóng đã nhận mà lệnh vẫn chưa đóng = một bản nhật ký cũ đang mở ở tab/máy khác đã lưu đè cả
+  // danh sách lệnh lên lần đóng đó (04/11 mất 4 lệnh như vậy). Áp lại — miễn lệnh chưa có giờ thoát,
+  // lợi nhuận, phần chốt nào (bạn chưa tự điền gì) và gói còn mới (14 ngày).
+  const healFrom = Date.now() - 14 * 86400000;
+  for (const x of all) {
+    if (!x || x.event !== "close" || !seenSet.has(x.id) || !(Date.parse(x.receivedAt) > healFrom)) continue;
+    const t = (trades || []).find((t) => t && String(t.ticket || "") === String(x.ticket || ""));
+    if (t && lostClose(t)) fresh.push(x);
+  }
   if (!fresh.length) return null;
   const known = new Set([...(resources.symbols || []), ...(trades || []).map((x) => x && x.symbol)].filter(Boolean).map((x) => String(x).toUpperCase()));
   let next = [...(trades || [])];
