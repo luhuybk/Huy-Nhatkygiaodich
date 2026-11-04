@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, Eye, X } from "lucide-react";
 import { looksTelexed, parseSymbolList, untelexSymbol } from "../lib/helpers.js";
 
-// Đồng base của cặp FX (EUR/USD, EURUSD → EUR) — gợi ý tách bằng dấu | giữa các cụm cùng đồng base
+// Đồng base của cặp FX (EUR/USD, EURUSD → EUR) — gợi ý gom mỗi đồng base vào một khung có nhãn riêng
 const FX_CCY = new Set(["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"]);
 function fxBase(sym) {
   const c = String(sym || "").toUpperCase().replace(/[^A-Z]/g, "");
@@ -151,16 +151,18 @@ export function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSub
           {hintGroups.map((g) => (
             <div key={g.name} className={`symbol-hints ${g.pinned ? "symbol-hints-pinned" : ""}`}>
               <span className="field-hint symbol-hint-group">{g.name}</span>
-              {clusters(g.list).map((c, ci) => (
-                <span key={c[0]} className={c.length > 1 ? "symbol-hint-cluster" : "symbol-hint-cluster-loose"}>
-                  {ci > 0 && fxBase(c[0]) ? <span className="symbol-hint-sep" aria-hidden="true">|</span> : null}
-                  {c.map((sym) => (
-                    <button key={sym} type="button" className="symbol-hint-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => { onAdd([sym]); setText(""); }}>
-                      + {sym}
-                    </button>
-                  ))}
-                </span>
-              ))}
+              <div className="symbol-hint-list">
+                {(g.pinned ? g.list.map((sym) => [sym]) : clusters(g.list)).map((c) => (
+                  <span key={c[0]} className={!g.pinned && fxBase(c[0]) ? "symbol-hint-cluster" : "symbol-hint-cluster-loose"}>
+                    {!g.pinned && fxBase(c[0]) ? <span className="symbol-hint-base" aria-hidden="true">{fxBase(c[0])}</span> : null}
+                    {c.map((sym) => (
+                      <button key={sym} type="button" className="symbol-hint-chip" onMouseDown={(e) => e.preventDefault()} onClick={() => { onAdd([sym]); setText(""); }}>
+                        + {sym}
+                      </button>
+                    ))}
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
         </div>
