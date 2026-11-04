@@ -41,22 +41,35 @@ function closesInWeekend(nyWall: Date) {
   return day === 6 || (day === 5 && min > 17 * 60) || (day === 0 && min <= 17 * 60);
 }
 
-// Lúc gửi tin kiểm lại kế tiếp (ms UTC) và giờ nến đóng tương ứng
-export function nextRecheck(tf: Tf, nowMs: number): { at: number; close: number } {
+// Crypto giao dịch cả tuần, TradingView (Binance) và EA chia nến từ 0h UTC — không theo mốc New York
+export function isCryptoSymbol(symbol: string) {
+  return /^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/i.test(String(symbol || "").trim());
+}
+
+// Giờ VN rơi vào giờ nghỉ (sau 0h tới trước 8h45) thì dồn sang 8h45 cùng sáng
+function restShift(close: number) {
+  const vn = new Date(close + VN_OFFSET);
+  const vnMin = vn.getUTCHours() * 60 + vn.getUTCMinutes();
+  if (vnMin > 0 && vnMin < MORNING_MIN) {
+    return Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) + MORNING_MIN * 60 * 1000 - VN_OFFSET;
+  }
+  return close + 60 * 1000; // chừa 1 phút cho nến đóng hẳn
+}
+
+// Lúc gửi tin kiểm lại kế tiếp (ms UTC) và giờ nến đóng tương ứng. allWeek = crypto (nến 0h UTC, có cuối tuần).
+export function nextRecheck(tf: Tf, nowMs: number, allWeek = false): { at: number; close: number } {
   const step = tf === "H4" ? 4 * HOUR : tf === "H8" ? 8 * HOUR : 24 * HOUR;
+  if (allWeek) {
+    const close = Math.floor(nowMs / step) * step + step; // 24 chia hết cho 4 và 8 nên mốc 0h UTC luôn trùng
+    return { at: restShift(close), close };
+  }
   // "Giờ treo tường" New York biểu diễn bằng ms như thể là UTC; mốc nến = 17:00 NY hôm trước
   const nyNow = nowMs - nyOffsetHours(nowMs) * HOUR;
   let wall = Math.floor(nyNow / (24 * HOUR)) * 24 * HOUR - 7 * HOUR; // 17:00 NY hôm trước
   for (let i = 0; i < 200; i++, wall += step) {
     const close = wall + nyOffsetHours(wall + 5 * HOUR) * HOUR;
     if (close <= nowMs || closesInWeekend(new Date(wall))) continue;
-    const vn = new Date(close + VN_OFFSET);
-    const vnMin = vn.getUTCHours() * 60 + vn.getUTCMinutes();
-    if (vnMin > 0 && vnMin < MORNING_MIN) {
-      const morning = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) + MORNING_MIN * 60 * 1000 - VN_OFFSET;
-      return { at: morning, close };
-    }
-    return { at: close + 60 * 1000, close }; // chừa 1 phút cho nến đóng hẳn
+    return { at: restShift(close), close };
   }
   return { at: nowMs + 24 * HOUR, close: nowMs + 24 * HOUR };
 }
@@ -71,7 +84,21 @@ export function vnTime(ms: number, nowMs = Date.now()) {
   return sameDay ? hm : `${hm} ${pad(t.getUTCDate())}/${pad(t.getUTCMonth() + 1)}`;
 }
 
-export function alertButtons(id: string, tf: Tf | null | undefined) {
+// Nến re-entry: lệnh vừa khớp mà nến vào lệnh là nến re-entry thì SL dời được ngay khi nến đó đóng,
+// nhưng EA cố ý bỏ qua nến vào lệnh (InpSkipBars = 1) và chỉ tự kéo từ nến đóng kế tiếp. Bấm 🔁 ở tin
+// khớp lệnh (mt5-journal gửi) → lúc nến vào lệnh đóng thì nhắc dời SL tay 1 lần.
+//   close = nến vào lệnh đóng, at = lúc nhắc (giờ nghỉ → 8h45), eaAt = nến kế tiếp đóng (EA tự kéo)
+// Nhắc chỉ có ích khi at < eaAt: nến vào lệnh đóng lúc 1h mà nến sau đóng 5h thì EA kéo trước 8h45.
+export function reentryPlan(tf: Tf, fillMs: number, allWeek = false) {
+  const first = nextRecheck(tf, fillMs, allWeek);
+  const eaAt = nextRecheck(tf, first.close, allWeek).close;
+  return { close: first.close, at: first.at, eaAt, useful: first.at < eaAt };
+}
+
+export const reentryId = (login: string, ticket: string) => `re-${login}-${ticket}`;
+
+export function alertButtons(id: string, tf: Tf | null | undefined, kind?: string) {
+  if (kind === "reentry") return { inline_keyboard: [[{ text: "✅ Đã dời", callback_data: `ta|${id}` }]] };
   const row: { text: string; callback_data: string }[] = [{ text: "✅ Đã thấy", callback_data: `ta|${id}` }];
   if (tf) row.push({ text: "⏳ Kiểm lại", callback_data: `tr|${id}` }); // ngắn cho vừa màn hình điện thoại
   return { inline_keyboard: [row] };

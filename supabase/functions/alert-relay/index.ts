@@ -21,6 +21,8 @@
 // Gửi lại do pg_cron gọi ?tick=1 mỗi phút (supabase-alert-relay-cron.sql). Tick không cần khoá: nó chỉ
 // gửi các tin đã tới hạn, ai gọi thêm cũng không làm tin bị gửi dày hơn.
 // Nút "✅ Đã thấy" (callback ta|<id>) do function telegram-webhook xử lý.
+// Bản ghi kind "reentry" (bấm 🔁 Nến re-entry ở tin khớp lệnh của mt5-journal): tới giờ nến vào lệnh đóng thì
+// nhắc "✋ dời SL tay 1 lần" với nút "✅ Đã dời"; lệnh đã đóng trước đó (mt5Inbox có gói close) thì bỏ, không gửi.
 // Tin TradingView nhắc lại có thêm nút "⏳ Kiểm lại" (tr|<id>): setup chưa đủ thì bấm,
 // tới lúc nến kế tiếp của khung đó đóng (nến đóng trong giờ nghỉ thì 8h45) tick gửi lại tin, lại nhắc
 // như lần đầu cho tới khi bấm một trong hai nút. Khung lấy từ tiền tố tin — xem _shared/alertRecheck.ts.
@@ -65,6 +67,8 @@ type Repeat = {
   recheckClose?: string; // giờ nến đóng ứng với recheckAt
   rechecks?: number;
   rev?: number;         // tăng mỗi lần sửa — tick chỉ ghi đè bản ghi chưa bị telegram-webhook sửa
+  // Nhắc dời SL tay nến re-entry (bấm 🔁 ở tin khớp lệnh của mt5-journal): khung nến vào lệnh, <login>-<ticket>
+  kind?: "reentry"; candleTf?: Tf; ref?: string;
 };
 
 const CORS = {
@@ -139,10 +143,27 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   const list = await readRepeats(supabase, owner.userId);
   const now = Date.now();
   const revOf = new Map(list.map((r) => [r.id, r.rev || 0]));
+  const changed: Repeat[] = [];
+  // Nhắc dời SL tay mà lệnh đã đóng (EA báo gói close về mt5Inbox) thì thôi, không gửi
+  const reDue = list.filter((r) => r.kind === "reentry" && r.recheckAt && Date.parse(r.recheckAt) <= now);
+  if (reDue.length) {
+    const { data: ib } = await supabase.from("app_data").select("value").eq("user_id", owner.userId).eq("key", "mt5Inbox").maybeSingle();
+    const closed = new Set((Array.isArray(ib?.value) ? ib!.value : []).map((x: { id?: string }) => x?.id));
+    for (const r of reDue) {
+      if (!closed.has(`${r.ref}-close`)) continue;
+      r.recheckAt = undefined;
+      r.doneAt = r.ackedAt = new Date(now).toISOString();
+      r.rev = (r.rev || 0) + 1;
+      changed.push(r);
+    }
+  }
   // Tới giờ kiểm lại theo nến: mở lại vòng nhắc như cảnh báo mới (lần 1 gửi ngay trong lượt này)
   for (const r of list) {
     if (!r.recheckAt || Date.parse(r.recheckAt) > now) continue;
-    r.head = `🔁 Kiểm lại setup · nến ${r.tf || "D"} đóng ${vnTime(Date.parse(r.recheckClose || r.recheckAt), now)}`;
+    const closeAt = vnTime(Date.parse(r.recheckClose || r.recheckAt), now);
+    r.head = r.kind === "reentry"
+      ? `✋ Nến re-entry ${r.candleTf || ""} đã đóng ${closeAt} — dời SL tay 1 lần (nến sau EA tự kéo)`
+      : `🔁 Kiểm lại setup · nến ${r.tf || "D"} đóng ${closeAt}`;
     r.recheckAt = undefined;
     r.recheckClose = undefined;
     r.ackedAt = undefined;
@@ -151,7 +172,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     r.nextAt = new Date(now).toISOString();
   }
   const due = list.filter((r) => !r.ackedAt && !r.doneAt && Date.parse(r.nextAt) <= now);
-  if (!due.length) return json({ ok: true, due: 0 });
+  if (!due.length && !changed.length) return json({ ok: true, due: 0 });
 
   const token = owner.settings.telegramBotToken!;
   const hot = hotList(owner.settings);
@@ -159,7 +180,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     r.sent += 1;
     const last = r.sent >= r.times;
     // Dòng 🔥 tính lại theo danh sách hiện tại: bỏ mã khỏi danh sách thì lần nhắc sau thôi nổi bật
-    const hotLine = hotHead(hotMatches(r.text, hot));
+    const hotLine = r.kind === "reentry" ? "" : hotHead(hotMatches(r.text, hot));
     const lines = hotLine ? [hotLine] : [];
     if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
     if (r.head) lines.push(r.head);
@@ -167,7 +188,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     const payload: Record<string, unknown> = {
       chat_id: owner.chatId,
       text: lines.join("\n"),
-      reply_markup: alertButtons(r.id, r.tf),
+      reply_markup: alertButtons(r.id, r.tf, r.kind),
     };
     // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
     const topic = r.topic || ALERT_TOPIC;
@@ -194,8 +215,9 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   // Đọc lại trước khi ghi: lúc gửi có thể người dùng vừa bấm nút (telegram-webhook tăng rev)
   // hoặc có cảnh báo mới — bản ghi đã bị sửa thì giữ bản mới, chỉ ghi đè bản ghi còn nguyên
   const fresh = await readRepeats(supabase, owner.userId);
+  const touched = [...due, ...changed.filter((c) => !due.includes(c))];
   const merged = fresh.map((f) => {
-    const mine = due.find((d) => d.id === f.id);
+    const mine = touched.find((d) => d.id === f.id);
     return mine && (f.rev || 0) === revOf.get(f.id) ? { ...mine } : f;
   });
   const { error } = await writeRepeats(supabase, owner.userId, merged);

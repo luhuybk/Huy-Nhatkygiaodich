@@ -82,7 +82,11 @@ const titleOf = (r) => String(r.text || "").split("\n").find((x) => x.trim())?.r
 function AlertRow({ r, kind, hot, onNext, onRemove, now }) {
   const isHot = hotMatches(String(r.text || ""), hot).length > 0;
   let state = "";
-  if (kind === "waiting") {
+  if (kind === "waiting" && r.kind === "reentry") {
+    // Bấm 🔁 Nến re-entry ở tin khớp lệnh (mt5-journal): nhắc dời SL tay 1 lần lúc nến vào lệnh đóng
+    state = `✋ Nhắc dời SL tay lúc ${vnTime(Date.parse(r.recheckAt), now)}`;
+    if (r.recheckClose) state += ` · nến ${r.candleTf || ""} vào lệnh đóng ${vnTime(Date.parse(r.recheckClose), now)}`;
+  } else if (kind === "waiting") {
     state = `⏳ Kiểm lại lúc ${vnTime(Date.parse(r.recheckAt), now)}`;
     if (r.recheckClose) state += ` · nến ${r.tf || "D"} đóng ${vnTime(Date.parse(r.recheckClose), now)}`;
     if (r.rechecks) state += ` · lần ${r.rechecks}`;

@@ -8,6 +8,10 @@
 //   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
 //   Cảnh báo nhắc lại ta|<id>               "✅ Đã thấy" ở tin của alert-relay — ngừng gửi lại
 //                     tr|<id>               "⏳ Kiểm lại" — setup chưa đủ, gửi lại lúc nến kế tiếp đóng
+//   Khớp lệnh MT5     rn|<login>-<ticket>|<khung>  "🔁 Nến re-entry" ở tin của mt5-journal — hẹn nhắc dời SL tay
+//                                                  1 lần lúc nến vào lệnh đóng (bản ghi re-<login>-<ticket>
+//                                                  trong alertRepeats, alert-relay tick gửi, ✅ Đã dời = ta|)
+//                     rx|<login>-<ticket>|<khung>  "↩️ Bỏ nhắc" — huỷ hẹn vừa đặt
 //   Gõ chữ (tin thường, không phải nút) — trả lời ngay từ thông báo trên màn hình khoá:
 //                     "ok"                  như "✅ Đã thấy"
 //                     "n" (next)            như "⏳ Kiểm lại"
@@ -23,7 +27,7 @@
 //   https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { nextRecheck, RECHECK_DAYS, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { isCryptoSymbol, nextRecheck, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -189,7 +193,7 @@ async function handle(raw: string): Promise<Response> {
   const ownerRow = (settingsRows || []).find((r) => {
     const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
     if (v?.telegramChatId && String(v.telegramChatId) === String(fromChatId)) return true;
-    return (kind === "ta" || kind === "tr") && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
+    return ["ta", "tr", "rn", "rx"].includes(kind) && alertChat !== "" && alertChat === String(fromChatId) && !!v?.telegramBotToken;
   });
   if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
 
@@ -299,6 +303,21 @@ async function handle(raw: string): Promise<Response> {
     }
     notice = "🔕 Đã ngừng nhắc điền cho lệnh này.";
     messageSuffix = "\n\n🔕 Ngừng nhắc điền lệnh này.";
+  } else if (kind === "rn" || kind === "rx") {
+    // Tin khớp lệnh: không gỡ chữ, chỉ đổi nút — 🔁 ↔ ↩️ để bấm nhầm còn đổi lại được
+    const res = await reentryAction(supabase, userId, rest[0], rest[1], kind);
+    if ("error" in res) {
+      await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
+      return json({ error: res.error }, 500);
+    }
+    if (cb.message?.message_id && fromChatId) {
+      const ref = `${rest[0]}|${rest[1] || ""}`;
+      const keyboard = res.state === "armed" ? [[{ text: `↩️ Bỏ nhắc (${res.when})`, callback_data: `rx|${ref}` }]]
+        : res.state === "idle" ? [[{ text: "🔁 Nến re-entry", callback_data: `rn|${ref}` }]] : [];
+      await editMarkup(botToken, fromChatId, cb.message.message_id, keyboard);
+    }
+    await answerCallback(botToken, cb.id, res.notice, res.state === "final");
+    return json({ ok: true, kind, rest, state: res.state });
   } else if (kind === "ta" || kind === "tr") {
     const res = await alertAction(supabase, userId, botToken, fromChatId, rest[0], kind, cb.message?.message_id);
     if ("error" in res) {
@@ -341,7 +360,59 @@ async function handle(raw: string): Promise<Response> {
 type AlertRepeat = {
   id?: string; text?: string; ackedAt?: string; doneAt?: string; messageIds?: number[]; createdAt?: string;
   tf?: Tf | null; recheckAt?: string; recheckClose?: string; rechecks?: number; rev?: number;
+  every?: number; times?: number; sent?: number; nextAt?: string;
+  kind?: "reentry"; candleTf?: Tf; ref?: string; // nhắc dời SL tay nến re-entry: khung nến, <login>-<ticket>
 };
+
+type InboxItem = { id?: string; login?: string; ticket?: string; symbol?: string; side?: string; time?: number; accountName?: string };
+
+// 🔁 Nến re-entry / ↩️ Bỏ nhắc. state: armed = đã hẹn, idle = chưa hẹn (còn nút 🔁), final = hết nút
+async function reentryAction(
+  supabase: ReturnType<typeof createClient>, userId: string, ref: string, tfRaw: string | undefined, kind: "rn" | "rx",
+): Promise<{ notice: string; state: "armed" | "idle" | "final"; when?: string } | { error: string }> {
+  const [login, ticket] = String(ref || "").split("-");
+  if (!login || !ticket) return { notice: "Nút không hợp lệ.", state: "final" };
+  const id = reentryId(login, ticket);
+  const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
+  const existing = list.find((r) => r.id === id);
+  const now = Date.now();
+
+  if (kind === "rx") {
+    if (!existing?.recheckAt) {
+      return existing ? { notice: "Đã nhắc rồi, không bỏ được nữa.", state: "final" } : { notice: "↩️ Chưa hẹn nhắc nào.", state: "idle" };
+    }
+    const { error } = await writeValue(supabase, userId, "alertRepeats", list.filter((r) => r.id !== id));
+    if (error) return { error: error.message };
+    return { notice: "↩️ Đã bỏ nhắc dời SL tay.", state: "idle" };
+  }
+
+  if (existing?.recheckAt) {
+    const when = vnTime(Date.parse(existing.recheckAt), now);
+    return { notice: `Đã hẹn nhắc lúc ${when} rồi.`, state: "armed", when };
+  }
+  const inbox = ((await readValue(supabase, userId, "mt5Inbox")) || []) as InboxItem[];
+  const it = inbox.find((x) => x.id === `${login}-${ticket}`);
+  if (!it?.time) return { notice: "Không tìm thấy lệnh này trong hộp chờ nữa.", state: "final" };
+  if (inbox.some((x) => x.id === `${login}-${ticket}-close`)) return { notice: "Lệnh này đã đóng rồi.", state: "final" };
+  const tf = (["H4", "H8", "D"].includes(String(tfRaw)) ? tfRaw : "H4") as Tf;
+  const plan = reentryPlan(tf, it.time * 1000, isCryptoSymbol(it.symbol || ""));
+  if (now >= plan.eaAt) {
+    return { notice: `EA đã tự kéo SL từ nến đóng ${vnTime(plan.eaAt, now)} rồi — không cần dời tay nữa.`, state: "final" };
+  }
+  const at = Math.max(plan.at, now); // bấm muộn (nến vào lệnh đã đóng) → nhắc ngay ở lượt tick kế
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const side = it.side === "sell" ? "Sell" : "Buy";
+  const record: AlertRepeat = {
+    id, kind: "reentry", ref: `${login}-${ticket}`, candleTf: tf, tf: null,
+    text: `✋ ${it.symbol} ${side} · ${it.accountName || login} — khớp ${vnTime(it.time * 1000, now)}`,
+    every: 2, times: 5, sent: 0, rev: 0, createdAt: iso(now), messageIds: [],
+    ackedAt: iso(now), nextAt: iso(at), recheckAt: iso(at), recheckClose: iso(plan.close),
+  };
+  const { error } = await writeValue(supabase, userId, "alertRepeats", [...list.filter((r) => r.id !== id), record]);
+  if (error) return { error: error.message };
+  const when = vnTime(at, now);
+  return { notice: `🔁 Sẽ nhắc dời SL tay lúc ${when} (nến ${tf} vào lệnh đóng ${vnTime(plan.close, now)}).`, state: "armed", when };
+}
 
 // "✅ Đã thấy" (ta): ngừng gửi lại, bỏ luôn lịch kiểm lại. "⏳ Kiểm lại" (tr): ngừng nhắc vòng này, hẹn
 // gửi lại lúc nến kế tiếp của khung đóng. Cả hai gỡ nút ở các tin của cùng cảnh báo (trừ `keepMid` —
@@ -376,6 +447,9 @@ async function alertAction(
   }
   if (kind === "tr") {
     return { item, notice: `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`, suffix: `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.` };
+  }
+  if (item.kind === "reentry") {
+    return { item, notice: `✅ Đã dời SL lúc ${vnClock()} — từ nến sau EA tự kéo.`, suffix: `\n\n✅ Đã dời SL lúc ${vnClock()}.` };
   }
   return { item, notice: `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`, suffix: `\n\n✅ Đã thấy lúc ${vnClock()}.` };
 }
