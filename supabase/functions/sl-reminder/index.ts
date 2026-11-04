@@ -10,6 +10,8 @@
 // Ngoài ra còn nhắc hằng tuần: điền nốt lệnh dở, tổng kết tuần, và đối chiếu file sàn.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { vnTime } from "../_shared/alertRecheck.ts";
+import { hotList, hotMatches, type HotSettings, type HotSymbol } from "../_shared/hotSymbols.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -518,6 +520,29 @@ function capMoney(v: number, currency?: string) {
 }
 
 // Khuôn tin nhắn chung: dòng trống → tiêu đề (kèm bối cảnh) → chủ thể được làm nổi bật.
+type AlertRepeatLite = { text?: string; createdAt?: string; ackedAt?: string; recheckAt?: string };
+
+// "🔥 Mã tiềm năng — xem trước:" rồi mỗi mã một dòng; mã đã có cảnh báo xếp trước, mới nhất trước.
+function hotSetupLines(hot: HotSymbol[], repeats: AlertRepeatLite[], now: number) {
+  const since = now - 24 * 3600 * 1000;
+  const rows = hot.map((h) => {
+    const fired = repeats
+      .filter((r) => Date.parse(r.createdAt || "") > since && hotMatches(String(r.text || ""), [h]).length)
+      .sort((a, b) => Date.parse(b.createdAt!) - Date.parse(a.createdAt!));
+    const last = fired[0];
+    let state = "chưa có cảnh báo";
+    if (last) {
+      const at = vnTime(Date.parse(last.createdAt!), now);
+      state = last.recheckAt ? `báo ${at} · ⏳ hẹn kiểm lại ${vnTime(Date.parse(last.recheckAt), now)}`
+        : last.ackedAt ? `báo ${at} · ✅ đã thấy` : `📈 BÁO ${at} — CHƯA XỬ LÝ`;
+      if (fired.length > 1) state += ` (${fired.length} lần)`;
+    }
+    const note = String(h.note || "").trim();
+    return { at: last ? Date.parse(last.createdAt!) : 0, text: `• ${String(h.name).toUpperCase()} — ${state}${note ? `\n   📝 ${note}` : ""}` };
+  }).sort((a, b) => b.at - a.at);
+  return ["", "🔥 Mã tiềm năng — xem trước:", ...rows.map((r) => r.text)].join("\n");
+}
+
 function buildMessage(titleIcon: string, title: string, mark: string, subject: string, titleSuffix?: string, extra?: string) {
   const head = titleSuffix ? `${titleIcon} ${title} | ${titleSuffix}` : `${titleIcon} ${title}`;
   const lines = [LEAD, head, `${mark} ${subject} ${mark}`];
@@ -606,7 +631,7 @@ Deno.serve(async () => {
       capitalPickReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
-    };
+    } & HotSettings;
     // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
 
@@ -753,6 +778,14 @@ Deno.serve(async () => {
       }
     }
 
+    // Mã tiềm năng đứng đầu tin kiểm tra setup, kèm cảnh báo TradingView 24 giờ qua của từng mã
+    const hot = dueSetupChecks.length ? hotList(settings) : [];
+    let hotExtra = "";
+    if (hot.length) {
+      const { data: repRow } = await supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "alertRepeats").maybeSingle();
+      hotExtra = hotSetupLines(hot, (Array.isArray(repRow?.value) ? repRow!.value : []) as AlertRepeatLite[], Date.now());
+    }
+
     for (const sched of dueSetupChecks) {
       const account = accounts.find((a) => a.id === sched.accountId);
       const accountName = account ? account.name : sched.accountName;
@@ -764,7 +797,7 @@ Deno.serve(async () => {
       const logKey = `setup_${today}_${sched.accountId}_${matchedHour}`;
       if (log[logKey]) continue;
 
-      const text = buildMessage("🔍", "KIỂM TRA SETUP", "⚡", accountName);
+      const text = buildMessage("🔍", "KIỂM TRA SETUP", "⚡", accountName, undefined, hotExtra || undefined);
       const ok = await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, sched.threadId, {
         inline_keyboard: [[
           { text: "✅ Đã kiểm tra", callback_data: `sc|${sched.accountId}|${today}|${matchedHour}` },

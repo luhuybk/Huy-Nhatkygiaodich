@@ -2566,3 +2566,17 @@ button.nt-check:hover { filter: brightness(1.25); }
 .variant-row.on .variant-check { color:var(--text); border-style:solid; border-color:rgba(var(--accent-rgb),0.6); background:rgba(var(--accent-rgb),0.08); }
 .variant-tag { display:inline-block; margin-left:6px; padding:0 6px; border-radius:999px; font-size:10.5px; font-weight:700; line-height:17px;
   color:var(--accent); background:rgba(var(--accent-rgb),0.14); vertical-align:1px; }
+
+/* Mã tiềm năng (Lịch nhắc) */
+.hot-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.hot-row { display: flex; align-items: center; gap: 8px; }
+.hot-name { flex: 0 0 auto; min-width: 84px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #f97316; font-size: 13px; }
+.hot-note { flex: 1 1 auto; min-width: 0; padding: 6px 10px; font-size: 13px; }
+.hot-age { flex: 0 0 auto; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.hot-preview { margin-top: 10px; }
+.hot-preview pre { margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2, rgba(127,127,127,.08)); border: 1px solid var(--border);
+  font-size: 12.5px; white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+@media (max-width: 600px) {
+  .hot-row { flex-wrap: wrap; }
+  .hot-age { width: 100%; padding-left: 2px; }
+}

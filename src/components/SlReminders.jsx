@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Clock, Settings2,
+  CalendarDays, Clock, Settings2, Flame,
 } from "lucide-react";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
@@ -447,6 +447,76 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
 }
 
 
+// ───────────────────────── Mã tiềm năng ─────────────────────────
+
+// Ghi chú của một mã: sửa thoải mái, rời ô mới lưu (khỏi ghi lên máy chủ mỗi phím).
+function HotNote({ value, onSave }) {
+  const [text, setText] = useState(value || "");
+  return (
+    <input className="input hot-note" value={text} placeholder="Lý do / kịch bản chờ — VD: chờ phá đỉnh H4 vùng 1.0850"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => { if (text.trim() !== (value || "").trim()) onSave(text.trim()); }}
+      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+  );
+}
+
+const hotAge = (iso) => {
+  const d = daysSince(iso);
+  return d === null ? "" : d <= 0 ? "thêm hôm nay" : `thêm ${d} ngày trước`;
+};
+
+function HotBody({ settings, onChange, resources, trades, watches }) {
+  const list = settings.hotSymbols || [];
+  const save = (next) => onChange({ ...settings, hotSymbols: next });
+  const suggestions = useMemo(() => {
+    const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).filter((x) => !x.done).map((x) => x.name)))];
+    return [...used, ...symbolSuggestions(resources, trades, used, 40)];
+  }, [watches, resources, trades]);
+  const add = (names) => {
+    const have = new Set(list.map((h) => h.name));
+    const fresh = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, note: "", addedAt: new Date().toISOString() }));
+    if (fresh.length) save([...list, ...fresh]);
+  };
+  const first = list[0];
+  return (
+    <div>
+      <p className="field-hint" style={{ marginTop: 8 }}>
+        Cảnh báo TradingView có tên mã trong danh sách sẽ có dòng <b>🔥 MÃ TIỀM NĂNG</b> ở đầu tin (thấy ngay trên màn hình khoá),
+        luôn có chuông và nhắc lại tới khi bạn gõ <b>ok</b> / <b>n</b>. Tin <b>Kiểm tra setup</b> cũng liệt kê các mã này đầu tiên,
+        kèm đã báo lúc mấy giờ, đã xử lý chưa.
+      </p>
+      <SymbolBox items={list} suggestions={suggestions} onAdd={add} onRemove={(x) => save(list.filter((h) => h.id !== x.id))}
+        placeholder="EURUSD XAUUSD NVDA" />
+      {list.length ? (
+        <div className="hot-list">
+          {list.map((h) => (
+            <div key={h.id} className="hot-row">
+              <span className="hot-name mono"><Flame size={12} /> {h.name}</span>
+              <HotNote value={h.note} onSave={(note) => save(list.map((x) => (x.id === h.id ? { ...x, note } : x)))} />
+              <span className="hot-age">{hotAge(h.addedAt)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {first ? (
+        <div className="hot-preview">
+          <span className="field-hint">Tin Telegram sẽ như sau:</span>
+          <pre>{`🔥🔥🔥 MÃ TIỀM NĂNG · ${first.name} 🔥🔥🔥${first.note ? `\n📝 ${first.note}` : ""}\n📈 [H4] - ${first.name} : …`}</pre>
+        </div>
+      ) : null}
+      <p className="field-hint">
+        Tin cảnh báo cần có tên mã viết hoa — đặt <span className="mono">{"{{ticker}}"}</span> trong ô Tin nhắn của TradingView là chắc nhất.
+        Setup xong hoặc hết tiềm năng thì bấm ✕ để bỏ, tránh danh sách dài lại thành "mã nào cũng nổi bật".
+      </p>
+      {list.length > 1 ? (
+        <div className="form-actions" style={{ justifyContent: "flex-start" }}>
+          <DangerConfirmButton onConfirm={() => save([])} label="Xoá cả danh sách" confirmLabel="Bấm lần nữa để xoá hết" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // Khung nến của nhóm theo dõi: để trống là giờ gõ tay; chọn H4/H8/D là giờ tự tính theo nến.
 function WatchTfSelect({ value, options, onChange, inline }) {
   return (
@@ -746,6 +816,13 @@ export function PlansPanel({
     if (!on.length) return watches.length ? "Không nhóm nào đang chạy" : "Chưa có nhóm nào";
     return on.map((w) => `${w.label || "Nhóm"} ${watchLiveSymbols(w).length} mã ${watchIsAuto(w) ? w.timeframe : hoursText(w.hours)}`).join(" · ");
   })();
+  const hotOn = s.hotEnabled !== false;
+  const hotSummary = (() => {
+    const list = s.hotSymbols || [];
+    if (!list.length) return "Chưa có mã nào — thêm mã để cảnh báo TradingView của mã đó nổi bật trên Telegram";
+    const names = list.map((h) => h.name);
+    return `${names.slice(0, 8).join(" · ")}${names.length > 8 ? ` +${names.length - 8}` : ""}`;
+  })();
   const setupSummary = (() => {
     const on = (s.setupCheckSchedules || []).filter((sc) => sc && sc.enabled);
     if (!on.length) return "Chưa bật tài khoản nào";
@@ -776,6 +853,10 @@ export function PlansPanel({
         <button type="button" className="plan-link" onClick={() => setSeasonOpen(true)}>dời giờ ±1</button>
       </div>
 
+      <PlanSection id="hot" icon={Flame} title="Mã tiềm năng" summary={hotSummary}
+        on={hotOn} onToggle={(v) => onSettingsChange({ ...s, hotEnabled: v })} open={open === "hot"} onOpen={setOpen}>
+        <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} />
+      </PlanSection>
       <PlanSection id="sl" icon={ArrowUpDown} title="Dời SL" summary={slSummary}
         on={!!s.enabled} onToggle={(v) => onSettingsChange({ ...s, enabled: v })} open={open === "sl"} onOpen={setOpen}>
         <SlBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades}

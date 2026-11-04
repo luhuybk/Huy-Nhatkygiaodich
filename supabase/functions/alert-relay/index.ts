@@ -15,6 +15,9 @@
 //   repeat  1/true = kèm nút "✅ Đã thấy" và gửi lại tin mới mỗi `every` phút (mặc định 2) cho tới khi
 //           bấm nút, tối đa `times` lần kể cả lần đầu (mặc định 5) — để lỡ lần đầu vẫn còn lần sau
 //
+// Mã tiềm năng (Lịch nhắc → Mã tiềm năng): tin TradingView nhắc tới mã trong danh sách thì có dòng
+// "🔥🔥🔥 MÃ TIỀM NĂNG · <mã> 🔥🔥🔥" (+ ghi chú) ở đầu, bỏ qua silent và luôn nhắc lại như repeat=1.
+//
 // Gửi lại do pg_cron gọi ?tick=1 mỗi phút (supabase-alert-relay-cron.sql). Tick không cần khoá: nó chỉ
 // gửi các tin đã tới hạn, ai gọi thêm cũng không làm tin bị gửi dày hơn.
 // Nút "✅ Đã thấy" (callback ta|<id>) do function telegram-webhook xử lý.
@@ -32,6 +35,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { alertButtons, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { hotHead, hotList, hotMatches, type HotSettings } from "../_shared/hotSymbols.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -46,7 +50,7 @@ const KEEP_HOURS = 24; // tin nhắc lại đã xong giữ thêm 1 ngày để b
 // Máy chủ gửi webhook của TradingView (TradingView công bố, mục "About webhooks")
 const TV_WEBHOOK_IPS = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7"];
 
-type Settings = { telegramBotToken?: string; telegramChatId?: string };
+type Settings = HotSettings & { telegramBotToken?: string; telegramChatId?: string };
 type Repeat = {
   id: string; text: string; topic?: number; every: number; times: number; sent: number;
   nextAt: string; createdAt: string; messageIds: number[]; ackedAt?: string; doneAt?: string;
@@ -139,10 +143,14 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   if (!due.length) return json({ ok: true, due: 0 });
 
   const token = owner.settings.telegramBotToken!;
+  const hot = hotList(owner.settings);
   for (const r of due) {
     r.sent += 1;
     const last = r.sent >= r.times;
-    const lines = r.sent > 1 ? [`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`] : [];
+    // Dòng 🔥 tính lại theo danh sách hiện tại: bỏ mã khỏi danh sách thì lần nhắc sau thôi nổi bật
+    const hotLine = hotHead(hotMatches(r.text, hot));
+    const lines = hotLine ? [hotLine] : [];
+    if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
     if (r.head) lines.push(r.head);
     lines.push(r.text);
     const payload: Record<string, unknown> = {
@@ -217,12 +225,15 @@ Deno.serve(async (req) => {
   }
   if (!owner) return json({ error: "Chưa điền Bot Token / Chat ID ở Thông báo → Nhắc dời SL" }, 500);
 
-  const payload: Record<string, unknown> = { chat_id: owner.chatId, text };
+  // Mã tiềm năng: dòng 🔥 lên đầu, luôn có chuông và luôn nhắc lại tới khi bấm ✅ / ⏳ (hoặc gõ ok / n)
+  const hits = fromTv ? hotMatches(text, hotList(owner.settings)) : [];
+  const hotLine = hotHead(hits);
+  const payload: Record<string, unknown> = { chat_id: owner.chatId, text: hotLine ? `${hotLine}\n${text}` : text };
   const topic = Number(pick("topic")) || ALERT_TOPIC;
   if (topic && !Number.isNaN(topic)) payload.message_thread_id = topic;
-  if (truthy(pick("silent"))) payload.disable_notification = true;
+  if (truthy(pick("silent")) && !hotLine) payload.disable_notification = true;
 
-  const repeat = truthy(pick("repeat"));
+  const repeat = truthy(pick("repeat")) || !!hotLine;
   const id = repeat ? crypto.randomUUID().replace(/-/g, "").slice(0, 10) : "";
   const tf = fromTv ? tfOf(text) : null;
   if (repeat) payload.reply_markup = alertButtons(id, tf);
@@ -247,5 +258,5 @@ Deno.serve(async (req) => {
     const { error } = await writeRepeats(supabase, owner.userId, list);
     if (error) console.error("save repeat failed", error.message);
   }
-  return json({ ok: true, repeat: repeat ? id : undefined });
+  return json({ ok: true, repeat: repeat ? id : undefined, hot: hits.length ? hits.map((h) => h.name) : undefined });
 });
