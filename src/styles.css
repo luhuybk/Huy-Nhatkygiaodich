@@ -2609,3 +2609,8 @@ button.nt-check:hover { filter: brightness(1.25); }
   .alert-actions { width: 100%; justify-content: flex-end; }
   .alert-add-sym { flex: 1 1 120px; }
 }
+.alert-group-title { display: flex; align-items: center; gap: 4px; }
+.alert-clear-all { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 4px; border-radius: 4px; }
+.alert-clear-all:hover { color: var(--loss); background: rgba(127, 127, 127, .1); }
+.alert-clean-ok { color: var(--win); }

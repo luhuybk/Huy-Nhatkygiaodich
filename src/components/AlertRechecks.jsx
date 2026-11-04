@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Hourglass, Trash2, PlusCircle, RefreshCw } from "lucide-react";
+import { Hourglass, Trash2, PlusCircle, RefreshCw, Eraser } from "lucide-react";
+import { supabase } from "../supabaseClient.js";
 import { safeGet, safeSet, untelexSymbol } from "../lib/helpers.js";
 // Dùng đúng hàm của máy chủ (alert-relay / telegram-webhook) để giờ nến trên web khớp Telegram
 import { nextRecheck, RECHECK_DAYS, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
@@ -152,9 +153,62 @@ function AddAlertForm({ resources, onAdd, onCancel }) {
   );
 }
 
+// Dọn tin trên Telegram qua alert-relay (?clean=alerts|all) — bot xoá, web chỉ ra lệnh.
+function TelegramCleaner({ onClose }) {
+  const [busy, setBusy] = useState("");
+  const [result, setResult] = useState(null);
+  const run = async (mode) => {
+    setBusy(mode); setResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke(`alert-relay?clean=${mode}`, { body: {} });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* không có nội dung */ }
+        setResult({ ok: false, text: `Không dọn được: ${msg}` });
+        return;
+      }
+      const parts = [mode === "all" ? "Đã dọn sạch nhóm cảnh báo." : `Đã dọn ${data.tried - data.failed} tin cảnh báo.`];
+      if (data.kept) parts.push(`Giữ lại ${data.kept} tin của cảnh báo đang nhắc.`);
+      if (data.failed) {
+        parts.push(`${data.failed} tin không xoá được${data.reason ? ` (${data.reason})` : ""} — Telegram chỉ cho bot xoá tin trong 48 giờ; tin bạn tự gõ (n, ok) cần bot là quản trị viên nhóm có quyền xoá tin.`);
+      }
+      setResult({ ok: true, text: parts.join(" ") });
+    } catch (e) {
+      setResult({ ok: false, text: `Không dọn được: ${String((e && e.message) || e)}` });
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <div className="alert-add">
+      <p className="field-hint" style={{ marginTop: 0 }}>
+        Bot xoá tin trong nhóm nhận cảnh báo. Tin mới nhất của cảnh báo <b>đang nhắc</b> luôn được giữ lại.
+        Cảnh báo chờ kiểm lại không mất — tới giờ bot vẫn gửi tin mới.
+      </p>
+      <div className="form-actions" style={{ justifyContent: "flex-start", flexWrap: "wrap", marginTop: 4 }}>
+        <button type="button" className="btn btn-ghost btn-xs" disabled={!!busy} onClick={() => run("alerts")}
+          title="Chỉ các tin cảnh báo TradingView bot đã gửi (trong 24 giờ qua)">
+          {busy === "alerts" ? "Đang dọn…" : "Chỉ tin cảnh báo"}
+        </button>
+        <button type="button" className="btn btn-ghost btn-xs alert-del" disabled={!!busy} onClick={() => run("all")}
+          title="Mọi tin trong nhóm cảnh báo 48 giờ qua: cảnh báo, tin trả lời n/ok, các tin nhắc khác nếu chung nhóm">
+          {busy === "all" ? "Đang dọn… (có thể mất nửa phút)" : "Dọn sạch cả nhóm (48 giờ)"}
+        </button>
+        <button type="button" className="btn btn-ghost btn-xs" disabled={!!busy} onClick={onClose}>Đóng</button>
+      </div>
+      <p className="field-hint">
+        "Dọn sạch cả nhóm" xoá mọi tin bot xoá được trong nhóm cảnh báo — nếu nhóm này cũng nhận nhắc dời SL / kiểm tra setup
+        thì các tin đó (và nút trên tin) cũng mất.
+      </p>
+      {result ? <p className={result.ok ? "field-hint alert-clean-ok" : "error-text"}>{result.text}</p> : null}
+    </div>
+  );
+}
+
 export function AlertRechecksBody({ data, resources, settings }) {
   const { list, load, mutate, error } = data;
   const [adding, setAdding] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const [busy, setBusy] = useState(false);
   const now = Date.now();
   const hot = useMemo(() => hotList(settings), [settings]);
@@ -162,6 +216,7 @@ export function AlertRechecksBody({ data, resources, settings }) {
 
   const edit = async (fn) => { setBusy(true); try { return await mutate(fn); } finally { setBusy(false); } };
   const remove = (r) => edit((all) => all.filter((x) => x.id !== r.id));
+  const removeMany = (items) => { const ids = new Set(items.map((x) => x.id)); return edit((all) => all.filter((x) => !ids.has(x.id))); };
   const next = (r) => edit((all) => all.map((x) => {
     if (x.id !== r.id) return x;
     const t = Date.now();
@@ -185,9 +240,16 @@ export function AlertRechecksBody({ data, resources, settings }) {
 
   if (!list) return <p className="field-hint" style={{ marginTop: 8 }}>Đang tải…</p>;
   const empty = !b.waiting.length && !b.ringing.length && !b.unhandled.length;
-  const section = (title, items, kind) => (items.length ? (
+  const section = (title, items, kind, clearAll) => (items.length ? (
     <div className="alert-group">
-      <div className="alert-group-title">{title} <span>({items.length})</span></div>
+      <div className="alert-group-title">
+        {title} <span>({items.length})</span>
+        {clearAll && items.length > 1 ? (
+          <button type="button" className="alert-clear-all" onClick={() => removeMany(items)} title="Xoá cả nhóm này khỏi danh sách">
+            <Trash2 size={11} /> Xoá hết
+          </button>
+        ) : null}
+      </div>
       {items.map((r) => <AlertRow key={r.id} r={r} kind={kind} hot={hot} now={now} onNext={next} onRemove={remove} />)}
     </div>
   ) : null);
@@ -201,11 +263,16 @@ export function AlertRechecksBody({ data, resources, settings }) {
       {empty ? <p className="field-hint alert-empty">Không có cảnh báo nào đang chờ.</p> : null}
       {section("Chờ kiểm lại theo nến", b.waiting, "waiting")}
       {section("Đang nhắc", b.ringing, "ringing")}
-      {section(`Hết lượt nhắc, chưa xử lý (${LIVE_HOURS} giờ qua)`, b.unhandled, "unhandled")}
+      {section(`Hết lượt nhắc, chưa xử lý (${LIVE_HOURS} giờ qua)`, b.unhandled, "unhandled", true)}
       {error ? <p className="error-text">{error}</p> : null}
-      {adding ? <AddAlertForm resources={resources} onAdd={add} onCancel={() => setAdding(false)} /> : (
-        <div className="form-actions" style={{ justifyContent: "flex-start", marginTop: 8 }}>
+      {adding ? <AddAlertForm resources={resources} onAdd={add} onCancel={() => setAdding(false)} /> : null}
+      {cleaning ? <TelegramCleaner onClose={() => setCleaning(false)} /> : null}
+      {adding || cleaning ? null : (
+        <div className="form-actions" style={{ justifyContent: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => setAdding(true)}><PlusCircle size={12} /> Thêm nhắc kiểm lại</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setCleaning(true)} title="Xoá bớt tin trên Telegram cho đỡ rối">
+            <Eraser size={12} /> Dọn tin Telegram
+          </button>
           <button type="button" className="btn btn-ghost btn-xs" onClick={load} title="Tải lại từ máy chủ"><RefreshCw size={12} /> Làm mới</button>
           {b.doneToday ? <span className="field-hint">{b.doneToday} cảnh báo đã xong trong 24 giờ qua</span> : null}
         </div>

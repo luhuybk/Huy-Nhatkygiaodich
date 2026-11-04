@@ -25,6 +25,11 @@
 // tới lúc nến kế tiếp của khung đó đóng (nến đóng trong giờ nghỉ thì 8h45) tick gửi lại tin, lại nhắc
 // như lần đầu cho tới khi bấm một trong hai nút. Khung lấy từ tiền tố tin — xem _shared/alertRecheck.ts.
 //
+// Dọn tin Telegram (nút ở Lịch nhắc → Cảnh báo nhắc lại): POST ?clean=alerts|all từ web, kèm JWT của
+// người dùng (chỉ chủ nhật ký mới gọi được). alerts = chỉ các tin cảnh báo bot còn nhớ id; all = mọi tin
+// trong nhóm cảnh báo mà bot xoá được (Telegram chỉ cho xoá tin trong 48 giờ; tin của người khác cần bot
+// là quản trị viên có quyền xoá). Cả hai đều giữ tin mới nhất của cảnh báo còn đang nhắc.
+//
 // Tắt tạm tin của EA (tin TradingView vẫn gửi): supabase secrets set ALERT_RELAY_EA=off  (bật lại: =on)
 // Gửi sang nhóm riêng: supabase secrets set ALERT_RELAY_CHAT_ID=<chat id nhóm, dạng -100…> [ALERT_RELAY_TOPIC=<id topic>]
 //   (telegram-webhook đọc cùng biến này để nút "✅ Đã thấy" trong nhóm đó vẫn bấm được)
@@ -62,8 +67,14 @@ type Repeat = {
   rev?: number;         // tăng mỗi lần sửa — tick chỉ ghi đè bản ghi chưa bị telegram-webhook sửa
 };
 
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, apikey, content-type, x-client-info",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS } });
 }
 
 const truthy = (v: unknown) => v === true || v === 1 || ["1", "true", "yes"].includes(String(v ?? "").toLowerCase());
@@ -192,11 +203,92 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   return json({ ok: true, due: due.length });
 }
 
+const CLEAN_SCAN = 1500; // dọn sạch: lùi tối đa ngần này id tính từ tin mới nhất
+
+async function tgCall(botToken: string, method: string, body: unknown) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    let info: { ok?: boolean; description?: string; parameters?: { retry_after?: number } } = {};
+    try { info = await res.json(); } catch (_e) { /* không phải JSON */ }
+    if (res.ok) return { ok: true, desc: "" };
+    const wait = info.parameters?.retry_after;
+    if (res.status === 429 && wait && wait <= 15) { await new Promise((r) => setTimeout(r, wait * 1000 + 200)); continue; }
+    return { ok: false, desc: info.description || `HTTP ${res.status}` };
+  }
+  return { ok: false, desc: "Telegram giới hạn tốc độ" };
+}
+
+// Xoá theo lô 100 id (deleteMessages bỏ qua id không có). Lô bị từ chối (có tin quá 48 giờ / không có
+// quyền) thì chia đôi dần để vẫn xoá được phần xoá được. Trả về số id bị từ chối hẳn.
+async function deleteBatch(botToken: string, chatId: string, ids: number[]): Promise<{ failed: number; reason: string }> {
+  if (!ids.length) return { failed: 0, reason: "" };
+  const r = await tgCall(botToken, "deleteMessages", { chat_id: chatId, message_ids: ids });
+  if (r.ok) return { failed: 0, reason: "" };
+  if (ids.length === 1) return { failed: 1, reason: r.desc };
+  const mid = Math.ceil(ids.length / 2);
+  const a = await deleteBatch(botToken, chatId, ids.slice(0, mid));
+  const b = await deleteBatch(botToken, chatId, ids.slice(mid));
+  return { failed: a.failed + b.failed, reason: a.reason || b.reason };
+}
+
+async function clean(req: Request, supabase: ReturnType<typeof createClient>, mode: string) {
+  const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  const { data: who } = jwt ? await supabase.auth.getUser(jwt) : { data: null };
+  const owner = await loadOwner(supabase);
+  if (!owner) return json({ error: "Chưa điền Bot Token / Chat ID" }, 400);
+  if (!who?.user || who.user.id !== owner.userId) return json({ error: "Không có quyền" }, 401);
+  const token = owner.settings.telegramBotToken!;
+  const list = await readRepeats(supabase, owner.userId);
+  const keep = new Set<number>();
+  for (const r of list) {
+    if (!r.ackedAt && !r.doneAt && r.messageIds.length) keep.add(r.messageIds[r.messageIds.length - 1]);
+  }
+
+  let failed = 0;
+  let reason = "";
+  let tried = 0;
+  if (mode === "all") {
+    // Lấy id mới nhất của nhóm bằng một tin tạm (bị xoá luôn trong lượt dọn)
+    const probe = await sendTelegram(token, { chat_id: owner.chatId, text: "🧹 Đang dọn tin…", disable_notification: true });
+    if (typeof probe !== "number" || !probe) return json({ error: `Không gửi được tin vào nhóm: ${probe}` }, 502);
+    for (let top = probe; top > Math.max(0, probe - CLEAN_SCAN); top -= 100) {
+      const ids: number[] = [];
+      for (let id = top; id > Math.max(0, top - 100); id--) if (!keep.has(id)) ids.push(id);
+      tried += ids.length;
+      const res = await deleteBatch(token, owner.chatId, ids);
+      failed += res.failed;
+      reason = reason || res.reason;
+      // Cả lô không xoá được tin nào = đã lùi tới tin quá 48 giờ, phía trước còn cũ hơn → dừng
+      if (ids.length && res.failed === ids.length) break;
+    }
+  } else {
+    const ids = [...new Set(list.flatMap((r) => r.messageIds || []))].filter((id) => !keep.has(id)).sort((a, b) => b - a);
+    tried = ids.length;
+    for (let i = 0; i < ids.length; i += 100) {
+      const res = await deleteBatch(token, owner.chatId, ids.slice(i, i + 100));
+      failed += res.failed;
+      reason = reason || res.reason;
+    }
+  }
+  return json({ ok: true, mode, tried, failed, reason, kept: keep.size, separateGroup: !!ALERT_CHAT_ID });
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Chỉ nhận POST" }, 405);
   const url = new URL(req.url);
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   if (url.searchParams.get("tick")) return await tick(supabase);
+  const cleanMode = url.searchParams.get("clean");
+  if (cleanMode) {
+    try {
+      return await clean(req, supabase, cleanMode === "all" ? "all" : "alerts");
+    } catch (e) {
+      return json({ error: String((e as Error).message || e) }, 500);
+    }
+  }
 
   // TradingView gửi chữ thường (text/plain) khi ô Tin nhắn không phải JSON; EA gửi JSON
   const raw = await req.text();
