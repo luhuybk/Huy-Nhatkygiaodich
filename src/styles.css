@@ -2614,3 +2614,7 @@ button.nt-check:hover { filter: brightness(1.25); }
   color: var(--text-dim); font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 4px; border-radius: 4px; }
 .alert-clear-all:hover { color: var(--loss); background: rgba(127, 127, 127, .1); }
 .alert-clean-ok { color: var(--win); }
+.symbol-hint-sep { color:var(--text-dim); opacity:.45; font-size:12px; margin:0 1px; user-select:none; }
+.symbol-hints-pinned .symbol-hint-group { color:#f97316; }
+.symbol-hint-cluster { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.symbol-hint-cluster-loose { display:contents; }

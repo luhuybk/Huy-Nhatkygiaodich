@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Hourglass, Trash2, PlusCircle, RefreshCw, Eraser } from "lucide-react";
 import { supabase } from "../supabaseClient.js";
-import { safeGet, safeSet, untelexSymbol } from "../lib/helpers.js";
+import { safeGet, safeSet } from "../lib/helpers.js";
+import { SymbolBox } from "./SymbolBox.jsx";
 // Dùng đúng hàm của máy chủ (alert-relay / telegram-webhook) để giờ nến trên web khớp Telegram
 import { nextRecheck, RECHECK_DAYS, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotList, hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
@@ -119,28 +120,35 @@ function AlertRow({ r, kind, hot, onNext, onRemove, now }) {
   );
 }
 
-function AddAlertForm({ resources, onAdd, onCancel }) {
-  const [sym, setSym] = useState("");
+// Chọn mã như ô Mã tiềm năng: bấm chip gợi ý (chia nhóm, hàng 🔥 Mã tiềm năng đứng đầu) hoặc gõ nhiều mã
+// một lần — mỗi mã thành một nhắc kiểm lại riêng, cùng khung và ghi chú.
+function AddAlertForm({ resources, hot, onAdd, onCancel }) {
+  const [syms, setSyms] = useState([]);
   const [tf, setTf] = useState("H4");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
-  const known = useMemo(() => new Set((resources && resources.symbols) || []), [resources]);
+  const suggestions = useMemo(() => {
+    const out = [...(hot || []).map((h) => String(h.name || "").toUpperCase()), ...((resources && resources.symbols) || [])];
+    return [...new Set(out.filter(Boolean))];
+  }, [resources, hot]);
+  const pinned = useMemo(() => ({ name: "🔥 Tiềm năng", list: [...new Set((hot || []).map((h) => String(h.name || "").toUpperCase()).filter(Boolean))] }), [hot]);
   const preview = useMemo(() => {
     const r = nextRecheck(tf, Date.now());
     return `nến ${tf} đóng ${vnTime(r.close)} → nhắc lúc ${vnTime(r.at)}`;
   }, [tf]);
   const submit = async () => {
-    const name = untelexSymbol(sym, known).replace(/[^A-Z0-9._:/!-]/g, "");
-    if (!name) { setErr("Nhập mã."); return; }
+    if (!syms.length) { setErr("Chọn ít nhất một mã."); return; }
     setErr("");
-    if (await onAdd({ name, tf, note: note.trim() })) { setSym(""); setNote(""); }
+    if (await onAdd({ names: syms, tf, note: note.trim() })) { setSyms([]); setNote(""); }
   };
   return (
     <div className="alert-add">
-      <div className="alert-add-row">
-        <input className="input alert-add-sym" list="alert-add-symbols" value={sym} placeholder="Mã, VD EURUSD" autoFocus
-          onChange={(e) => setSym(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
-        <datalist id="alert-add-symbols">{((resources && resources.symbols) || []).map((s) => <option key={s} value={s} />)}</datalist>
+      <SymbolBox items={syms.map((name) => ({ name }))} suggestions={suggestions} autoFocus alwaysHints pinned={pinned}
+        groupOf={resources && resources.symbolGroups} order={resources && resources.symbols}
+        onAdd={(names) => setSyms((cur) => [...cur, ...names.filter((n) => !cur.includes(n))])}
+        onRemove={(x) => setSyms((cur) => cur.filter((n) => n !== x.name))}
+        placeholder="Bấm mã bên dưới hoặc gõ: EUR/USD XAUUSD" />
+      <div className="alert-add-row" style={{ marginTop: 8 }}>
         <select className="input alert-add-tf" value={tf} onChange={(e) => setTf(e.target.value)}>
           {ALERT_TFS.map((x) => <option key={x} value={x}>Nến {x}</option>)}
         </select>
@@ -150,7 +158,9 @@ function AddAlertForm({ resources, onAdd, onCancel }) {
       <p className="field-hint">{preview}. Tới giờ bot gửi tin kèm nút ✅ / ⏳ như cảnh báo TradingView — gõ ok / n để trả lời.</p>
       {err ? <p className="error-text">{err}</p> : null}
       <div className="form-actions" style={{ justifyContent: "flex-start", marginTop: 4 }}>
-        <button type="button" className="btn btn-primary btn-xs" onClick={submit}>Thêm</button>
+        <button type="button" className="btn btn-primary btn-xs" onClick={submit}>
+          {syms.length > 1 ? `Thêm ${syms.length} mã` : "Thêm"}
+        </button>
         <button type="button" className="btn btn-ghost btn-xs" onClick={onCancel}>Đóng</button>
       </div>
     </div>
@@ -231,15 +241,15 @@ export function AlertRechecksBody({ data, resources, settings }) {
       rechecks: (x.rechecks || 0) + 1, rev: (x.rev || 0) + 1,
     };
   }));
-  const add = ({ name, tf, note }) => edit((all) => {
+  const add = ({ names, tf, note }) => edit((all) => {
     const t = Date.now();
     const rc = nextRecheck(tf, t);
     const iso = (ms) => new Date(ms).toISOString();
-    return [...all, {
+    return [...all, ...names.map((name) => ({
       id: newId(), text: `📈 [${tf}] - ${name}${note ? ` — ${note}` : ""}`, every: 2, times: 5, sent: 0, tf, rev: 0,
       nextAt: iso(rc.at), createdAt: iso(t), messageIds: [], ackedAt: iso(t),
       recheckAt: iso(rc.at), recheckClose: iso(rc.close), rechecks: 0, source: "web",
-    }];
+    }))];
   });
 
   if (!list) return <p className="field-hint" style={{ marginTop: 8 }}>Đang tải…</p>;
@@ -269,7 +279,7 @@ export function AlertRechecksBody({ data, resources, settings }) {
       {section("Đang nhắc", b.ringing, "ringing")}
       {section(`Hết lượt nhắc, chưa xử lý (${LIVE_HOURS} giờ qua)`, b.unhandled, "unhandled", true)}
       {error ? <p className="error-text">{error}</p> : null}
-      {adding ? <AddAlertForm resources={resources} onAdd={add} onCancel={() => setAdding(false)} /> : null}
+      {adding ? <AddAlertForm resources={resources} hot={hot} onAdd={add} onCancel={() => setAdding(false)} /> : null}
       {cleaning ? <TelegramCleaner onClose={() => setCleaning(false)} /> : null}
       {adding || cleaning ? null : (
         <div className="form-actions" style={{ justifyContent: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
