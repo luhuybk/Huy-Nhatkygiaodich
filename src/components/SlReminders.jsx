@@ -349,11 +349,20 @@ function PeriodicBody({ settings, onChange, remindersNode }) {
 // ───────────────────────── Symbol theo dõi ─────────────────────────
 
 // Ô nhập symbol dạng chip: gõ tên rồi phím cách / Enter / dấu phẩy là chốt thành một chip.
-// Backspace ở ô rỗng xóa chip cuối. Hàng "gợi ý" lọc theo chữ đang gõ.
+// Backspace ở ô rỗng: lần 1 tô đỏ chip cuối, lần 2 mới xóa. Hàng "gợi ý" lọc theo chữ đang gõ.
+// Bộ gõ tiếng Việt (OpenKey, EVKey…) sửa "us" → "ú" bằng cách tự bắn một loạt Backspace rồi gõ lại —
+// trước đây loạt phím đó rơi vào ô vừa trống và xóa sạch cả danh sách. Nên Backspace ngay sau lúc chữ
+// trong ô vừa đổi, phím giữ lặp, phím của bộ gõ (keyCode 229) hoặc hai phím sát nhau như máy bắn
+// đều bỏ qua.
+const BACKSPACE_AFTER_EDIT_MS = 800;
+const BACKSPACE_MIN_GAP_MS = 150;
 const SYMBOL_SUGGEST_SHOWN = 12;
 
 function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpty, placeholder, autoFocus, hideDone }) {
   const [text, setText] = useState("");
+  const [armed, setArmed] = useState(false); // chip cuối đang tô đỏ, chờ Backspace lần 2
+  const lastEditAt = useRef(0);
+  const armedAt = useRef(0);
   // Gợi ý chỉ hiện khi đang gõ vào ô (hoặc ô còn trống trơn) — không thì mỗi nhóm một hàng chip, rất rối.
   const [focused, setFocused] = useState(false);
   const chosen = useMemo(() => new Set((items || []).map((x) => x.name)), [items]);
@@ -374,6 +383,8 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
 
   // Gõ hoặc dán có dấu phân cách thì chốt luôn phần trước dấu, giữ lại đuôi đang gõ dở.
   const onType = (raw) => {
+    lastEditAt.current = Date.now();
+    setArmed(false);
     if (!/[,;\s]/.test(raw)) { setText(raw.toUpperCase()); return; }
     const parts = raw.split(/[,;\s]+/);
     const tail = /[,;\s]$/.test(raw) ? "" : parts.pop();
@@ -392,15 +403,23 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
     }
     if (e.key === "Backspace" && !text && shown.length) {
       e.preventDefault();
+      const now = Date.now();
+      if (e.repeat || e.nativeEvent.isComposing || e.keyCode === 229 || now - lastEditAt.current < BACKSPACE_AFTER_EDIT_MS) return;
+      if (!armed) { setArmed(true); armedAt.current = now; return; }
+      if (now - armedAt.current < BACKSPACE_MIN_GAP_MS) return;
+      setArmed(false);
       onRemove(shown[shown.length - 1]);
+      return;
     }
+    if (armed) setArmed(false);
   };
 
   return (
     <div>
       <div className="symbol-box" onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector("input").focus(); }}>
-        {shown.map((x) => (
-          <span key={x.id || x.name} className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""}`}>
+        {shown.map((x, i) => (
+          <span key={x.id || x.name} className={`watch-symbol-chip ${x.done ? "watch-symbol-chip-done" : ""} ${armed && i === shown.length - 1 ? "watch-symbol-chip-armed" : ""}`}
+            title={armed && i === shown.length - 1 ? "Bấm Backspace lần nữa để xóa" : undefined}>
             {onToggle ? (
               <button type="button" className="chip-main" onClick={() => onToggle(x)}
                 title={x.done ? "Đã ngừng theo dõi — bấm để theo dõi lại" : "Đang theo dõi — bấm để tạm ngừng"}>
@@ -424,7 +443,7 @@ function SymbolBox({ items, suggestions, onAdd, onRemove, onToggle, onSubmitEmpt
             setText("");
           }}
           onFocus={() => setFocused(true)}
-          onBlur={() => { setFocused(false); const names = parse(text); if (names.length) { onAdd(names); setText(""); } }} />
+          onBlur={() => { setFocused(false); setArmed(false); const names = parse(text); if (names.length) { onAdd(names); setText(""); } }} />
       </div>
       {telexed && fixed ? (
         <p className="field-hint telex-note">

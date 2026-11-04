@@ -251,6 +251,7 @@
         .watch-symbol-chip:hover { background:rgba(var(--accent-rgb),0.2); }
         .watch-symbol-chip-done { background:var(--surface-2); border-color:var(--border); color:var(--text-dim); }
         .watch-symbol-chip-done .chip-main { text-decoration:line-through; text-decoration-thickness:1px; }
+        .watch-symbol-chip.watch-symbol-chip-armed { border-color:var(--loss); color:var(--loss); background:color-mix(in srgb, var(--loss) 12%, transparent); }
         /* Ô nhập symbol dạng chip: cả khối trông như một input, ô gõ nằm lọt giữa các chip. */
         .symbol-box { display:flex; flex-wrap:wrap; align-items:center; gap:6px; width:100%; min-height:38px;
           padding:6px 8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); cursor:text; }
