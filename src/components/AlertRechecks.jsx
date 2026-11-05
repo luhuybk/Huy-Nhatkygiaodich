@@ -32,12 +32,25 @@ export function alertBuckets(list, now = Date.now()) {
     else if (!r.ackedAt && r.doneAt && Date.parse(r.doneAt) > cutoff) unhandled.push(r);
     else doneToday += 1;
   });
-  waiting.sort((a, b) => Date.parse(a.recheckAt) - Date.parse(b.recheckAt));
-  const byNew = (a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0);
-  ringing.sort(byNew);
-  unhandled.sort(byNew);
+  // Xếp theo mã (chữ cái — cặp cùng đồng base đứng cạnh nhau), cùng mã thì theo khung H4 → H8 → D
+  const byName = (a, b) => symbolKey(a).localeCompare(symbolKey(b)) || tfRank(a) - tfRank(b)
+    || Date.parse(a.recheckAt || a.createdAt || 0) - Date.parse(b.recheckAt || b.createdAt || 0);
+  waiting.sort(byName);
+  ringing.sort(byName);
+  unhandled.sort(byName);
   return { waiting, ringing, unhandled, doneToday };
 }
+
+// Mã trong tin: "📈 [H4] - EUR/AUD — …" → EURAUD; tin TradingView "OANDA:XAUUSD …" → XAUUSD
+export function symbolKey(r) {
+  const line = String((r && r.text) || "").split("\n").find((x) => x.trim()) || "";
+  const body = line.replace(/^\s*📈\s*/u, "").replace(/^\s*\[[^\]]*\]\s*-?\s*/, "");
+  const m = body.match(/[A-Z0-9][A-Z0-9._:\/!-]*/);
+  const tok = m ? m[0] : body;
+  return (tok.includes(":") ? tok.split(":").pop() : tok).replace(/[^A-Z0-9]/g, "") || body;
+}
+const TF_ORDER = ["H1", "H2", "H3", "H4", "H6", "H8", "H12", "D"];
+const tfRank = (r) => { const i = TF_ORDER.indexOf((r && (r.tf || r.candleTf)) || "D"); return i < 0 ? 99 : i; };
 
 // Một nhắc kiểm lại theo nến (thêm tay ở đây, hoặc tự thêm khi điền Mã tiềm năng — hotId = id mã đó)
 export function recheckRecord({ name, tf, note, hotId }, t = Date.now()) {
