@@ -2630,3 +2630,5 @@ button.nt-check:hover { filter: brightness(1.25); }
 .hot-recheck-add { font-size:11px; padding:2px 8px; border-radius:10px; border:1px dashed var(--border); background:transparent;
   color:var(--text-dim); cursor:pointer; white-space:nowrap; }
 .hot-recheck-add:hover { border-style:solid; color:var(--accent); border-color:rgba(var(--accent-rgb),0.5); }
+.hot-recheck-btns { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.hot-recheck-label { font-size:11px; color:var(--text-dim); }

@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, recheckText, useAlertRepeats } from "./AlertRechecks.jsx";
 import { SymbolBox } from "./SymbolBox.jsx";
-import { vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
+import { nextRecheck, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
@@ -378,18 +378,19 @@ const hotAge = (iso) => {
 const HOT_RECHECK_TFS = ["H4", "H8", "D"];
 
 export function HotBody({ settings, onChange, resources, trades, watches, alertData }) {
-  const list = settings.hotSymbols || [];
-  const save = (next) => onChange({ ...settings, hotSymbols: next });
+  // Xếp theo chữ cái (cặp FX cùng đồng base tự đứng cạnh nhau) — cả danh sách cũ lẫn mã mới thêm
+  const list = useMemo(() => sortWatchSymbols(settings.hotSymbols || []), [settings.hotSymbols]);
+  const save = (next) => onChange({ ...settings, hotSymbols: sortWatchSymbols(next) });
   const recheckTf = settings.hotRecheckTf === undefined ? "H4" : settings.hotRecheckTf;
   const alerts = alertData && Array.isArray(alertData.list) ? alertData.list : null;
   const linked = (h) => (alerts || []).find((r) => r.hotId === h.id && recheckPending(r));
   // Đã có nhắc còn hiệu lực cho mã này (kể cả thêm tay / từ TradingView) thì không thêm trùng
   const coveredBy = (all, name) => all.some((r) => recheckPending(r) && hotMatches(String(r.text || ""), [{ name }]).length);
-  const addRechecks = (items) => {
-    if (!recheckTf || !alerts || !items.length) return;
+  const addRechecks = (items, tf = recheckTf) => {
+    if (!tf || !alerts || !items.length) return;
     alertData.mutate((all) => {
       const t = Date.now();
-      return [...all, ...items.filter((h) => !coveredBy(all, h.name)).map((h) => recheckRecord({ name: h.name, tf: recheckTf, note: h.note, hotId: h.id }, t))];
+      return [...all, ...items.filter((h) => !coveredBy(all, h.name)).map((h) => recheckRecord({ name: h.name, tf, note: h.note, hotId: h.id }, t))];
     });
   };
   const dropRechecks = (ids) => {
@@ -439,7 +440,7 @@ export function HotBody({ settings, onChange, resources, trades, watches, alertD
             <div key={h.id} className="hot-row">
               <span className="hot-name mono"><Flame size={12} /> {h.name}</span>
               <HotNote value={h.note} onSave={(note) => saveNote(h, note)} />
-              <HotRecheckTag rec={linked(h)} canAdd={!!(alerts && recheckTf)} tf={recheckTf} onAdd={() => addRechecks([h])} />
+              <HotRecheckTag rec={linked(h)} canAdd={!!alerts} onAdd={(tf) => addRechecks([h], tf)} />
               <span className="hot-age">{hotAge(h.addedAt)}</span>
             </div>
           ))}
@@ -464,17 +465,23 @@ export function HotBody({ settings, onChange, resources, trades, watches, alertD
   );
 }
 
-// Trạng thái nhắc kiểm lại của một mã tiềm năng: ⏳ giờ nhắc / 🔔 đang nhắc / nút thêm
-function HotRecheckTag({ rec, canAdd, tf, onAdd }) {
+// Trạng thái nhắc kiểm lại của một mã tiềm năng: ⏳ giờ nhắc / 🔔 đang nhắc / nút thêm theo H4 · H8 · D
+function HotRecheckTag({ rec, canAdd, onAdd }) {
   if (rec && rec.recheckAt) {
     return <span className="hot-recheck-tag" title="Đang chờ nến đóng — xem ở Cảnh báo nhắc lại"><Hourglass size={11} /> {vnTime(Date.parse(rec.recheckAt))}</span>;
   }
   if (rec) return <span className="hot-recheck-tag hot-recheck-ringing" title="Bot đang nhắc trên Telegram">🔔 đang nhắc</span>;
   if (!canAdd) return null;
   return (
-    <button type="button" className="hot-recheck-add" onClick={onAdd} title={`Thêm nhắc kiểm lại lúc nến ${tf} kế tiếp đóng`}>
-      + nhắc {tf}
-    </button>
+    <span className="hot-recheck-btns">
+      <span className="hot-recheck-label">+ nhắc</span>
+      {HOT_RECHECK_TFS.map((tf) => (
+        <button key={tf} type="button" className="hot-recheck-add" onClick={() => onAdd(tf)}
+          title={`Nhắc kiểm lại lúc nến ${tf} kế tiếp đóng (${vnTime(nextRecheck(tf, Date.now()).at)})`}>
+          {tf}
+        </button>
+      ))}
+    </span>
   );
 }
 
