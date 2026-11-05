@@ -423,16 +423,26 @@ Deno.serve(async (req) => {
   if (repeat) {
     const every = clampInt(pick("every"), 2, 1, 60);
     const times = clampInt(pick("times"), 5, 2, 20);
-    const list = await readRepeats(supabase, owner.userId);
-    list.push({
+    const record: Repeat = {
       id, text, every, times, sent: 1, tf, rev: 0,
       topic: topic && !Number.isNaN(topic) ? topic : undefined,
       nextAt: new Date(Date.now() + every * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
       messageIds: sent ? [sent] : [],
-    });
-    const { error } = await writeRepeats(supabase, owner.userId, list);
-    if (error) console.error("save repeat failed", error.message);
+    };
+    // TradingView bắn nhiều cảnh báo cùng giây (cùng nến đóng) → nhiều lượt cùng đọc-ghi cả khối, lượt sau
+    // đè mất bản ghi của lượt trước. Ghi xong đợi chút rồi đọc lại: mất thì ghi lại (tối đa 5 lần).
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const list = await readRepeats(supabase, owner.userId);
+      if (!list.some((r) => r.id === id)) {
+        list.push(record);
+        const { error } = await writeRepeats(supabase, owner.userId, list);
+        if (error) console.error("save repeat failed", error.message);
+      }
+      await new Promise((r) => setTimeout(r, 400 + Math.random() * 900));
+      if ((await readRepeats(supabase, owner.userId)).some((r) => r.id === id)) break;
+      console.warn("repeat record lost, retry", id, attempt + 1);
+    }
   }
   return json({ ok: true, repeat: repeat ? id : undefined, hot: hits.length ? hits.map((h) => h.name) : undefined });
 });
