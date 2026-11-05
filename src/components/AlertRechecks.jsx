@@ -39,6 +39,21 @@ export function alertBuckets(list, now = Date.now()) {
   return { waiting, ringing, unhandled, doneToday };
 }
 
+// Một nhắc kiểm lại theo nến (thêm tay ở đây, hoặc tự thêm khi điền Mã tiềm năng — hotId = id mã đó)
+export function recheckRecord({ name, tf, note, hotId }, t = Date.now()) {
+  const rc = nextRecheck(tf, t);
+  const iso = (ms) => new Date(ms).toISOString();
+  return {
+    id: newId(), text: recheckText(name, tf, note), every: 2, times: 5, sent: 0, tf, rev: 0,
+    nextAt: iso(rc.at), createdAt: iso(t), messageIds: [], ackedAt: iso(t),
+    recheckAt: iso(rc.at), recheckClose: iso(rc.close), rechecks: 0, source: hotId ? "hot" : "web",
+    ...(hotId ? { hotId } : {}),
+  };
+}
+export const recheckText = (name, tf, note) => `📈 [${tf}] - ${name}${note ? ` — ${note}` : ""}`;
+// Còn hiệu lực: đang chờ nến hoặc đang nhắc (chưa bấm ✅ / chưa hết lượt)
+export const recheckPending = (r) => !!(r && (r.recheckAt || (!r.ackedAt && !r.doneAt)));
+
 export function alertSummary(list) {
   if (!list) return "Đang tải…";
   const b = alertBuckets(list);
@@ -243,13 +258,7 @@ export function AlertRechecksBody({ data, resources, settings }) {
   }));
   const add = ({ names, tf, note }) => edit((all) => {
     const t = Date.now();
-    const rc = nextRecheck(tf, t);
-    const iso = (ms) => new Date(ms).toISOString();
-    return [...all, ...names.map((name) => ({
-      id: newId(), text: `📈 [${tf}] - ${name}${note ? ` — ${note}` : ""}`, every: 2, times: 5, sent: 0, tf, rev: 0,
-      nextAt: iso(rc.at), createdAt: iso(t), messageIds: [], ackedAt: iso(t),
-      recheckAt: iso(rc.at), recheckClose: iso(rc.close), rechecks: 0, source: "web",
-    }))];
+    return [...all, ...names.map((name) => recheckRecord({ name, tf, note }, t))];
   });
 
   if (!list) return <p className="field-hint" style={{ marginTop: 8 }}>Đang tải…</p>;

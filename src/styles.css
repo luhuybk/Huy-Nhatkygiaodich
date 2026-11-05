@@ -2624,3 +2624,9 @@ button.nt-check:hover { filter: brightness(1.25); }
 .symbol-hint-groups .symbol-hints { flex-wrap:nowrap; align-items:flex-start; }
 .symbol-hint-groups .symbol-hint-group { flex:0 0 auto; padding-top:5px; }
 .symbol-hint-list { display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex:1; min-width:0; }
+.hot-recheck { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.hot-recheck-tag { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--text-dim); white-space:nowrap; }
+.hot-recheck-ringing { color:#f97316; }
+.hot-recheck-add { font-size:11px; padding:2px 8px; border-radius:10px; border:1px dashed var(--border); background:transparent;
+  color:var(--text-dim); cursor:pointer; white-space:nowrap; }
+.hot-recheck-add:hover { border-style:solid; color:var(--accent); border-color:rgba(var(--accent-rgb),0.5); }

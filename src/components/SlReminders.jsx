@@ -3,8 +3,10 @@ import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
   CalendarDays, Clock, Settings2, Flame, Hourglass,
 } from "lucide-react";
-import { AlertRechecksBody, alertSummary, useAlertRepeats } from "./AlertRechecks.jsx";
+import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, recheckText, useAlertRepeats } from "./AlertRechecks.jsx";
 import { SymbolBox } from "./SymbolBox.jsx";
+import { vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
+import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
 import { LifeHubExport } from "./Timeline.jsx";
@@ -370,9 +372,37 @@ const hotAge = (iso) => {
   return d === null ? "" : d <= 0 ? "thêm hôm nay" : `thêm ${d} ngày trước`;
 };
 
-function HotBody({ settings, onChange, resources, trades, watches }) {
+// Mã tiềm năng → tự có nhắc kiểm lại theo nến (Cảnh báo nhắc lại). slReminderSettings.hotRecheckTf: khung
+// nến ("H4" mặc định), "" = tắt. Bỏ mã khỏi danh sách thì nhắc còn chờ của mã đó bỏ theo; sửa ghi chú
+// thì tin nhắc đổi theo. Bản ghi nối với mã bằng hotId.
+const HOT_RECHECK_TFS = ["H4", "H8", "D"];
+
+export function HotBody({ settings, onChange, resources, trades, watches, alertData }) {
   const list = settings.hotSymbols || [];
   const save = (next) => onChange({ ...settings, hotSymbols: next });
+  const recheckTf = settings.hotRecheckTf === undefined ? "H4" : settings.hotRecheckTf;
+  const alerts = alertData && Array.isArray(alertData.list) ? alertData.list : null;
+  const linked = (h) => (alerts || []).find((r) => r.hotId === h.id && recheckPending(r));
+  // Đã có nhắc còn hiệu lực cho mã này (kể cả thêm tay / từ TradingView) thì không thêm trùng
+  const coveredBy = (all, name) => all.some((r) => recheckPending(r) && hotMatches(String(r.text || ""), [{ name }]).length);
+  const addRechecks = (items) => {
+    if (!recheckTf || !alerts || !items.length) return;
+    alertData.mutate((all) => {
+      const t = Date.now();
+      return [...all, ...items.filter((h) => !coveredBy(all, h.name)).map((h) => recheckRecord({ name: h.name, tf: recheckTf, note: h.note, hotId: h.id }, t))];
+    });
+  };
+  const dropRechecks = (ids) => {
+    if (!alerts || !alerts.some((r) => ids.has(r.hotId) && recheckPending(r))) return;
+    alertData.mutate((all) => all.filter((r) => !(ids.has(r.hotId) && recheckPending(r))));
+  };
+  const remove = (x) => { save(list.filter((h) => h.id !== x.id)); dropRechecks(new Set([x.id])); };
+  const saveNote = (h, note) => {
+    save(list.map((x) => (x.id === h.id ? { ...x, note } : x)));
+    if (!alerts || !alerts.some((r) => r.hotId === h.id && recheckPending(r))) return;
+    alertData.mutate((all) => all.map((r) => (r.hotId === h.id && recheckPending(r)
+      ? { ...r, text: recheckText(h.name, r.tf || recheckTf || "H4", note), rev: (r.rev || 0) + 1 } : r)));
+  };
   const suggestions = useMemo(() => {
     const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).filter((x) => !x.done).map((x) => x.name)))];
     return [...used, ...symbolSuggestions(resources, trades, used, 300)];
@@ -380,7 +410,9 @@ function HotBody({ settings, onChange, resources, trades, watches }) {
   const add = (names) => {
     const have = new Set(list.map((h) => h.name));
     const fresh = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, note: "", addedAt: new Date().toISOString() }));
-    if (fresh.length) save([...list, ...fresh]);
+    if (!fresh.length) return;
+    save([...list, ...fresh]);
+    addRechecks(fresh);
   };
   const first = list[0];
   return (
@@ -390,14 +422,24 @@ function HotBody({ settings, onChange, resources, trades, watches }) {
         luôn có chuông và nhắc lại tới khi bạn gõ <b>ok</b> / <b>n</b>. Tin <b>Kiểm tra setup</b> cũng liệt kê các mã này đầu tiên,
         kèm đã báo lúc mấy giờ, đã xử lý chưa.
       </p>
-      <SymbolBox items={list} suggestions={suggestions} onAdd={add} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols} onRemove={(x) => save(list.filter((h) => h.id !== x.id))}
+      <SymbolBox items={list} suggestions={suggestions} onAdd={add} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols} onRemove={remove}
         placeholder="EURUSD XAUUSD NVDA" />
+      <div className="hot-recheck">
+        <span className="field-hint">Mã mới tự vào <b>Cảnh báo nhắc lại</b>:</span>
+        <select className="input input-inline" style={{ width: "auto" }} value={recheckTf}
+          onChange={(e) => onChange({ ...settings, hotRecheckTf: e.target.value })}>
+          {HOT_RECHECK_TFS.map((tf) => <option key={tf} value={tf}>nhắc lúc nến {tf} đóng</option>)}
+          <option value="">không tự thêm</option>
+        </select>
+        {!alerts ? <span className="field-hint">(cần Bot Telegram)</span> : null}
+      </div>
       {list.length ? (
         <div className="hot-list">
           {list.map((h) => (
             <div key={h.id} className="hot-row">
               <span className="hot-name mono"><Flame size={12} /> {h.name}</span>
-              <HotNote value={h.note} onSave={(note) => save(list.map((x) => (x.id === h.id ? { ...x, note } : x)))} />
+              <HotNote value={h.note} onSave={(note) => saveNote(h, note)} />
+              <HotRecheckTag rec={linked(h)} canAdd={!!(alerts && recheckTf)} tf={recheckTf} onAdd={() => addRechecks([h])} />
               <span className="hot-age">{hotAge(h.addedAt)}</span>
             </div>
           ))}
@@ -415,10 +457,24 @@ function HotBody({ settings, onChange, resources, trades, watches }) {
       </p>
       {list.length > 1 ? (
         <div className="form-actions" style={{ justifyContent: "flex-start" }}>
-          <DangerConfirmButton onConfirm={() => save([])} label="Xoá cả danh sách" confirmLabel="Bấm lần nữa để xoá hết" />
+          <DangerConfirmButton onConfirm={() => { save([]); dropRechecks(new Set(list.map((h) => h.id))); }} label="Xoá cả danh sách" confirmLabel="Bấm lần nữa để xoá hết" />
         </div>
       ) : null}
     </div>
+  );
+}
+
+// Trạng thái nhắc kiểm lại của một mã tiềm năng: ⏳ giờ nhắc / 🔔 đang nhắc / nút thêm
+function HotRecheckTag({ rec, canAdd, tf, onAdd }) {
+  if (rec && rec.recheckAt) {
+    return <span className="hot-recheck-tag" title="Đang chờ nến đóng — xem ở Cảnh báo nhắc lại"><Hourglass size={11} /> {vnTime(Date.parse(rec.recheckAt))}</span>;
+  }
+  if (rec) return <span className="hot-recheck-tag hot-recheck-ringing" title="Bot đang nhắc trên Telegram">🔔 đang nhắc</span>;
+  if (!canAdd) return null;
+  return (
+    <button type="button" className="hot-recheck-add" onClick={onAdd} title={`Thêm nhắc kiểm lại lúc nến ${tf} kế tiếp đóng`}>
+      + nhắc {tf}
+    </button>
   );
 }
 
@@ -761,7 +817,7 @@ export function PlansPanel({
 
       <PlanSection id="hot" icon={Flame} title="Mã tiềm năng" summary={hotSummary}
         on={hotOn} onToggle={(v) => onSettingsChange({ ...s, hotEnabled: v })} open={open === "hot"} onOpen={setOpen}>
-        <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} />
+        <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} alertData={telegramReady ? alertData : null} />
       </PlanSection>
       <PlanSection id="alerts" icon={Hourglass} title="Cảnh báo nhắc lại" summary={alertSummary(alertData.list)}
         open={open === "alerts"} onOpen={setOpen}>
