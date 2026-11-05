@@ -1226,7 +1226,7 @@
 }
 
 /* KẾ HOẠCH GIAO DỊCH — dùng chung thang màu 1-2-3 với bài học để nhìn là quen mắt */
-.plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 16px; }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; margin-top: 16px; }
 .plan-card {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 13px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
@@ -2317,7 +2317,7 @@ button.nt-check:hover { filter: brightness(1.25); }
 .print-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .print-legend i, .print-day-trade i { display: inline-block; width: 16px; border-radius: 2px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .print-day-trade i { width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: 1px; }
-.print-acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px; }
+.print-acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 8px; }
 .print-acct { border: 1.5px solid #111; border-left: 5px solid var(--acct, #111); border-radius: 6px; padding: 6px 8px;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .print-acct-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; margin-bottom: 2px; }
@@ -2610,10 +2610,25 @@ button.nt-check:hover { filter: brightness(1.25); }
   .alert-add-sym { flex: 1 1 120px; }
 }
 .alert-group-title { display: flex; align-items: center; gap: 4px; }
-.alert-clear-all { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; background: none; border: none; cursor: pointer;
+.alert-clear-all { margin-left: auto; display: inline-flex; white-space: nowrap; flex: 0 0 auto; align-items: center; gap: 3px; background: none; border: none; cursor: pointer;
   color: var(--text-dim); font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 4px; border-radius: 4px; }
 .alert-clear-all:hover { color: var(--loss); background: rgba(127, 127, 127, .1); }
 .alert-clean-ok { color: var(--win); }
+/* Cảnh báo nhắc lại tách theo khung: mỗi khung một khối có viền, màn rộng thì xếp cột cạnh nhau */
+.alert-tf-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap:10px; margin-top:10px; align-items:start; }
+.alert-tf-box { --tf-rgb: var(--accent-rgb); border:1.5px solid rgba(var(--tf-rgb), .45); border-radius:10px; padding:8px 10px 4px;
+  background:rgba(var(--tf-rgb), .035); min-width:0; }
+.alert-tf-H8 { --tf-rgb: 168, 85, 247; }
+.alert-tf-D { --tf-rgb: 234, 179, 8; }
+.alert-tf-other { --tf-rgb: 100, 116, 139; }
+.alert-tf-reentry { --tf-rgb: 239, 68, 68; }
+.alert-tf-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid rgba(var(--tf-rgb), .25); }
+.alert-tf-badge { font-weight:700; font-size:13px; padding:2px 10px; border-radius:999px; color:rgb(var(--tf-rgb));
+  background:rgba(var(--tf-rgb), .14); }
+.alert-tf-count { font-size:11px; color:var(--text-dim); }
+.alert-tf-box .alert-group { margin-top:8px; }
+.alert-tf-box .alert-row:not(.alert-row-hot) { background:var(--surface, transparent); }
+.alert-tf-has-ring .alert-tf-head .alert-tf-count::before { content:"● "; color:#f97316; }
 .symbol-hints-pinned .symbol-hint-group { color:#f97316; }
 /* Mỗi đồng base một khung: viền + nền nhạt + nhãn đồng ở đầu — tách cụm rõ hơn dấu | */
 .symbol-hint-cluster { display:inline-flex; flex-wrap:wrap; align-items:center; gap:5px; padding:3px 6px 3px 4px;

@@ -107,6 +107,31 @@ export function useAlertRepeats(enabled) {
 }
 
 const titleOf = (r) => String(r.text || "").split("\n").find((x) => x.trim())?.replace(/^\s*📈\s*/u, "") || "(trống)";
+// Trong khối theo khung đã có nhãn khung ở đầu khối → bỏ "[H4] - " ở đầu tên cho gọn
+const shortTitle = (r) => {
+  const t = titleOf(r);
+  const tf = r.kind === "reentry" ? "" : r.tf;
+  return tf ? t.replace(new RegExp(`^\\s*\\[${tf}\\]\\s*-?\\s*`), "") || t : t;
+};
+
+// Mỗi khung một khối riêng: H4 · H8 · D (khung khác xếp theo TF_ORDER), cảnh báo TradingView chưa gắn
+// khung và nhắc dời SL tay (re-entry) đứng riêng ở cuối.
+const STATES = [
+  ["ringing", "🔔 Đang nhắc"],
+  ["waiting", "⏳ Chờ kiểm lại"],
+  ["unhandled", `Hết lượt nhắc, chưa xử lý (${LIVE_HOURS} giờ qua)`],
+];
+export function alertModules(b) {
+  const map = new Map();
+  STATES.forEach(([kind]) => (b[kind] || []).forEach((r) => {
+    const key = r.kind === "reentry" ? "reentry" : (r.tf || "other");
+    if (!map.has(key)) map.set(key, { key, ringing: [], waiting: [], unhandled: [] });
+    map.get(key)[kind].push(r);
+  }));
+  const rank = (k) => (k === "reentry" ? 1000 : k === "other" ? 999 : (TF_ORDER.indexOf(k) + 1 || 500));
+  return [...map.values()].sort((a, c) => rank(a.key) - rank(c.key));
+}
+const moduleLabel = (k) => (k === "reentry" ? "✋ Dời SL tay (re-entry)" : k === "other" ? "Cảnh báo TradingView" : `Khung ${k}`);
 
 function AlertRow({ r, kind, hot, onNext, onRemove, now }) {
   const isHot = hotMatches(String(r.text || ""), hot).length > 0;
@@ -128,7 +153,7 @@ function AlertRow({ r, kind, hot, onNext, onRemove, now }) {
   return (
     <div className={`alert-row ${isHot ? "alert-row-hot" : ""}`}>
       <div className="alert-main">
-        <div className="alert-title">{isHot ? "🔥 " : ""}{titleOf(r)}</div>
+        <div className="alert-title">{isHot ? "🔥 " : ""}{shortTitle(r)}</div>
         <div className="alert-state">
           {state}
           <span className="alert-age"> · báo {vnTime(Date.parse(r.createdAt || 0), now)}{r.source === "web" ? " (thêm từ web)" : ""}</span>
@@ -276,19 +301,32 @@ export function AlertRechecksBody({ data, resources, settings }) {
 
   if (!list) return <p className="field-hint" style={{ marginTop: 8 }}>Đang tải…</p>;
   const empty = !b.waiting.length && !b.ringing.length && !b.unhandled.length;
-  const section = (title, items, kind, clearAll) => (items.length ? (
-    <div className="alert-group">
-      <div className="alert-group-title">
-        {title} <span>({items.length})</span>
-        {clearAll && items.length > 1 ? (
-          <button type="button" className="alert-clear-all" onClick={() => removeMany(items)} title="Xoá cả nhóm này khỏi danh sách">
-            <Trash2 size={11} /> Xoá hết
-          </button>
-        ) : null}
+  const modules = alertModules(b);
+  const moduleBox = (m) => {
+    const total = m.ringing.length + m.waiting.length + m.unhandled.length;
+    const counts = STATES.filter(([k]) => m[k].length).map(([k]) => `${m[k].length} ${k === "ringing" ? "đang nhắc" : k === "waiting" ? "chờ" : "chưa xử lý"}`);
+    return (
+      <div key={m.key} className={`alert-tf-box alert-tf-${m.key}${m.ringing.length ? " alert-tf-has-ring" : ""}`}>
+        <div className="alert-tf-head">
+          <span className="alert-tf-badge">{moduleLabel(m.key)}</span>
+          <span className="alert-tf-count">{total} mã · {counts.join(" · ")}</span>
+        </div>
+        {STATES.map(([kind, title]) => (m[kind].length ? (
+          <div key={kind} className="alert-group">
+            <div className="alert-group-title">
+              {title} <span>({m[kind].length})</span>
+              {kind === "unhandled" && m[kind].length > 1 ? (
+                <button type="button" className="alert-clear-all" onClick={() => removeMany(m[kind])} title="Xoá cả nhóm này khỏi danh sách">
+                  <Trash2 size={11} /> Xoá hết
+                </button>
+              ) : null}
+            </div>
+            {m[kind].map((r) => <AlertRow key={r.id} r={r} kind={kind} hot={hot} now={now} onNext={next} onRemove={remove} />)}
+          </div>
+        ) : null))}
       </div>
-      {items.map((r) => <AlertRow key={r.id} r={r} kind={kind} hot={hot} now={now} onNext={next} onRemove={remove} />)}
-    </div>
-  ) : null);
+    );
+  };
 
   return (
     <div className={busy ? "alert-busy" : ""}>
@@ -297,9 +335,7 @@ export function AlertRechecksBody({ data, resources, settings }) {
         thêm tay khi muốn bot nhắc kiểm lại một mã mà không có cảnh báo TradingView.
       </p>
       {empty ? <p className="field-hint alert-empty">Không có cảnh báo nào đang chờ.</p> : null}
-      {section("Chờ kiểm lại theo nến", b.waiting, "waiting")}
-      {section("Đang nhắc", b.ringing, "ringing")}
-      {section(`Hết lượt nhắc, chưa xử lý (${LIVE_HOURS} giờ qua)`, b.unhandled, "unhandled", true)}
+      {modules.length ? <div className="alert-tf-grid">{modules.map(moduleBox)}</div> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {adding ? <AddAlertForm resources={resources} hot={hot} onAdd={add} onCancel={() => setAdding(false)} /> : null}
       {cleaning ? <TelegramCleaner onClose={() => setCleaning(false)} /> : null}
