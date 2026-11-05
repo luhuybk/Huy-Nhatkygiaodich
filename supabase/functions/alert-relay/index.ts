@@ -186,9 +186,19 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   const topicOf = (r: Repeat) => r.topic || (r.chat ? 0 : ALERT_TOPIC);
   // Cùng nhóm/topic + cùng khung → gộp 1 tin (mở chuông 1 lần thay vì cả loạt tin). Nhắc dời SL tay
   // (re-entry) mỗi lệnh vẫn 1 tin riêng.
+  const keyOf = (r: Repeat) => (r.kind === "reentry" ? `solo|${r.id}` : `${chatOf(r)}|${topicOf(r)}|${r.tf || "-"}`);
+  // Cảnh báo TradingView bắn lệch nhau vài giây → hạn nhắc lại rơi vào 2 lượt tick khác nhau, tách mãi
+  // không gộp được. Khung nào có mã tới hạn thì kéo luôn các mã cùng khung sắp tới hạn (≤ 2 phút) vào
+  // cùng tin; từ đó chúng chung giờ nhắc.
+  const PULL_MS = 2 * 60 * 1000;
+  const dueKeys = new Set(due.filter((r) => r.kind !== "reentry").map(keyOf));
+  for (const r of list) {
+    if (r.kind === "reentry" || r.ackedAt || r.doneAt || due.includes(r) || !dueKeys.has(keyOf(r))) continue;
+    if (Date.parse(r.nextAt) <= now + PULL_MS) due.push(r);
+  }
   const batches = new Map<string, Repeat[]>();
   for (const r of due) {
-    const key = r.kind === "reentry" ? `solo|${r.id}` : `${chatOf(r)}|${topicOf(r)}|${r.tf || "-"}`;
+    const key = keyOf(r);
     if (!batches.has(key)) batches.set(key, []);
     batches.get(key)!.push(r);
   }
