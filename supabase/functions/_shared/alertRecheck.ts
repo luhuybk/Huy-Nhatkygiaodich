@@ -114,3 +114,64 @@ export function alertButtons(id: string, tf: Tf | null | undefined, kind?: strin
   if (tf) row.push({ text: "⏳ Kiểm lại", callback_data: `tr|${id}` }); // ngắn cho vừa màn hình điện thoại
   return { inline_keyboard: [row] };
 }
+
+// ───── Gộp tin: nhiều cảnh báo cùng khung tới hạn cùng lượt tick → 1 tin, mỗi mã một hàng nút ─────
+// Hàng nút của mã: ✅ <mã> (ta|id) · ⏳ <mã> (tr|id). Cuối tin: ✅ Thấy hết (ga|all) · ⏳ Kiểm lại hết
+// (gr|all) — telegram-webhook tìm các cảnh báo theo id tin được bấm. Mã đã xử lý thì hàng nút đổi thành
+// ô trạng thái (n|), các mã khác giữ nút.
+export type GroupRec = {
+  id?: string; text?: string; tf?: Tf | null; ackedAt?: string; recheckAt?: string; messageIds?: number[];
+};
+type Btn = { text: string; callback_data: string };
+
+// Tên mã trong tin: "📈 [H4] - EUR/AUD — …" → EUR/AUD; "📈 OANDA:XAUUSD vượt…" → XAUUSD
+export function alertSymbol(text: string | undefined) {
+  const line = String(text || "").split("\n").find((x) => x.trim()) || "";
+  const body = line.replace(/^\s*📈\s*/u, "").replace(/^\s*\[[^\]]*\]\s*-?\s*/, "");
+  const m = body.match(/[A-Z0-9][A-Z0-9._:\/!-]*/);
+  const tok = m ? m[0] : (body.trim().split(/\s+/)[0] || "?");
+  return (tok.includes(":") ? tok.split(":").pop() || tok : tok).slice(0, 16);
+}
+
+// Nội dung một mã trong tin gộp: bỏ 📈 và "[H4] - " ở đầu (đầu tin đã ghi khung)
+export function alertBody(text: string | undefined, tf: Tf | null | undefined) {
+  const t = String(text || "").replace(/^\s*📈\s*/u, "");
+  return tf ? t.replace(new RegExp(`^\\s*\\[\\s*${tf}\\s*\\]\\s*-?\\s*`, "i"), "") || t : t;
+}
+
+const symKey = (r: GroupRec) => alertSymbol(r.text).replace(/[^A-Z0-9]/gi, "").toUpperCase();
+export function sortGroup<T extends GroupRec>(list: T[]): T[] {
+  return [...list].sort((a, b) => symKey(a).localeCompare(symKey(b)) || String(a.id).localeCompare(String(b.id)));
+}
+
+const lastMid = (r: GroupRec) => Math.max(0, ...(r.messageIds || []));
+
+export function liveRow(r: GroupRec): Btn[] {
+  const sym = alertSymbol(r.text);
+  const row = [{ text: `✅ ${sym}`, callback_data: `ta|${r.id}` }];
+  if (r.tf) row.push({ text: `⏳ ${sym}`, callback_data: `tr|${r.id}` });
+  return row;
+}
+export function allRow(members: GroupRec[]): Btn[] {
+  const row = [{ text: "✅ Thấy hết", callback_data: "ga|all" }];
+  if (members.some((r) => r.tf)) row.push({ text: "⏳ Kiểm lại hết", callback_data: "gr|all" });
+  return row;
+}
+
+// Bàn phím của tin `mid` dựng lại từ danh sách cảnh báo. Tin cũ (không còn là tin mới nhất của mã nào)
+// → [] gỡ hết nút. Trả live = số mã còn chờ bấm.
+export function groupKeyboard(all: GroupRec[], mid: number, nowMs = Date.now()): { rows: Btn[][]; live: number; members: number } {
+  const members = sortGroup(all.filter((r) => (r.messageIds || []).includes(mid)));
+  if (!members.some((r) => lastMid(r) === mid)) return { rows: [], live: 0, members: members.length };
+  const rows: Btn[][] = [];
+  const liveOnes: GroupRec[] = [];
+  for (const r of members) {
+    const sym = alertSymbol(r.text);
+    if (lastMid(r) !== mid) rows.push([{ text: `↪️ ${sym} · đã gửi tin mới`, callback_data: "n|" }]);
+    else if (!r.ackedAt) { rows.push(liveRow(r)); liveOnes.push(r); }
+    else if (r.recheckAt) rows.push([{ text: `⏳ ${sym} · kiểm lại ${vnTime(Date.parse(r.recheckAt), nowMs)}`, callback_data: "n|" }]);
+    else rows.push([{ text: `✅ ${sym} · đã thấy`, callback_data: "n|" }]);
+  }
+  if (liveOnes.length > 1) rows.push(allRow(liveOnes));
+  return { rows, live: liveOnes.length, members: members.length };
+}

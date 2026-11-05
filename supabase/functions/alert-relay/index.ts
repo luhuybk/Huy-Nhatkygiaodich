@@ -18,6 +18,10 @@
 // Mã tiềm năng (Lịch nhắc → Mã tiềm năng): tin TradingView nhắc tới mã trong danh sách thì có dòng
 // "🔥🔥🔥 MÃ TIỀM NĂNG · <mã> 🔥🔥🔥" (+ ghi chú) ở đầu, bỏ qua silent và luôn nhắc lại như repeat=1.
 //
+// Gộp tin: các cảnh báo cùng nhóm/topic + cùng khung tới hạn cùng lượt tick (vd 5 mã H4 cùng nến đóng)
+// đi chung 1 tin — mỗi mã một hàng nút ✅/⏳, cuối tin ✅ Thấy hết / ⏳ Kiểm lại hết. Chỉ 1 mã thì như cũ.
+// Nhắc dời SL tay (re-entry) không gộp. Xem _shared/alertRecheck.ts (groupKeyboard).
+//
 // Gửi lại do pg_cron gọi ?tick=1 mỗi phút (supabase-alert-relay-cron.sql). Tick không cần khoá: nó chỉ
 // gửi các tin đã tới hạn, ai gọi thêm cũng không làm tin bị gửi dày hơn.
 // Nút "✅ Đã thấy" (callback ta|<id>) do function telegram-webhook xử lý.
@@ -41,7 +45,7 @@
 // Tạo khoá 1 lần: bash scripts/alert-relay-key.sh
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { alertButtons, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { alertBody, alertButtons, allRow, groupKeyboard, liveRow, sortGroup, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { hotHead, hotList, hotMatches, type HotSettings } from "../_shared/hotSymbols.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -177,41 +181,84 @@ async function tick(supabase: ReturnType<typeof createClient>) {
 
   const token = owner.settings.telegramBotToken!;
   const hot = hotList(owner.settings);
+  const chatOf = (r: Repeat) => r.chat || owner.chatId;
+  // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
+  const topicOf = (r: Repeat) => r.topic || (r.chat ? 0 : ALERT_TOPIC);
+  // Cùng nhóm/topic + cùng khung → gộp 1 tin (mở chuông 1 lần thay vì cả loạt tin). Nhắc dời SL tay
+  // (re-entry) mỗi lệnh vẫn 1 tin riêng.
+  const batches = new Map<string, Repeat[]>();
   for (const r of due) {
-    r.sent += 1;
-    const last = r.sent >= r.times;
-    // Dòng 🔥 tính lại theo danh sách hiện tại: bỏ mã khỏi danh sách thì lần nhắc sau thôi nổi bật
-    const hotLine = r.kind === "reentry" ? "" : hotHead(hotMatches(r.text, hot));
-    const lines = hotLine ? [hotLine] : [];
-    if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
-    if (r.head) lines.push(r.head);
-    lines.push(r.text);
-    const chat = r.chat || owner.chatId;
-    const payload: Record<string, unknown> = {
-      chat_id: chat,
-      text: lines.join("\n"),
-      reply_markup: alertButtons(r.id, r.tf, r.kind),
-    };
-    // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
-    const topic = r.topic || (r.chat ? 0 : ALERT_TOPIC);
+    const key = r.kind === "reentry" ? `solo|${r.id}` : `${chatOf(r)}|${topicOf(r)}|${r.tf || "-"}`;
+    if (!batches.has(key)) batches.set(key, []);
+    batches.get(key)!.push(r);
+  }
+  const prevMsgs = new Map<number, string>(); // tin cũ cần gỡ / dựng lại nút → chat
+  for (const members of batches.values()) {
+    const first = members[0];
+    const chat = chatOf(first);
+    for (const r of members) r.sent += 1;
+    let payload: Record<string, unknown>;
+    if (members.length === 1) {
+      const r = first;
+      const last = r.sent >= r.times;
+      // Dòng 🔥 tính lại theo danh sách hiện tại: bỏ mã khỏi danh sách thì lần nhắc sau thôi nổi bật
+      const hotLine = r.kind === "reentry" ? "" : hotHead(hotMatches(r.text, hot));
+      const lines = hotLine ? [hotLine] : [];
+      if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
+      if (r.head) lines.push(r.head);
+      lines.push(r.text);
+      payload = { chat_id: chat, text: lines.join("\n"), reply_markup: alertButtons(r.id, r.tf, r.kind) };
+    } else {
+      const sorted = sortGroup(members);
+      const tf = first.tf;
+      const heads = [...new Set(sorted.map((r) => r.head || ""))];
+      const head = heads.length === 1 && heads[0]
+        ? `${heads[0]} · ${sorted.length} mã`
+        : `${sorted.some((r) => r.head) ? "🔁 Kiểm lại setup" : "📈 Cảnh báo"} · khung ${tf || "—"} · ${sorted.length} mã`;
+      const lines = [head];
+      const maxSent = Math.max(...sorted.map((r) => r.sent));
+      if (maxSent > 1) {
+        const times = Math.max(...sorted.map((r) => r.times));
+        lines.push(`🔔 Nhắc lần ${maxSent}/${times}${sorted.every((r) => r.sent >= r.times) ? " (lần cuối)" : ""}`);
+      }
+      lines.push("");
+      let body = 0;
+      for (const [i, r] of sorted.entries()) {
+        const isHot = hotMatches(r.text, hot).length > 0;
+        const text = alertBody(r.text, tf).split("\n").filter((x) => x.trim()).join("\n   ");
+        const line = `${isHot ? "🔥" : "•"} ${text.length > 300 ? text.slice(0, 299) + "…" : text}`;
+        if (body + line.length > MAX_TEXT - 300) { lines.push(`… và ${sorted.length - i} mã nữa (xem trên web)`); break; }
+        body += line.length;
+        lines.push(line);
+      }
+      payload = {
+        chat_id: chat, text: lines.join("\n"),
+        reply_markup: { inline_keyboard: [...sorted.map(liveRow), allRow(sorted)] },
+      };
+    }
+    const topic = topicOf(first);
     if (topic) payload.message_thread_id = topic;
     const sent = await sendTelegram(token, payload);
-    if (typeof sent === "number") {
-      const prev = r.messageIds[r.messageIds.length - 1];
-      if (prev) {
-        await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chat_id: chat, message_id: prev, reply_markup: { inline_keyboard: [] } }),
-        }).catch(() => {});
+    if (typeof sent !== "number") console.error("repeat send failed", members.map((r) => r.id).join(","), sent);
+    for (const r of members) {
+      if (typeof sent === "number") {
+        const prev = r.messageIds[r.messageIds.length - 1];
+        if (prev) prevMsgs.set(prev, chat);
+        if (sent) r.messageIds.push(sent);
       }
-      if (sent) r.messageIds.push(sent);
-    } else {
-      console.error("repeat send failed", r.id, sent);
+      if (r.sent >= r.times) r.doneAt = new Date().toISOString();
+      else r.nextAt = new Date(now + r.every * 60 * 1000).toISOString();
+      r.rev = (r.rev || 0) + 1;
     }
-    if (last) r.doneAt = new Date().toISOString();
-    else r.nextAt = new Date(now + r.every * 60 * 1000).toISOString();
-    r.rev = (r.rev || 0) + 1;
+  }
+  // Tin trước của các mã vừa gửi lại: gỡ nút (tin gộp còn mã khác đang chờ thì dựng lại nút cho mã đó)
+  for (const [mid, chat] of prevMsgs) {
+    const kb = groupKeyboard(list, mid, now);
+    await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, message_id: mid, reply_markup: { inline_keyboard: kb.live && kb.members > 1 ? kb.rows : [] } }),
+    }).catch(() => {});
   }
 
   // Đọc lại trước khi ghi: lúc gửi có thể người dùng vừa bấm nút (telegram-webhook tăng rev)

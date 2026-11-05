@@ -8,6 +8,8 @@
 //   Nhãn              n|<chữ>               ô tên mã ở đầu mỗi dòng của tin dạng bảng — không làm gì
 //   Cảnh báo nhắc lại ta|<id>               "✅ Đã thấy" ở tin của alert-relay — ngừng gửi lại
 //                     tr|<id>               "⏳ Kiểm lại" — setup chưa đủ, gửi lại lúc nến kế tiếp đóng
+//                     ga|all / gr|all       tin gộp nhiều mã cùng khung: "✅ Thấy hết" / "⏳ Kiểm lại hết" —
+//                                           áp cho mọi mã còn chờ trong tin được bấm (tìm theo id tin)
 //   Khớp lệnh MT5     rn|<login>-<ticket>|<khung>  "🔁 Nến re-entry" ở tin của mt5-journal — hẹn nhắc dời SL tay
 //                                                  1 lần lúc nến vào lệnh đóng (bản ghi re-<login>-<ticket>
 //                                                  trong alertRepeats, alert-relay tick gửi, ✅ Đã dời = ta|)
@@ -27,7 +29,7 @@
 //   https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { isCryptoSymbol, nextRecheck, normTf, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { groupKeyboard, isCryptoSymbol, nextRecheck, normTf, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -196,7 +198,7 @@ async function handle(raw: string): Promise<Response> {
   const ownerRow = (settingsRows || []).find((r) => {
     const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
     if (v?.telegramChatId && String(v.telegramChatId) === String(fromChatId)) return true;
-    if (!["ta", "tr", "rn", "rx"].includes(kind) || !v?.telegramBotToken) return false;
+    if (!["ta", "tr", "ga", "gr", "n", "rn", "rx"].includes(kind) || !v?.telegramBotToken) return false;
     return (alertChat !== "" && alertChat === String(fromChatId)) || (fillChatId !== "" && fillChatId === String(fromChatId));
   });
   if (!ownerRow) return json({ ok: true, skipped: "chat mismatch" });
@@ -322,11 +324,31 @@ async function handle(raw: string): Promise<Response> {
     }
     await answerCallback(botToken, cb.id, res.notice, res.state === "final");
     return json({ ok: true, kind, rest, state: res.state });
-  } else if (kind === "ta" || kind === "tr") {
-    const res = await alertAction(supabase, userId, botToken, fromChatId, rest[0], kind, cb.message?.message_id);
+  } else if (kind === "ta" || kind === "tr" || kind === "ga" || kind === "gr") {
+    const mid = cb.message?.message_id as number | undefined;
+    const act = kind === "ga" || kind === "gr" ? (kind === "ga" ? "ta" : "tr") : kind;
+    let ids = [rest[0]];
+    if (kind === "ga" || kind === "gr") {
+      // Nút "… hết" của tin gộp: mọi mã còn chờ bấm mà tin mới nhất của nó là tin này
+      const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
+      ids = list.filter((r) => r.id && !r.ackedAt && mid && lastMidOf(r) === mid && (act === "ta" || r.tf)).map((r) => r.id!);
+      if (!ids.length) {
+        await answerCallback(botToken, cb.id, "Các mã trong tin này đã xử lý hết rồi.");
+        if (mid && fromChatId) await refreshGroup(supabase, userId, botToken, fromChatId, mid);
+        return json({ ok: true, skipped: "group empty" });
+      }
+    }
+    const res = await alertAction(supabase, userId, botToken, fromChatId, ids, act, mid);
     if ("error" in res) {
       await answerCallback(botToken, cb.id, "Lưu thất bại, thử lại nhé.");
       return json({ error: res.error }, 500);
+    }
+    // Tin gộp nhiều mã: chỉ hàng của mã vừa bấm đổi thành trạng thái, các mã khác giữ nút
+    if (mid && fromChatId && res.list.filter((r) => (r.messageIds || []).includes(mid)).length > 1) {
+      const kb = groupKeyboard(res.list, mid);
+      const editError = await editMarkup(botToken, fromChatId, mid, kb.rows);
+      await answerCallback(botToken, cb.id, editError ? `${res.notice}\n\n⚠️ Không đổi được nút: ${editError}` : res.notice, !!editError);
+      return json({ ok: true, kind, ids, editError });
     }
     notice = res.notice;
     messageSuffix = res.suffix;
@@ -422,43 +444,65 @@ async function reentryAction(
 }
 
 // "✅ Đã thấy" (ta): ngừng gửi lại, bỏ luôn lịch kiểm lại. "⏳ Kiểm lại" (tr): ngừng nhắc vòng này, hẹn
-// gửi lại lúc nến kế tiếp của khung đóng. Cả hai gỡ nút ở các tin của cùng cảnh báo (trừ `keepMid` —
-// tin vừa bấm, phần hiển thị của nó do chỗ gọi lo).
+// gửi lại lúc nến kế tiếp của khung đóng. Áp cho 1 hoặc nhiều cảnh báo (tin gộp). Gỡ nút ở các tin của
+// các cảnh báo đó (trừ `keepMid` — tin vừa bấm, phần hiển thị của nó do chỗ gọi lo); tin gộp còn mã khác
+// đang chờ thì chỉ đổi hàng của mã đã xử lý.
+const lastMidOf = (r: AlertRepeat) => Math.max(0, ...(r.messageIds || []));
+
+async function refreshGroup(supabase: ReturnType<typeof createClient>, userId: string, botToken: string, chatId: number, mid: number) {
+  const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
+  await editMarkup(botToken, chatId, mid, groupKeyboard(list, mid).rows);
+}
+
 async function alertAction(
   supabase: ReturnType<typeof createClient>, userId: string, botToken: string, chatId: number | undefined,
-  alertId: string, kind: "ta" | "tr", keepMid?: number,
-): Promise<{ notice: string; suffix: string; item?: AlertRepeat } | { error: string }> {
+  alertIds: string[], kind: "ta" | "tr", keepMid?: number,
+): Promise<{ notice: string; suffix: string; list: AlertRepeat[]; items: AlertRepeat[] } | { error: string }> {
   const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
-  const item = list.find((r) => r.id === alertId);
+  const items = list.filter((r) => r.id && alertIds.includes(r.id));
   const now = Date.now();
-  if (!item) return { notice: "Cảnh báo này đã quá cũ, không còn nhắc nữa.", suffix: "\n\n☑️ Đã xong." };
-  const tooOld = Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
-  const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
-  item.ackedAt = item.ackedAt || new Date(now).toISOString();
-  item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;
-  item.recheckClose = recheck ? new Date(recheck.close).toISOString() : undefined;
-  if (recheck) item.rechecks = (item.rechecks || 0) + 1;
-  item.rev = (item.rev || 0) + 1;
+  if (!items.length) return { notice: "Cảnh báo này đã quá cũ, không còn nhắc nữa.", suffix: "\n\n☑️ Đã xong.", list, items };
+  let firstRecheck: { at: number; close: number } | null = null;
+  let old = 0;
+  for (const item of items) {
+    const tooOld = Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
+    if (kind === "tr" && tooOld) old += 1;
+    const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
+    if (recheck && !firstRecheck) firstRecheck = recheck;
+    item.ackedAt = item.ackedAt || new Date(now).toISOString();
+    item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;
+    item.recheckClose = recheck ? new Date(recheck.close).toISOString() : undefined;
+    if (recheck) item.rechecks = (item.rechecks || 0) + 1;
+    item.rev = (item.rev || 0) + 1;
+  }
   const { error: saveErr } = await writeValue(supabase, userId, "alertRepeats", list);
   if (saveErr) return { error: saveErr.message };
-  for (const mid of item.messageIds || []) {
-    if (mid !== keepMid && chatId) await editMarkup(botToken, chatId, mid, []);
+  const mids = new Set(items.flatMap((r) => r.messageIds || []));
+  for (const mid of mids) {
+    if (mid === keepMid || !chatId) continue;
+    // Tin cũ hơn thì gỡ hết nút; tin mới nhất của tin gộp thì đổi hàng của mã đã xử lý thành trạng thái
+    const kb = groupKeyboard(list, mid, now);
+    const latest = items.some((r) => lastMidOf(r) === mid);
+    await editMarkup(botToken, chatId, mid, latest && kb.members > 1 ? kb.rows : []);
   }
-  if (recheck) {
-    const when = vnTime(recheck.at, now);
+  const item = items[0];
+  const many = items.length > 1 ? ` ${items.length} mã` : "";
+  if (firstRecheck) {
+    const when = vnTime(firstRecheck.at, now);
     return {
-      item,
-      notice: `⏳ Sẽ nhắc kiểm lại lúc ${when} (nến ${item.tf || "D"} đóng ${vnTime(recheck.close, now)}).`,
+      list, items,
+      notice: `⏳ Sẽ nhắc kiểm lại${many} lúc ${when} (nến ${item.tf || "D"} đóng ${vnTime(firstRecheck.close, now)}).`
+        + (old ? ` ${old} mã quá ${RECHECK_DAYS} ngày thì ngừng nhắc.` : ""),
       suffix: `\n\n⏳ Chưa đủ setup — kiểm lại lúc ${when}.`,
     };
   }
   if (kind === "tr") {
-    return { item, notice: `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`, suffix: `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.` };
+    return { list, items, notice: `Cảnh báo đã quá ${RECHECK_DAYS} ngày, ngừng nhắc.`, suffix: `\n\n☑️ Quá ${RECHECK_DAYS} ngày, ngừng nhắc.` };
   }
   if (item.kind === "reentry") {
-    return { item, notice: `✅ Đã dời SL lúc ${vnClock()} — từ nến sau EA tự kéo.`, suffix: `\n\n✅ Đã dời SL lúc ${vnClock()}.` };
+    return { list, items, notice: `✅ Đã dời SL lúc ${vnClock()} — từ nến sau EA tự kéo.`, suffix: `\n\n✅ Đã dời SL lúc ${vnClock()}.` };
   }
-  return { item, notice: `✅ Đã thấy lúc ${vnClock()}, ngừng nhắc.`, suffix: `\n\n✅ Đã thấy lúc ${vnClock()}.` };
+  return { list, items, notice: `✅ Đã thấy${many} lúc ${vnClock()}, ngừng nhắc.`, suffix: `\n\n✅ Đã thấy lúc ${vnClock()}.` };
 }
 
 // Chữ gõ tay → hành động. Bỏ dấu, dấu câu để "OK.", "Ok!", "N" đều nhận.
@@ -502,31 +546,48 @@ async function handleText(msg: Record<string, any>): Promise<Response> {
   const thread = msg.is_topic_message ? msg.message_thread_id : undefined;
 
   const list = ((await readValue(supabase, userId, "alertRepeats")) || []) as AlertRepeat[];
-  const lastMid = (r: AlertRepeat) => Math.max(0, ...(r.messageIds || []));
   const replyTo = msg.reply_to_message?.message_id;
-  let target = replyTo ? list.find((r) => (r.messageIds || []).includes(replyTo)) : undefined;
   const cutoff = Date.now() - LIVE_HOURS * 3600 * 1000;
-  const live = list.filter((r) => !r.ackedAt && !r.recheckAt && (!r.doneAt || Date.parse(r.doneAt) > cutoff) && lastMid(r) > 0)
-    .sort((a, b) => lastMid(b) - lastMid(a));
-  if (!target) target = live[0];
-  if (!target) {
+  const live = list.filter((r) => !r.ackedAt && !r.recheckAt && (!r.doneAt || Date.parse(r.doneAt) > cutoff) && lastMidOf(r) > 0)
+    .sort((a, b) => lastMidOf(b) - lastMidOf(a));
+  // Trả lời đúng một tin → các cảnh báo của tin đó (tin gộp = cả tin); không thì tin cảnh báo mới nhất
+  let targets: AlertRepeat[] = [];
+  let mid = 0;
+  if (replyTo) {
+    const members = list.filter((r) => (r.messageIds || []).includes(replyTo));
+    targets = members.filter((r) => !r.ackedAt);
+    if (!targets.length) targets = members.slice(0, 1);
+    if (targets.length) mid = replyTo;
+  }
+  if (!targets.length && live[0]) {
+    mid = lastMidOf(live[0]);
+    targets = live.filter((r) => lastMidOf(r) === mid);
+  }
+  if (!targets.length) {
     await sendReply(botToken, chatId, "Không có cảnh báo nào đang chờ — gõ n/ok chỉ dùng cho tin cảnh báo đang nhắc.", msg.message_id, thread);
     return json({ ok: true, skipped: "no live alert" });
   }
-  if (kind === "tr" && !target.tf) {
-    await sendReply(botToken, chatId, "Cảnh báo này không có khung nến để kiểm lại — gõ ok để ngừng nhắc.", msg.message_id, thread);
-    return json({ ok: true, skipped: "no tf" });
+  if (kind === "tr") {
+    const withTf = targets.filter((r) => r.tf);
+    if (!withTf.length) {
+      await sendReply(botToken, chatId, "Cảnh báo này không có khung nến để kiểm lại — gõ ok để ngừng nhắc.", msg.message_id, thread);
+      return json({ ok: true, skipped: "no tf" });
+    }
+    targets = withTf;
   }
-  const res = await alertAction(supabase, userId, botToken, chatId, target.id!, kind);
+  const res = await alertAction(supabase, userId, botToken, chatId, targets.map((r) => r.id!), kind);
   if ("error" in res) {
     await sendReply(botToken, chatId, "⚠️ Lưu thất bại, gõ lại nhé.", msg.message_id, thread);
     return json({ error: res.error }, 500);
   }
-  // Nói rõ là cảnh báo nào (dòng đầu của tin), và còn cảnh báo khác đang nhắc không
-  const title = String(target.text || "").split("\n").find((x) => x.trim()) || "";
-  const others = live.filter((r) => r.id !== target!.id).length;
-  const lines = [title ? `${res.notice}\n› ${title.slice(0, 120)}` : res.notice];
+  // Nói rõ là cảnh báo nào (dòng đầu của tin / tên các mã), và còn cảnh báo khác đang nhắc không
+  const title = targets.length > 1
+    ? targets.map((r) => String(r.text || "").split("\n")[0].replace(/^\s*📈\s*/u, "").replace(/^\s*\[[^\]]*\]\s*-?\s*/, "").split(/\s+[—-]\s+/)[0]).sort().join(", ")
+    : String(targets[0].text || "").split("\n").find((x) => x.trim()) || "";
+  const ids = new Set(targets.map((r) => r.id));
+  const others = live.filter((r) => !ids.has(r.id)).length;
+  const lines = [title ? `${res.notice}\n› ${title.slice(0, 200)}` : res.notice];
   if (others) lines.push(`Còn ${others} cảnh báo khác đang nhắc — gõ tiếp n/ok, hoặc trả lời đúng tin muốn xử lý.`);
   await sendReply(botToken, chatId, lines.join("\n"), msg.message_id, thread);
-  return json({ ok: true, kind, id: target.id });
+  return json({ ok: true, kind, ids: [...ids], mid });
 }
