@@ -22,11 +22,16 @@
 // (ô Số MT5 + Khung). Gói đến muộn quá 30 phút (quét bù lịch sử lúc gắn EA) thì không báo.
 // Tắt: supabase secrets set MT5_FILL_TELEGRAM=off
 //
+// Bảng dời SL (EA v2.90+): "event": "sl" — mỗi lệnh mỗi nến một dòng (status moved/be/keep/skip/wait/closed,
+// slOld, slNew, pnl nếu chạm SL…). Ghi ô riêng slMove:<login>:<ticket>:<bar>; alert-relay tick gom theo tài khoản
+// thành một tin Telegram — xem _shared/slBoard.ts.
+//
 // Deploy: supabase functions deploy mt5-journal --no-verify-jwt
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { isCryptoSymbol, normTf, reentryPlan, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
+import { parseSlRow, slReplaces, slRowKey, type SlRow } from "../_shared/slBoard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -68,6 +73,7 @@ Deno.serve(async (req) => {
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch (_e) { return json({ ok: false, error: "bad json" }, 400); }
+  if (body.event === "sl") return await slEvent(body);
   const login = clean(body.login).replace(/\D/g, "");
   const ticket = clean(body.ticket).replace(/\D/g, "");
   const symbol = clean(body.symbol, 32);
@@ -195,4 +201,24 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
   if (res.ok) return { ...info, fill: "sent" };
   const why = await res.text().catch(() => "");
   return { ...info, fill: `telegram ${res.status}`, telegram: why.slice(0, 300) };
+}
+
+// ───────────── Bảng dời SL ─────────────
+
+async function slEvent(body: Record<string, unknown>) {
+  const row = parseSlRow(body);
+  if (!row) return json({ ok: false, error: "bad sl row" }, 400);
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const userId = await ownerId(supabase);
+  if (!userId) return json({ ok: false, error: "no owner" }, 500);
+  if (body.test === true) return json({ ok: true, test: true, row, key: slRowKey(row) });
+  const key = slRowKey(row);
+  const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", key).maybeSingle();
+  if (!slReplaces(data?.value as SlRow | null, row)) return json({ ok: true, kept: (data!.value as SlRow).status });
+  const { error } = await supabase.from("app_data").upsert(
+    { user_id: userId, key, value: row, updated_at: new Date().toISOString() },
+    { onConflict: "user_id,key" },
+  );
+  if (error) return json({ ok: false, error: error.message }, 500);
+  return json({ ok: true, key });
 }

@@ -18,6 +18,8 @@
 // Mã tiềm năng (Lịch nhắc → Mã tiềm năng): tin TradingView nhắc tới mã trong danh sách thì có dòng
 // "🔥🔥🔥 MÃ TIỀM NĂNG · <mã> 🔥🔥🔥" (+ ghi chú) ở đầu, bỏ qua silent và luôn nhắc lại như repeat=1.
 //
+// Bảng dời SL: mỗi lượt tick gửi / sửa tin bảng SL theo tài khoản (_shared/slBoard.ts, dữ liệu từ mt5-journal).
+//
 // Sát tin lớn: cảnh báo TradingView bắn trong khoảng X phút trước → Y phút sau giờ tin lớn của một đồng có trong mã
 // (slReminderSettings.newsGuard, mặc định 30/30) thì có dòng "⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH"
 // trên cùng; lần nhắc lại tính lại theo giờ lúc gửi. Lịch: _shared/newsCalendar.ts + bản dán (?news=1, web).
@@ -55,6 +57,7 @@ import {
   NEWS_KEY, newsEvents, newsHits, newsLine, newsTimeVn, parseNewsPaste, upcomingNews, type NewsEvent, type NewsGuard,
   type NewsStore,
 } from "../_shared/newsCalendar.ts";
+import { flushSlBoards } from "../_shared/slBoard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -190,8 +193,11 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     r.sent = 0;
     r.nextAt = new Date(now).toISOString();
   }
+  // Bảng dời SL của EA (mỗi tài khoản 1 tin mỗi nến) — xem _shared/slBoard.ts
+  let sl: unknown;
+  try { sl = await flushSlBoards(supabase, owner.userId, owner.settings.telegramBotToken!, now); } catch (e) { sl = String((e as Error).message || e); }
   const due = list.filter((r) => !r.ackedAt && !r.doneAt && Date.parse(r.nextAt) <= now);
-  if (!due.length && !changed.length) return json({ ok: true, due: 0 });
+  if (!due.length && !changed.length) return json({ ok: true, due: 0, sl });
 
   const token = owner.settings.telegramBotToken!;
   const hot = hotList(owner.settings);
