@@ -18,6 +18,7 @@ export const SL_MOVE_PREFIX = "slMove:";
 export const SL_BOARD_PREFIX = "slBoard:";
 const QUIET_MS = 60 * 1000;
 const KEEP_MS = 3 * 24 * 3600 * 1000;
+const STALE_MS = 3 * 3600 * 1000;
 // now = hiện trạng lúc EA khởi động (EA v2.91+), không phải kết quả của nến nào
 const STATUSES: SlStatus[] = ["moved", "be", "keep", "skip", "wait", "closed", "now"];
 // Đã dời / về BE / đã đóng là kết quả cuối của nến đó: dòng "giữ" đến sau (lúc nến đóng hẳn, sau khi đã dời sớm
@@ -142,8 +143,8 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g)!.push(row);
   }
-  const boards = new Map<string, { mid?: number; text?: string }>(
-    (boardRows || []).map((r: { key: string; value: { mid?: number; text?: string } }) => [r.key.slice(SL_BOARD_PREFIX.length), r.value || {}]),
+  const boards = new Map<string, { mid?: number; text?: string; skipped?: boolean }>(
+    (boardRows || []).map((r: { key: string; value: { mid?: number; text?: string; skipped?: boolean } }) => [r.key.slice(SL_BOARD_PREFIX.length), r.value || {}]),
   );
   const { chatId, topic } = fillChat();
   let sent = 0, edited = 0;
@@ -151,12 +152,17 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
     const text = boardText(rows);
     const board = boards.get(g);
     const newest = Math.max(...rows.map((r) => Date.parse(r.at) || 0));
-    const save = (v: { mid?: number; text: string }) => supabase.from("app_data").upsert(
+    const save = (v: { mid?: number; text: string; skipped?: boolean }) => supabase.from("app_data").upsert(
       { user_id: userId, key: `${SL_BOARD_PREFIX}${g}`, value: v, updated_at: new Date(nowMs).toISOString() },
       { onConflict: "user_id,key" },
     );
+    if (board?.skipped) continue;
     if (!board?.mid) {
       if (nowMs - newest < QUIET_MS) continue; // tài khoản còn đang báo các lệnh khác của nến này
+      // EA khởi động lại thì tính lại nến đã đóng gần nhất → dòng "giữ" của nến cũ: không gửi bảng nến đóng quá 3 tiếng
+      // (bảng hiện trạng "now" thì luôn gửi)
+      const stale = !rows.every((r) => r.status === "now") && newest - rows[0].bar * 1000 > STALE_MS;
+      if (stale) { await save({ text, skipped: true }); continue; }
       // Luôn có chuông (người dùng 06/11: tin im lặng thì tưởng không có tin); sửa tin sau đó thì không kêu
       const payload: Record<string, unknown> = { chat_id: chatId, text };
       if (topic) payload.message_thread_id = topic;
