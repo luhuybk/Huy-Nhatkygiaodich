@@ -57,7 +57,7 @@ import {
   NEWS_KEY, newsEvents, newsHits, newsLine, newsTimeVn, parseNewsPaste, upcomingNews, type NewsEvent, type NewsGuard,
   type NewsStore,
 } from "../_shared/newsCalendar.ts";
-import { flushSlBoards } from "../_shared/slBoard.ts";
+import { flushSlBoards, slStatus } from "../_shared/slBoard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -425,6 +425,11 @@ Deno.serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   if (url.searchParams.get("tick")) return await tick(supabase);
   if (url.searchParams.get("news")) return await newsApi(req, url, supabase);
+  if (url.searchParams.get("slstat")) {
+    if (!RELAY_KEY || url.searchParams.get("key") !== RELAY_KEY) return json({ error: "Sai khoá" }, 401);
+    const owner = await loadOwner(supabase);
+    return json(owner ? await slStatus(supabase, owner.userId) : { error: "no settings" });
+  }
   const cleanMode = url.searchParams.get("clean");
   if (cleanMode) {
     try {

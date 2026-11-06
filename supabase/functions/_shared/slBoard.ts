@@ -84,12 +84,16 @@ function rowLine(r: SlRow) {
   return `${head} · ${what}${early}${r.status === "closed" ? "" : ` · ${isBe(r) ? "đã BE" : "chưa BE"}`}`;
 }
 
+const SEP = "──────────────";
+
 export function boardText(rows: SlRow[]) {
   const list = [...rows].sort((a, b) => orderOf(a) - orderOf(b) || a.symbol.localeCompare(b.symbol));
   const first = list[0];
   const tfs = [...new Set(list.map((r) => r.tf).filter(Boolean))].join("/");
   const lines = [`🛡 SL · ${first.accountName || "#" + first.login} · nến ${tfs || ""} đóng ${hhmm(first.bar)} ${ddmm(first.bar)}`.replace(/\s+/g, " ")];
+  lines.push(SEP);
   for (const r of list) lines.push(rowLine(r));
+  lines.push(SEP);
   const open = list.filter((r) => r.status !== "closed");
   const moved = list.filter((r) => r.status === "moved" || r.status === "be").length;
   const foot = [`dời ${moved}/${list.length}`, `đã BE ${open.filter(isBe).length}/${open.length}`];
@@ -146,8 +150,8 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
     );
     if (!board?.mid) {
       if (nowMs - newest < QUIET_MS) continue; // tài khoản còn đang báo các lệnh khác của nến này
-      const loud = rows.some((r) => r.status === "wait" || r.status === "closed");
-      const payload: Record<string, unknown> = { chat_id: chatId, text, disable_notification: !loud };
+      // Luôn có chuông (người dùng 06/11: tin im lặng thì tưởng không có tin); sửa tin sau đó thì không kêu
+      const payload: Record<string, unknown> = { chat_id: chatId, text };
       if (topic) payload.message_thread_id = topic;
       const info = await tg(token, "sendMessage", payload);
       if (!info.ok) { console.error("sl board send failed", g, info.description); continue; }
@@ -161,4 +165,18 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
     }
   }
   return { sent, edited };
+}
+
+// Soát nhanh (alert-relay ?slstat=1&key=…): các dòng + bảng 24 giờ qua, không gửi gì
+export async function slStatus(supabase: Supa, userId: string, nowMs = Date.now()) {
+  const since = new Date(nowMs - 24 * 3600 * 1000).toISOString();
+  const { data: moves } = await supabase.from("app_data").select("key, value, updated_at")
+    .eq("user_id", userId).like("key", `${SL_MOVE_PREFIX}%`).gte("updated_at", since);
+  const { data: boards } = await supabase.from("app_data").select("key, value, updated_at")
+    .eq("user_id", userId).like("key", `${SL_BOARD_PREFIX}%`).gte("updated_at", since);
+  return {
+    chat: fillChat(),
+    moves: (moves || []).map((r: { key: string; value: SlRow }) => `${r.key} ${r.value?.status} ${r.value?.symbol} ${r.value?.at}`),
+    boards: (boards || []).map((r: { key: string; value: { mid?: number }; updated_at: string }) => `${r.key} mid=${r.value?.mid} ${r.updated_at}`),
+  };
 }
