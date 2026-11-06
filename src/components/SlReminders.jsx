@@ -4,7 +4,7 @@ import {
   CalendarDays, Clock, Settings2, Flame, Hourglass,
 } from "lucide-react";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, useAlertRepeats } from "./AlertRechecks.jsx";
-import { SymbolBox } from "./SymbolBox.jsx";
+import { fxBase, SymbolBox } from "./SymbolBox.jsx";
 import { nextRecheck, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
@@ -356,7 +356,7 @@ function PeriodicBody({ settings, onChange, remindersNode }) {
 
 // ───────────────────────── Mã tiềm năng ─────────────────────────
 
-// Ghi chú của một mã: sửa thoải mái, rời ô mới lưu (khỏi ghi lên máy chủ mỗi phím).
+// "thêm hôm nay" / "thêm 3 ngày trước" — hiện khi rê chuột lên mã ở dòng tóm tắt
 const hotAge = (iso) => {
   const d = daysSince(iso);
   return d === null ? "" : d <= 0 ? "thêm hôm nay" : `thêm ${d} ngày trước`;
@@ -368,20 +368,64 @@ const hotAge = (iso) => {
 // Bỏ mã khỏi danh sách thì mọi nhắc còn chờ của mã đó bỏ theo. (Ô "kịch bản chờ" đã bỏ — 05/11.)
 const HOT_RECHECK_TFS = ["H4", "H8", "D"];
 
-export function HotBody({ settings, onChange, resources, trades, watches, alertData }) {
+// Bảng mã tiềm năng: đủ các mã FX / vàng / hàng hoá / năng lượng của Tài nguyên (cố định như watchlist
+// TradingView), FX chia khối theo đồng base, mỗi nhóm khác một khối. Mỗi mã một dòng: bấm tên = bật/tắt
+// tiềm năng, bấm H4 / H8 / D = tiềm năng ở khung đó (tự bật mã + nhắc kiểm lại lúc nến khung ấy đóng).
+// Mã ngoài danh sách (US stock, VN stock…) thêm ở ô "Mã khác" — lưu ở slReminderSettings.hotBoardExtra.
+const symKey = (name) => String(name || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function hotBoardSections(resources, extra, hotList) {
+  const groups = (resources && resources.symbolGroups) || {};
+  const order = (resources && resources.symbols) || [];
+  const seen = new Set();
+  const fx = new Map();      // đồng base → mã
+  const other = new Map();   // nhóm → mã
+  order.forEach((sym) => {
+    const g = groups[sym];
+    const k = symKey(sym);
+    if (!g || seen.has(k)) return;
+    seen.add(k);
+    const base = fxBase(sym);
+    if (base) { if (!fx.has(base)) fx.set(base, []); fx.get(base).push(sym); return; }
+    if (!other.has(g)) other.set(g, []);
+    other.get(g).push(sym);
+  });
+  const mine = [];
+  [...(extra || []), ...hotList.map((h) => h.name)].forEach((sym) => {
+    const k = symKey(sym);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    mine.push(sym);
+  });
+  return [
+    ...[...fx].map(([base, syms]) => ({ key: `fx-${base}`, label: base, fx: true, syms })),
+    ...[...other].map(([g, syms]) => ({ key: `g-${g}`, label: g, syms })),
+    { key: "mine", label: "Mã khác", mine: true, syms: sortSymbolNames(mine) },
+  ];
+}
+
+export function HotBody({ settings, onChange, resources, alertData }) {
   // Xếp theo chữ cái (cặp FX cùng đồng base tự đứng cạnh nhau) — cả danh sách cũ lẫn mã mới thêm
   const list = useMemo(() => sortWatchSymbols(settings.hotSymbols || []), [settings.hotSymbols]);
-  const save = (next) => onChange({ ...settings, hotSymbols: sortWatchSymbols(next).map((h) => (h.note ? { ...h, note: "" } : h)) });
+  const extra = settings.hotBoardExtra || [];
+  const save = (next, patch = {}) => onChange({ ...settings, ...patch, hotSymbols: sortWatchSymbols(next).map((h) => (h.note ? { ...h, note: "" } : h)) });
   // Ghi chú cũ (ô kịch bản chờ đã bỏ) còn lưu thì vẫn hiện 📝 trên Telegram — xoá một lần
   useEffect(() => {
     if ((settings.hotSymbols || []).some((h) => h && String(h.note || "").trim())) save(settings.hotSymbols);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const recheckTf = settings.hotRecheckTf === undefined ? "H4" : settings.hotRecheckTf;
   const alerts = alertData && Array.isArray(alertData.list) ? alertData.list : null;
+  const [onlyHot, setOnlyHot] = useState(() => readLocalUi("hotOnlyHot", "0") === "1");
+  const toggleOnlyHot = () => { const v = !onlyHot; setOnlyHot(v); writeLocalUi("hotOnlyHot", v ? "1" : "0"); };
+  const [extraText, setExtraText] = useState("");
+
+  const hotByKey = useMemo(() => new Map(list.map((h) => [symKey(h.name), h])), [list]);
+  const sections = useMemo(() => hotBoardSections(resources, extra, list), [resources, extra, list]);
+
   // Nhắc của mã này ở khung tf: bản ghi tạo từ đây (hotId) hoặc thêm tay ở Cảnh báo nhắc lại cùng mã, cùng khung.
   // Cảnh báo TradingView của mã đó KHÔNG tính — trước đây chúng làm nút bấm không ra gì (EUR/AUD 05/11).
   const recFor = (all, h, tf) => (all || []).find((r) => recheckPending(r) && r.kind !== "reentry" && (r.tf || "D") === tf
-    && (r.hotId === h.id || ((r.source === "web" || r.source === "hot") && hotMatches(String(r.text || ""), [{ name: h.name }]).length)));
+    && ((h.id && r.hotId === h.id) || ((r.source === "web" || r.source === "hot") && hotMatches(String(r.text || ""), [{ name: h.name }]).length)));
   const addRechecks = (items, tf = recheckTf) => {
     if (!tf || !alerts || !items.length) return;
     alertData.mutate((all) => {
@@ -389,62 +433,126 @@ export function HotBody({ settings, onChange, resources, trades, watches, alertD
       return [...all, ...items.filter((h) => !recFor(all, h, tf)).map((h) => recheckRecord({ name: h.name, tf, hotId: h.id }, t))];
     });
   };
-  const toggleTf = (h, tf) => {
-    const rec = recFor(alerts, h, tf);
-    if (!rec) { addRechecks([h], tf); return; }
-    alertData.mutate((all) => all.filter((r) => r.id !== rec.id));
-  };
   const dropRechecks = (ids) => {
     if (!alerts || !alerts.some((r) => ids.has(r.hotId) && recheckPending(r))) return;
     alertData.mutate((all) => all.filter((r) => !(ids.has(r.hotId) && recheckPending(r))));
   };
-  const remove = (x) => { save(list.filter((h) => h.id !== x.id)); dropRechecks(new Set([x.id])); };
-  const suggestions = useMemo(() => {
-    const used = [...new Set((watches || []).flatMap((w) => (w.symbols || []).filter((x) => !x.done).map((x) => x.name)))];
-    return [...used, ...symbolSuggestions(resources, trades, used, 300)];
-  }, [watches, resources, trades]);
-  const add = (names) => {
-    const have = new Set(list.map((h) => h.name));
-    const fresh = names.filter((n) => !have.has(n)).map((name) => ({ id: uid(), name, note: "", addedAt: new Date().toISOString() }));
-    if (!fresh.length) return;
-    save([...list, ...fresh]);
-    addRechecks(fresh);
+  // Bật tiềm năng: tf = khung bấm; không bấm khung (bấm tên) thì theo ô "tự nhắc" bên dưới
+  const makeHot = (names, tf, patch) => {
+    const fresh = names.filter((n) => !hotByKey.has(symKey(n))).map((name) => ({ id: uid(), name, note: "", addedAt: new Date().toISOString() }));
+    if (fresh.length || patch) save([...list, ...fresh], patch);
+    addRechecks(fresh, tf === undefined ? recheckTf : tf);
+    return fresh;
   };
+  const unHot = (h) => { save(list.filter((x) => x.id !== h.id)); dropRechecks(new Set([h.id])); };
+  const toggleName = (sym) => { const h = hotByKey.get(symKey(sym)); if (h) unHot(h); else makeHot([sym]); };
+  const toggleTf = (sym, tf) => {
+    const h = hotByKey.get(symKey(sym));
+    if (!h) { makeHot([sym], tf); return; }
+    const rec = recFor(alerts, h, tf);
+    if (!rec) addRechecks([h], tf);
+    else alertData.mutate((all) => all.filter((r) => r.id !== rec.id));
+  };
+  const addExtra = () => {
+    const names = parseSymbolList(extraText).map((x) => x.toUpperCase());
+    if (!names.length) return;
+    const nextExtra = [...extra, ...names.filter((n) => !extra.some((e) => symKey(e) === symKey(n)))];
+    makeHot(names, undefined, { hotBoardExtra: nextExtra });
+    setExtraText("");
+  };
+  const removeExtra = (sym) => {
+    const h = hotByKey.get(symKey(sym));
+    const nextExtra = extra.filter((e) => symKey(e) !== symKey(sym));
+    save(h ? list.filter((x) => x.id !== h.id) : list, { hotBoardExtra: nextExtra });
+    if (h) dropRechecks(new Set([h.id]));
+  };
+
+  const tfButton = (sym, h, tf) => {
+    const rec = h && alerts ? recFor(alerts, h, tf) : null;
+    if (rec && rec.recheckAt) {
+      const at = vnTime(Date.parse(rec.recheckAt));
+      return <button key={tf} type="button" className="hb-tf hb-tf-on" onClick={() => toggleTf(sym, tf)} title={`Chờ nến ${tf} đóng — nhắc lúc ${at}. Bấm để bỏ.`}>{tf}</button>;
+    }
+    if (rec) return <button key={tf} type="button" className="hb-tf hb-tf-ring" onClick={() => toggleTf(sym, tf)} title={`Bot đang nhắc nến ${tf} trên Telegram. Bấm để bỏ.`}>{tf}🔔</button>;
+    return (
+      <button key={tf} type="button" className="hb-tf" onClick={() => toggleTf(sym, tf)} disabled={!alerts && !!h}
+        title={alerts ? `Tiềm năng khung ${tf}: nhắc kiểm lại lúc nến ${tf} kế tiếp đóng (${vnTime(nextRecheck(tf, Date.now()).at)})` : "Cần Bot Telegram để nhắc theo nến"}>
+        {tf}
+      </button>
+    );
+  };
+  // Dòng tóm tắt các mã đang tiềm năng + khung đang chờ (giờ nhắc)
+  const tfSummary = (h) => (alerts ? HOT_RECHECK_TFS.map((tf) => {
+    const rec = recFor(alerts, h, tf);
+    if (!rec) return null;
+    return <span key={tf} className={`hb-sum-tf ${rec.recheckAt ? "" : "hb-sum-ring"}`}>{tf} {rec.recheckAt ? `⏳${vnTime(Date.parse(rec.recheckAt))}` : "🔔"}</span>;
+  }) : null);
+
+  const shown = sections.map((sec) => ({ ...sec, syms: onlyHot ? sec.syms.filter((x) => hotByKey.has(symKey(x))) : sec.syms }))
+    .filter((sec) => sec.syms.length);
   const first = list[0];
   return (
     <div>
       <p className="field-hint" style={{ marginTop: 8 }}>
-        Cảnh báo TradingView có tên mã trong danh sách sẽ có dòng <b>🔥 MÃ TIỀM NĂNG</b> ở đầu tin (thấy ngay trên màn hình khoá),
-        luôn có chuông và nhắc lại tới khi bạn gõ <b>ok</b> / <b>n</b>. Tin <b>Kiểm tra setup</b> cũng liệt kê các mã này đầu tiên,
-        kèm đã báo lúc mấy giờ, đã xử lý chưa.
+        Bấm <b>tên mã</b> để bật/tắt tiềm năng, bấm <b>H4 / H8 / D</b> để đánh dấu tiềm năng ở khung đó — bot nhắc kiểm lại lúc nến khung ấy đóng.
+        Cảnh báo TradingView của mã tiềm năng có dòng <b>🔥 MÃ TIỀM NĂNG</b> ở đầu tin, luôn có chuông.
       </p>
-      <SymbolBox items={list} suggestions={suggestions} onAdd={add} groupOf={resources && resources.symbolGroups} order={resources && resources.symbols} onRemove={remove}
-        placeholder="EURUSD XAUUSD NVDA" />
+      <div className="hb-top">
+        {list.length ? (
+          <div className="hb-sum">
+            {list.map((h) => (
+              <span key={h.id} className="hb-sum-chip" title={hotAge(h.addedAt)}>
+                <Flame size={11} /> <b className="mono">{h.name}</b>{tfSummary(h)}
+                <button type="button" className="hb-sum-x" onClick={() => unHot(h)} title="Bỏ khỏi tiềm năng"><X size={11} /></button>
+              </span>
+            ))}
+          </div>
+        ) : <span className="field-hint">Chưa chọn mã nào.</span>}
+        <label className="hb-only">
+          <input type="checkbox" checked={onlyHot} onChange={toggleOnlyHot} /> Chỉ hiện mã đang tiềm năng
+        </label>
+      </div>
+      <div className="hb-board">
+        {shown.map((sec) => (
+          <div key={sec.key} className={`hb-box ${sec.fx ? "hb-box-fx" : ""}`}>
+            <div className="hb-box-head">{sec.label}<span>{sec.syms.filter((x) => hotByKey.has(symKey(x))).length || ""}</span></div>
+            {sec.syms.map((sym) => {
+              const h = hotByKey.get(symKey(sym));
+              return (
+                <div key={sym} className={`hb-row ${h ? "hb-row-hot" : ""}`}>
+                  <button type="button" className="hb-name mono" onClick={() => toggleName(sym)} title={h ? "Bấm để bỏ tiềm năng" : "Bấm để đánh dấu tiềm năng"}>
+                    {h ? <Flame size={11} /> : null}{sym}
+                  </button>
+                  <span className="hb-tfs">{HOT_RECHECK_TFS.map((tf) => tfButton(sym, h, tf))}</span>
+                  {sec.mine && extra.some((e) => symKey(e) === symKey(sym)) ? (
+                    <button type="button" className="hb-del" onClick={() => removeExtra(sym)} title="Xoá mã này khỏi bảng"><X size={11} /></button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {!onlyHot ? (
+          <div className="hb-box hb-box-add">
+            <div className="hb-box-head">Thêm mã khác</div>
+            <div className="hb-add">
+              <input className="input" value={extraText} onChange={(e) => setExtraText(e.target.value)} placeholder="NVDA, FPT…"
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtra(); } }} />
+              <button type="button" className="btn btn-ghost btn-xs" onClick={addExtra} disabled={!extraText.trim()}><PlusCircle size={12} /> Thêm</button>
+            </div>
+            <span className="field-hint">US stock, VN stock… — nằm lại ở khối Mã khác.</span>
+          </div>
+        ) : null}
+      </div>
       <div className="hot-recheck">
-        <span className="field-hint">Mã mới tự vào <b>Cảnh báo nhắc lại</b>:</span>
+        <span className="field-hint">Bấm tên mã (không chọn khung) thì tự nhắc:</span>
         <select className="input input-inline" style={{ width: "auto" }} value={recheckTf}
           onChange={(e) => onChange({ ...settings, hotRecheckTf: e.target.value })}>
-          {HOT_RECHECK_TFS.map((tf) => <option key={tf} value={tf}>nhắc lúc nến {tf} đóng</option>)}
-          <option value="">không tự thêm</option>
+          {HOT_RECHECK_TFS.map((tf) => <option key={tf} value={tf}>lúc nến {tf} đóng</option>)}
+          <option value="">không nhắc</option>
         </select>
         {!alerts ? <span className="field-hint">(cần Bot Telegram)</span> : null}
       </div>
-      {list.length ? (
-        <div className="hot-list">
-          {list.map((h) => (
-            <div key={h.id} className="hot-row">
-              <span className="hot-name mono"><Flame size={12} /> {h.name}</span>
-              {alerts ? (
-                <span className="hot-tfs">
-                  {HOT_RECHECK_TFS.map((tf) => <HotTfChip key={tf} tf={tf} rec={recFor(alerts, h, tf)} onClick={() => toggleTf(h, tf)} />)}
-                </span>
-              ) : null}
-              <span className="hot-age">{hotAge(h.addedAt)}</span>
-            </div>
-          ))}
-          {alerts ? <p className="field-hint">Bấm H4 / H8 / D để nhắc kiểm lại mã đó lúc nến khung ấy đóng — một mã bật được nhiều khung; bấm lại khung đang sáng để bỏ.</p> : null}
-        </div>
-      ) : null}
       {alertData && alertData.error ? <p className="error-text">{alertData.error}</p> : null}
       {first ? (
         <div className="hot-preview">
@@ -454,33 +562,14 @@ export function HotBody({ settings, onChange, resources, trades, watches, alertD
       ) : null}
       <p className="field-hint">
         Tin cảnh báo cần có tên mã viết hoa — đặt <span className="mono">{"{{ticker}}"}</span> trong ô Tin nhắn của TradingView là chắc nhất.
-        Setup xong hoặc hết tiềm năng thì bấm ✕ để bỏ, tránh danh sách dài lại thành "mã nào cũng nổi bật".
+        Setup xong hoặc hết tiềm năng thì bấm lại tên mã để bỏ, tránh "mã nào cũng nổi bật".
       </p>
       {list.length > 1 ? (
         <div className="form-actions" style={{ justifyContent: "flex-start" }}>
-          <DangerConfirmButton onConfirm={() => { save([]); dropRechecks(new Set(list.map((h) => h.id))); }} label="Xoá cả danh sách" confirmLabel="Bấm lần nữa để xoá hết" />
+          <DangerConfirmButton onConfirm={() => { save([]); dropRechecks(new Set(list.map((h) => h.id))); }} label="Bỏ hết mã tiềm năng" confirmLabel="Bấm lần nữa để bỏ hết" />
         </div>
       ) : null}
     </div>
-  );
-}
-
-// Một khung của mã tiềm năng: tắt = "+ H4"; đang chờ nến = "H4 ⏳ 13:01" (sáng); bot đang nhắc = "H4 🔔"
-function HotTfChip({ tf, rec, onClick }) {
-  if (rec && rec.recheckAt) {
-    return (
-      <button type="button" className="hot-tf hot-tf-on" onClick={onClick} title={`Chờ nến ${tf} đóng — nhắc lúc ${vnTime(Date.parse(rec.recheckAt))}. Bấm để bỏ nhắc.`}>
-        {tf} <Hourglass size={10} /> {vnTime(Date.parse(rec.recheckAt))}
-      </button>
-    );
-  }
-  if (rec) {
-    return <button type="button" className="hot-tf hot-tf-ring" onClick={onClick} title={`Bot đang nhắc nến ${tf} trên Telegram. Bấm để bỏ.`}>{tf} 🔔</button>;
-  }
-  return (
-    <button type="button" className="hot-tf" onClick={onClick} title={`Nhắc kiểm lại lúc nến ${tf} kế tiếp đóng (${vnTime(nextRecheck(tf, Date.now()).at)})`}>
-      + {tf}
-    </button>
   );
 }
 

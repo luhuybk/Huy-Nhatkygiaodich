@@ -4,7 +4,7 @@ import { looksTelexed, parseSymbolList, untelexSymbol } from "../lib/helpers.js"
 
 // Đồng base của cặp FX (EUR/USD, EURUSD → EUR) — gợi ý gom mỗi đồng base vào một khung có nhãn riêng
 const FX_CCY = new Set(["AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"]);
-function fxBase(sym) {
+export function fxBase(sym) {
   const c = String(sym || "").toUpperCase().replace(/[^A-Z]/g, "");
   return c.length === 6 && FX_CCY.has(c.slice(0, 3)) && FX_CCY.has(c.slice(3)) ? c.slice(0, 3) : "";
 }

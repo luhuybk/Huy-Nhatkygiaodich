@@ -2653,3 +2653,53 @@ button.nt-check:hover { filter: brightness(1.25); }
 .hot-tf:hover { border-style:solid; color:var(--accent); border-color:rgba(var(--accent-rgb),0.5); }
 .hot-tf-on { border:1.5px solid rgba(var(--accent-rgb),0.6); background:rgba(var(--accent-rgb),0.12); color:var(--accent); }
 .hot-tf-ring { border:1.5px solid rgba(249,115,22,0.6); background:rgba(249,115,22,0.12); color:#f97316; }
+
+/* Bảng mã tiềm năng: khối theo đồng base / nhóm, xếp cột kiểu tường gạch (CSS columns) */
+.hb-top { display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-top:8px; }
+.hb-sum { display:flex; flex-wrap:wrap; gap:6px; flex:1 1 300px; }
+.hb-sum-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 4px 3px 8px; border-radius:12px; font-size:12px;
+  border:1.5px solid rgba(249,115,22,.55); background:rgba(249,115,22,.08); color:#f97316; }
+.hb-sum-chip b { color:var(--text); font-weight:600; }
+.hb-sum-tf { font-size:11px; padding:1px 6px; border-radius:8px; background:rgba(var(--accent-rgb),.14); color:var(--accent); white-space:nowrap; }
+.hb-sum-ring { background:rgba(249,115,22,.16); color:#f97316; }
+.hb-sum-x { display:inline-flex; background:none; border:none; padding:2px; cursor:pointer; color:var(--text-dim); border-radius:6px; }
+.hb-sum-x:hover { color:var(--loss); background:rgba(127,127,127,.12); }
+.hb-only { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--text-dim); white-space:nowrap; cursor:pointer; margin-left:auto; }
+.hb-board { columns: 210px; column-gap:10px; margin-top:10px; }
+.hb-box { break-inside:avoid; display:inline-block; width:100%; margin:0 0 10px; padding:6px 6px 4px; border-radius:10px;
+  border:1px solid var(--border); background:rgba(127,127,127,.03); }
+.hb-box-fx { border:1.5px solid rgba(var(--accent-rgb),.35); }
+.hb-box-head { display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--accent); padding:0 4px 4px; }
+.hb-box-head span { margin-left:auto; color:#f97316; }
+.hb-row { display:flex; align-items:center; gap:4px; padding:2px 2px 2px 0; border-radius:7px; }
+.hb-row:hover { background:rgba(127,127,127,.07); }
+.hb-row-hot { background:rgba(249,115,22,.10); }
+.hb-row-hot:hover { background:rgba(249,115,22,.15); }
+.hb-name { flex:1 1 auto; min-width:0; display:inline-flex; align-items:center; gap:3px; text-align:left; background:none; border:none; cursor:pointer;
+  padding:4px 6px; font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:6px; }
+.hb-name:hover { color:var(--text); }
+.hb-row-hot .hb-name { color:#f97316; font-weight:700; }
+.hb-tfs { display:inline-flex; gap:3px; flex:0 0 auto; }
+.hb-tf { min-width:30px; padding:2px 5px; font-size:10.5px; font-weight:600; border-radius:6px; cursor:pointer; background:transparent;
+  border:1px solid transparent; color:var(--text-dim); opacity:.45; }
+.hb-row:hover .hb-tf, .hb-row-hot .hb-tf { opacity:.8; border-color:var(--border); }
+.hb-tf:hover { opacity:1 !important; color:var(--accent); border-color:rgba(var(--accent-rgb),.5) !important; }
+.hb-tf:disabled { cursor:default; }
+.hb-tf-on { opacity:1 !important; background:rgba(var(--accent-rgb),.85); color:#111 !important; border-color:transparent !important; }
+.hb-tf-ring { opacity:1 !important; background:rgba(249,115,22,.85); color:#111 !important; border-color:transparent !important; }
+.hb-del { display:inline-flex; background:none; border:none; padding:2px; cursor:pointer; color:var(--text-dim); border-radius:6px; }
+.hb-del:hover { color:var(--loss); }
+.hb-box-add { border-style:dashed; }
+.hb-add { display:flex; gap:6px; padding:0 2px 4px; }
+.hb-add .input { flex:1 1 auto; min-width:0; padding:5px 8px; font-size:12.5px; text-transform:uppercase; }
+.hb-box-add .field-hint { display:block; padding:0 4px 2px; font-size:11px; }
+@media (hover: none) { .hb-tf { opacity:.75; border-color:var(--border); } }
+@media (max-width: 600px) {
+  .hb-board { columns: 2; column-gap: 6px; }
+  .hb-box { padding: 5px 3px 3px; }
+  .hb-name { padding: 4px 3px; font-size: 11.5px; }
+  .hb-name svg { display: none; }
+  .hb-tfs { gap: 2px; }
+  .hb-tf { min-width: 0; padding: 3px 4px; font-size: 10px; }
+}
