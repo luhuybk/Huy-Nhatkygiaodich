@@ -11,7 +11,7 @@ export type SlStatus = "moved" | "be" | "keep" | "skip" | "wait" | "closed";
 export type SlRow = {
   login: string; accountName: string; ticket: string; symbol: string; side: "buy" | "sell"; status: SlStatus;
   no: string; tf: string; bar: number; slOld: number; slNew: number; level: number; open: number; digits: number;
-  currency: string; pnl?: number; note: string; at: string;
+  currency: string; note: string; at: string;
 };
 
 export const SL_MOVE_PREFIX = "slMove:";
@@ -33,7 +33,6 @@ export function parseSlRow(body: Record<string, unknown>): SlRow | null {
   const bar = Math.round(Number(body.bar));
   const status = clean(body.status) as SlStatus;
   if (!login || !ticket || !symbol || !(bar > 0) || !STATUSES.includes(status)) return null;
-  const pnl = Number(body.pnl);
   return {
     login, ticket, symbol, bar, status,
     accountName: clean(body.accountName, 120),
@@ -42,7 +41,6 @@ export function parseSlRow(body: Record<string, unknown>): SlRow | null {
     slOld: num(body.slOld), slNew: num(body.slNew), level: num(body.level), open: num(body.open),
     digits: Math.max(0, Math.min(8, Math.round(num(body.digits)) || 5)),
     currency: clean(body.currency, 8).toUpperCase(),
-    ...(Number.isFinite(pnl) && body.pnl !== undefined && body.pnl !== null ? { pnl: Math.round(pnl * 100) / 100 } : {}),
     note: clean(body.note, 120), at: new Date().toISOString(),
   };
 }
@@ -63,26 +61,27 @@ const ddmm = (sec: number) => {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 const px = (v: number, d: number) => (v > 0 ? v.toFixed(d) : "—");
-const money = (v: number, cur: string) => {
-  const s = `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
-  return cur === "USD" || !cur ? `${s}$` : `${s} ${cur}`;
-};
 const ICON: Record<SlStatus, string> = { moved: "✅", be: "🔒", keep: "⏸", skip: "🆕", wait: "⏳", closed: "❌" };
 const orderOf = (r: SlRow) => Number(r.no.split("/")[0]) || 999;
+// Đã BE = SL đang có (sau lần dời này) ở hoặc qua giá vào
+const isBe = (r: SlRow) => {
+  const sl = r.status === "moved" || r.status === "be" ? r.slNew : r.slOld;
+  return r.open > 0 && sl > 0 && (r.side === "buy" ? sl >= r.open : sl <= r.open);
+};
 
+// Chỉ tình trạng: dời hay giữ, đã BE chưa, SL bao nhiêu — không ghi lãi/lỗ (người dùng chọn 06/11)
 function rowLine(r: SlRow) {
   const d = r.digits;
   const head = `${ICON[r.status]} ${r.no ? r.no + " " : ""}${shortSymbol(r.symbol)} ${r.side === "buy" ? "Buy" : "Sell"}`;
   let what = "";
-  if (r.status === "moved") what = `SL ${px(r.slOld, d)} → ${px(r.slNew, d)}`;
-  else if (r.status === "be") what = `SL ${px(r.slOld, d)} → ${px(r.slNew, d)} (hòa vốn + phí)`;
-  else if (r.status === "keep") what = `giữ SL ${px(r.slOld, d)}${r.note === "qua hòa vốn" ? " (đã qua hòa vốn)" : r.level > 0 ? ` · nến ${px(r.level, d)}` : ""}`;
+  if (r.status === "moved") what = `dời SL ${px(r.slOld, d)} → ${px(r.slNew, d)}`;
+  else if (r.status === "be") what = `dời về BE · SL ${px(r.slOld, d)} → ${px(r.slNew, d)}`;
+  else if (r.status === "keep") what = `giữ SL ${px(r.slOld, d)}`;
   else if (r.status === "skip") what = `mới vào, chưa kéo · SL ${px(r.slOld, d)}`;
-  else if (r.status === "wait") what = `CHƯA DỜI: ${r.note || "đang chờ"} · SL ${px(r.slOld, d)} (mức mới ${px(r.slNew, d)})`;
+  else if (r.status === "wait") what = `CHƯA DỜI (${r.note || "đang chờ"}) · SL ${px(r.slOld, d)}, sẽ dời → ${px(r.slNew, d)}`;
   else if (r.status === "closed") what = `${r.note || "giá vượt SL mới"} → EA đã đóng lệnh`;
-  const extra = (r.status === "moved" || r.status === "be") && r.note.startsWith("dời sớm") ? ` · ${r.note}` : "";
-  const pnl = r.pnl !== undefined && r.status !== "closed" ? ` · chạm SL ${money(r.pnl, r.currency)}` : "";
-  return `${head} · ${what}${extra}${pnl}`;
+  const early = (r.status === "moved" || r.status === "be") && r.note.startsWith("dời sớm") ? ` (${r.note})` : "";
+  return `${head} · ${what}${early}${r.status === "closed" ? "" : ` · ${isBe(r) ? "đã BE" : "chưa BE"}`}`;
 }
 
 export function boardText(rows: SlRow[]) {
@@ -91,15 +90,9 @@ export function boardText(rows: SlRow[]) {
   const tfs = [...new Set(list.map((r) => r.tf).filter(Boolean))].join("/");
   const lines = [`🛡 SL · ${first.accountName || "#" + first.login} · nến ${tfs || ""} đóng ${hhmm(first.bar)} ${ddmm(first.bar)}`.replace(/\s+/g, " ")];
   for (const r of list) lines.push(rowLine(r));
-  const withPnl = list.filter((r) => r.pnl !== undefined && r.status !== "closed");
+  const open = list.filter((r) => r.status !== "closed");
   const moved = list.filter((r) => r.status === "moved" || r.status === "be").length;
-  const foot = [`dời ${moved}/${list.length}`];
-  if (withPnl.length) {
-    const cur = withPnl[0].currency;
-    const sum = withPnl.reduce((s, r) => s + (r.pnl || 0), 0);
-    const locked = withPnl.filter((r) => (r.pnl || 0) >= 0).length;
-    foot.push(`chạm hết SL ${money(sum, cur)}`, `khoá lãi ${locked}/${withPnl.length}`);
-  }
+  const foot = [`dời ${moved}/${list.length}`, `đã BE ${open.filter(isBe).length}/${open.length}`];
   if (list.some((r) => r.status === "wait")) foot.push("⚠️ còn lệnh chưa dời");
   lines.push(foot.join(" · "));
   return lines.join("\n");
