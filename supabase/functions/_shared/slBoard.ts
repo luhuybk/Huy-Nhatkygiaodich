@@ -7,7 +7,7 @@
 
 import { fillChat, shortSymbol } from "./mt5Fill.ts";
 
-export type SlStatus = "moved" | "be" | "keep" | "skip" | "wait" | "closed";
+export type SlStatus = "moved" | "be" | "keep" | "skip" | "wait" | "closed" | "now";
 export type SlRow = {
   login: string; accountName: string; ticket: string; symbol: string; side: "buy" | "sell"; status: SlStatus;
   no: string; tf: string; bar: number; slOld: number; slNew: number; level: number; open: number; digits: number;
@@ -18,7 +18,8 @@ export const SL_MOVE_PREFIX = "slMove:";
 export const SL_BOARD_PREFIX = "slBoard:";
 const QUIET_MS = 60 * 1000;
 const KEEP_MS = 3 * 24 * 3600 * 1000;
-const STATUSES: SlStatus[] = ["moved", "be", "keep", "skip", "wait", "closed"];
+// now = hiện trạng lúc EA khởi động (EA v2.91+), không phải kết quả của nến nào
+const STATUSES: SlStatus[] = ["moved", "be", "keep", "skip", "wait", "closed", "now"];
 // Đã dời / về BE / đã đóng là kết quả cuối của nến đó: dòng "giữ" đến sau (lúc nến đóng hẳn, sau khi đã dời sớm
 // trước giờ qua đêm) hay "chờ" không được đè lên
 const FINAL: SlStatus[] = ["moved", "be", "closed"];
@@ -61,7 +62,7 @@ const ddmm = (sec: number) => {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 const px = (v: number, d: number) => (v > 0 ? v.toFixed(d) : "—");
-const ICON: Record<SlStatus, string> = { moved: "✅", be: "🔒", keep: "⏸", skip: "🆕", wait: "⏳", closed: "❌" };
+const ICON: Record<SlStatus, string> = { moved: "✅", be: "🔒", keep: "⏸", skip: "🆕", wait: "⏳", closed: "❌", now: "📍" };
 const orderOf = (r: SlRow) => Number(r.no.split("/")[0]) || 999;
 // Đã BE = SL đang có (sau lần dời này) ở hoặc qua giá vào
 const isBe = (r: SlRow) => {
@@ -80,6 +81,7 @@ function rowLine(r: SlRow) {
   else if (r.status === "skip") what = `mới vào, chưa kéo · SL ${px(r.slOld, d)}`;
   else if (r.status === "wait") what = `CHƯA DỜI (${r.note || "đang chờ"}) · SL ${px(r.slOld, d)}, sẽ dời → ${px(r.slNew, d)}`;
   else if (r.status === "closed") what = `${r.note || "giá vượt SL mới"} → EA đã đóng lệnh`;
+  else if (r.status === "now") what = r.slOld > 0 ? `SL ${px(r.slOld, d)}` : "⚠️ CHƯA CÓ SL";
   const early = (r.status === "moved" || r.status === "be") && r.note.startsWith("dời sớm") ? ` (${r.note})` : "";
   return `${head} · ${what}${early}${r.status === "closed" ? "" : ` · ${isBe(r) ? "đã BE" : "chưa BE"}`}`;
 }
@@ -90,13 +92,18 @@ export function boardText(rows: SlRow[]) {
   const list = [...rows].sort((a, b) => orderOf(a) - orderOf(b) || a.symbol.localeCompare(b.symbol));
   const first = list[0];
   const tfs = [...new Set(list.map((r) => r.tf).filter(Boolean))].join("/");
-  const lines = [`🛡 SL · ${first.accountName || "#" + first.login} · nến ${tfs || ""} đóng ${hhmm(first.bar)} ${ddmm(first.bar)}`.replace(/\s+/g, " ")];
+  const snap = list.every((r) => r.status === "now");
+  const who = first.accountName || "#" + first.login;
+  const lines = [snap
+    ? `🛡 SL hiện tại · ${who} · khung ${tfs} · lúc ${hhmm(first.bar)} ${ddmm(first.bar)}`
+    : `🛡 SL · ${who} · nến ${tfs || ""} đóng ${hhmm(first.bar)} ${ddmm(first.bar)}`.replace(/\s+/g, " ")];
   lines.push(SEP);
   for (const r of list) lines.push(rowLine(r));
   lines.push(SEP);
   const open = list.filter((r) => r.status !== "closed");
   const moved = list.filter((r) => r.status === "moved" || r.status === "be").length;
-  const foot = [`dời ${moved}/${list.length}`, `đã BE ${open.filter(isBe).length}/${open.length}`];
+  const foot = [snap ? `${list.length} lệnh` : `dời ${moved}/${list.length}`, `đã BE ${open.filter(isBe).length}/${open.length}`];
+  if (list.some((r) => r.status === "now" && !(r.slOld > 0))) foot.push("⚠️ có lệnh chưa có SL");
   if (list.some((r) => r.status === "wait")) foot.push("⚠️ còn lệnh chưa dời");
   lines.push(foot.join(" · "));
   return lines.join("\n");
