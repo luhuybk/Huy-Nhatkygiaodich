@@ -18,6 +18,10 @@
 // Mã tiềm năng (Lịch nhắc → Mã tiềm năng): tin TradingView nhắc tới mã trong danh sách thì có dòng
 // "🔥🔥🔥 MÃ TIỀM NĂNG · <mã> 🔥🔥🔥" (+ ghi chú) ở đầu, bỏ qua silent và luôn nhắc lại như repeat=1.
 //
+// Sát tin lớn: cảnh báo TradingView bắn trong khoảng X phút trước → Y phút sau giờ tin lớn của một đồng có trong mã
+// (slReminderSettings.newsGuard, mặc định 30/30) thì có dòng "⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH"
+// trên cùng; lần nhắc lại tính lại theo giờ lúc gửi. Lịch: _shared/newsCalendar.ts + bản dán (?news=1, web).
+//
 // Gộp tin: các cảnh báo cùng nhóm/topic + cùng khung tới hạn cùng lượt tick (vd 5 mã H4 cùng nến đóng)
 // đi chung 1 tin — mỗi mã một hàng nút ✅/⏳, cuối tin ✅ Thấy hết / ⏳ Kiểm lại hết. Chỉ 1 mã thì như cũ.
 // Nhắc dời SL tay (re-entry) không gộp. Xem _shared/alertRecheck.ts (groupKeyboard).
@@ -45,8 +49,12 @@
 // Tạo khoá 1 lần: bash scripts/alert-relay-key.sh
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { alertBody, alertButtons, allRow, groupKeyboard, liveRow, sortGroup, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { alertBody, alertButtons, alertSymbol, allRow, groupKeyboard, liveRow, sortGroup, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { hotHead, hotList, hotMatches, type HotSettings } from "../_shared/hotSymbols.ts";
+import {
+  NEWS_KEY, newsEvents, newsHits, newsLine, newsTimeVn, parseNewsPaste, upcomingNews, type NewsEvent, type NewsGuard,
+  type NewsStore,
+} from "../_shared/newsCalendar.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -61,7 +69,7 @@ const KEEP_HOURS = 24; // tin nhắc lại đã xong giữ thêm 1 ngày để b
 // Máy chủ gửi webhook của TradingView (TradingView công bố, mục "About webhooks")
 const TV_WEBHOOK_IPS = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7"];
 
-type Settings = HotSettings & { telegramBotToken?: string; telegramChatId?: string };
+type Settings = HotSettings & { telegramBotToken?: string; telegramChatId?: string; newsGuard?: NewsGuard };
 type Repeat = {
   id: string; text: string; topic?: number; every: number; times: number; sent: number;
   nextAt: string; createdAt: string; messageIds: number[]; ackedAt?: string; doneAt?: string;
@@ -126,6 +134,12 @@ async function loadOwner(supabase: ReturnType<typeof createClient>) {
   return { userId: row.user_id as string, settings, chatId: ALERT_CHAT_ID || String(settings.telegramChatId) };
 }
 
+// Lịch tin lớn (có sẵn + bản dán) — xem _shared/newsCalendar.ts
+async function loadNews(supabase: ReturnType<typeof createClient>, userId: string): Promise<NewsEvent[]> {
+  const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", NEWS_KEY).maybeSingle();
+  return newsEvents(data?.value as NewsStore);
+}
+
 async function readRepeats(supabase: ReturnType<typeof createClient>, userId: string) {
   const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", REPEAT_KEY).maybeSingle();
   return (Array.isArray(data?.value) ? data!.value : []) as Repeat[];
@@ -181,6 +195,9 @@ async function tick(supabase: ReturnType<typeof createClient>) {
 
   const token = owner.settings.telegramBotToken!;
   const hot = hotList(owner.settings);
+  // Sát giờ tin lớn của đồng tiền trong mã → dòng ⛔ (tính lại mỗi lần gửi: lần nhắc sau đã qua tin thì thôi)
+  const news = due.some((r) => r.kind !== "reentry") ? await loadNews(supabase, owner.userId).catch(() => []) : [];
+  const newsOf = (r: Repeat) => (r.kind === "reentry" ? [] : newsHits(alertSymbol(r.text), news, now, owner.settings.newsGuard));
   const chatOf = (r: Repeat) => r.chat || owner.chatId;
   // Bản ghi thêm từ web (Lịch nhắc → Cảnh báo nhắc lại) không có topic → topic cảnh báo mặc định
   const topicOf = (r: Repeat) => r.topic || (r.chat ? 0 : ALERT_TOPIC);
@@ -213,7 +230,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
       const last = r.sent >= r.times;
       // Dòng 🔥 tính lại theo danh sách hiện tại: bỏ mã khỏi danh sách thì lần nhắc sau thôi nổi bật
       const hotLine = r.kind === "reentry" ? "" : hotHead(hotMatches(r.text, hot));
-      const lines = hotLine ? [hotLine] : [];
+      const lines = [newsLine(newsOf(r), now), hotLine].filter(Boolean);
       if (r.sent > 1) lines.push(`🔔 Nhắc lần ${r.sent}/${r.times}${last ? " (lần cuối)" : ""}`);
       if (r.head) lines.push(r.head);
       lines.push(r.text);
@@ -226,6 +243,17 @@ async function tick(supabase: ReturnType<typeof createClient>) {
         ? `${heads[0]} · ${sorted.length} mã`
         : `${sorted.some((r) => r.head) ? "🔁 Kiểm lại setup" : "📈 Cảnh báo"} · khung ${tf || "—"} · ${sorted.length} mã`;
       const lines = [head];
+      // Mã nào sát tin thì liệt kê ngay dưới dòng đầu, và đánh ⛔ ở dòng của mã đó
+      const newsBy = new Map(sorted.map((r) => [r.id, newsOf(r)]));
+      const byNews = new Map<string, { e: NewsEvent; syms: string[] }>();
+      for (const r of sorted) {
+        for (const e of newsBy.get(r.id) || []) {
+          const k = `${e.cur}|${e.name}|${e.t}`;
+          if (!byNews.has(k)) byNews.set(k, { e, syms: [] });
+          byNews.get(k)!.syms.push(alertSymbol(r.text));
+        }
+      }
+      for (const { e, syms } of byNews.values()) lines.push(`${newsLine([e], now)}: ${syms.join(", ")}`);
       const maxSent = Math.max(...sorted.map((r) => r.sent));
       if (maxSent > 1) {
         const times = Math.max(...sorted.map((r) => r.times));
@@ -236,7 +264,8 @@ async function tick(supabase: ReturnType<typeof createClient>) {
       for (const [i, r] of sorted.entries()) {
         const isHot = hotMatches(r.text, hot).length > 0;
         const text = alertBody(r.text, tf).split("\n").filter((x) => x.trim()).join("\n   ");
-        const line = `${isHot ? "🔥" : "•"} ${text.length > 300 ? text.slice(0, 299) + "…" : text}`;
+        const mark = (newsBy.get(r.id) || []).length ? "⛔" : isHot ? "🔥" : "•";
+        const line = `${mark} ${text.length > 300 ? text.slice(0, 299) + "…" : text}`;
         if (body + line.length > MAX_TEXT - 300) { lines.push(`… và ${sorted.length - i} mã nữa (xem trên web)`); break; }
         body += line.length;
         lines.push(line);
@@ -357,12 +386,39 @@ async function clean(req: Request, supabase: ReturnType<typeof createClient>, mo
   return json({ ok: true, mode, tried, failed, reason, kept: keep.size, separateGroup: !!ALERT_CHAT_ID });
 }
 
+// Lịch tin dán: POST ?news=1&key=<KEY> {"text": "2026-11-06 20:30 USD NFP | …\n…"} ghi đè bản dán (việc tự chạy tối
+// Chủ nhật gọi). Không có "text" = chỉ đọc. Trả về các tin 14 ngày tới (đã gộp lịch có sẵn) + dòng sai mẫu.
+async function newsApi(req: Request, url: URL, supabase: ReturnType<typeof createClient>) {
+  if (!RELAY_KEY || url.searchParams.get("key") !== RELAY_KEY) return json({ error: "Sai khoá" }, 401);
+  const owner = await loadOwner(supabase);
+  if (!owner) return json({ error: "no settings" }, 500);
+  let body: { text?: unknown } = {};
+  try { body = await req.json(); } catch (_e) { /* chỉ đọc */ }
+  if (typeof body.text === "string") {
+    const text = body.text.slice(0, 20000);
+    const { error } = await supabase.from("app_data").upsert(
+      { user_id: owner.userId, key: NEWS_KEY, value: { text, updatedAt: new Date().toISOString(), by: "bot" }, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,key" },
+    );
+    if (error) return json({ error: error.message }, 500);
+  }
+  const { data } = await supabase.from("app_data").select("value").eq("user_id", owner.userId).eq("key", NEWS_KEY).maybeSingle();
+  const store = data?.value as NewsStore;
+  const now = Date.now();
+  return json({
+    ok: true, saved: typeof body.text === "string", updatedAt: store?.updatedAt || null,
+    bad: parseNewsPaste(store?.text).bad,
+    upcoming: upcomingNews(newsEvents(store), now).map((e) => `${newsTimeVn(e.t, true)} ${e.cur} ${e.name}${e.pasted ? " ✎" : ""}`),
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Chỉ nhận POST" }, 405);
   const url = new URL(req.url);
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   if (url.searchParams.get("tick")) return await tick(supabase);
+  if (url.searchParams.get("news")) return await newsApi(req, url, supabase);
   const cleanMode = url.searchParams.get("clean");
   if (cleanMode) {
     try {
@@ -404,7 +460,13 @@ Deno.serve(async (req) => {
   // Mã tiềm năng: dòng 🔥 lên đầu, luôn có chuông và luôn nhắc lại tới khi bấm ✅ / ⏳ (hoặc gõ ok / n)
   const hits = fromTv ? hotMatches(text, hotList(owner.settings)) : [];
   const hotLine = hotHead(hits);
-  const payload: Record<string, unknown> = { chat_id: owner.chatId, text: hotLine ? `${hotLine}\n${text}` : text };
+  // Bắn trong khoảng cấm quanh tin lớn của đồng tiền trong mã → dòng ⛔ lên trên cùng
+  const nowMs = Date.now();
+  const newsHit = fromTv
+    ? newsHits(alertSymbol(text), await loadNews(supabase, owner.userId).catch(() => []), nowMs, owner.settings.newsGuard)
+    : [];
+  const head = [newsLine(newsHit, nowMs), hotLine].filter(Boolean).join("\n");
+  const payload: Record<string, unknown> = { chat_id: owner.chatId, text: head ? `${head}\n${text}` : text };
   const topic = Number(pick("topic")) || ALERT_TOPIC;
   if (topic && !Number.isNaN(topic)) payload.message_thread_id = topic;
   if (truthy(pick("silent")) && !hotLine) payload.disable_notification = true;
@@ -444,5 +506,8 @@ Deno.serve(async (req) => {
       console.warn("repeat record lost, retry", id, attempt + 1);
     }
   }
-  return json({ ok: true, repeat: repeat ? id : undefined, hot: hits.length ? hits.map((h) => h.name) : undefined });
+  return json({
+    ok: true, repeat: repeat ? id : undefined, hot: hits.length ? hits.map((h) => h.name) : undefined,
+    news: newsHit.length ? newsHit.map((e) => `${e.cur} ${e.name}`) : undefined,
+  });
 });

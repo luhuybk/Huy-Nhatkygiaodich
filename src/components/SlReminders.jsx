@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Clock, Settings2, Flame, Hourglass,
+  CalendarDays, Clock, Settings2, Flame, Hourglass, ShieldAlert,
 } from "lucide-react";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, useAlertRepeats } from "./AlertRechecks.jsx";
 import { fxBase, SymbolBox } from "./SymbolBox.jsx";
 import { nextRecheck, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
+import {
+  NEWS_KEY, guardOf, newsEvents, newsTimeVn, newsWhen, parseNewsPaste, upcomingNews,
+} from "../../supabase/functions/_shared/newsCalendar.ts";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
 import { LifeHubExport } from "./Timeline.jsx";
+import { safeGet, safeSet } from "../lib/helpers.js";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
@@ -346,6 +350,88 @@ function PeriodicBody({ settings, onChange, remindersNode }) {
       </div>
       <h4 className="plan-sub">Nhắc nhở riêng</h4>
       {remindersNode}
+    </>
+  );
+}
+
+// ───────────────────────── Tin lớn ─────────────────────────
+// Cảnh báo TradingView bắn trong khoảng X phút trước → Y phút sau tin lớn của đồng có trong mã thì bot thêm dòng
+// "⛔ SÁT TIN … KHÔNG VÀO LỆNH" (alert-relay). Lịch: có sẵn trong code (_shared/newsCalendar.ts) + bản dán ở
+// app_data.newsCalendar — việc tự chạy tối Chủ nhật ghi đè bản dán qua alert-relay ?news=1, ô dưới sửa tay được.
+
+export function useNewsCalendar() {
+  const [store, setStore] = useState(null);
+  useEffect(() => { safeGet(NEWS_KEY, null).then((v) => setStore(v || {})); }, []);
+  const save = async (text) => {
+    const next = { text, updatedAt: new Date().toISOString(), by: "web" };
+    if (await safeSet(NEWS_KEY, next)) { setStore(next); return true; }
+    return false;
+  };
+  return { store, save };
+}
+
+const NEWS_DAYS = 14;
+
+function NewsBody({ settings, onChange, news }) {
+  const g = guardOf(settings.newsGuard);
+  const setG = (p) => onChange({ ...settings, newsGuard: { ...g, ...p } });
+  const [draft, setDraft] = useState(null);
+  const [msg, setMsg] = useState("");
+  const store = news.store;
+  const text = draft ?? (store ? store.text || "" : "");
+  const now = Date.now();
+  const events = useMemo(() => upcomingNews(newsEvents({ text }), now, NEWS_DAYS), [text, Math.floor(now / 60000)]);
+  const bad = parseNewsPaste(text).bad;
+  const inWindow = (e) => now >= e.t - g.before * 60000 && now <= e.t + g.after * 60000;
+  const onBlur = async () => {
+    if (draft === null || draft === (store?.text || "")) return;
+    setMsg((await news.save(draft)) ? "Đã lưu — bot dùng ngay từ cảnh báo kế tiếp." : "Lưu thất bại, thử lại.");
+    setDraft(null);
+  };
+  const by = store?.updatedAt
+    ? `Bản dán cập nhật ${new Date(store.updatedAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}${store.by === "bot" ? " (tự động tối Chủ nhật)" : store.by === "web" ? " (sửa trên web)" : ""}`
+    : "Chưa có bản dán — đang dùng lịch có sẵn";
+  return (
+    <>
+      <p className="plan-hint">
+        Cảnh báo TradingView bắn trong khoảng <b>{g.before} phút trước → {g.after} phút sau</b> giờ tin lớn của <b>đồng tiền có trong mã</b>{" "}
+        thì tin Telegram có dòng <code>⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH</code> ở trên cùng. Mã không dính đồng đó
+        (vd NFP USD với EURJPY) không bị gắn. Vàng, dầu, chỉ số Mỹ tính là USD; GER40 là EUR, JP225 là JPY… Cổ phiếu không gắn.
+        BoJ không có giờ cố định nên nới ít nhất 90 phút mỗi bên.
+      </p>
+      <div className="news-guard-row">
+        <Field label="Phút trước tin">
+          <input type="number" className="input input-inline" min={0} max={240} step={5} value={g.before}
+            onChange={(e) => setG({ before: Number(e.target.value) })} />
+        </Field>
+        <Field label="Phút sau tin">
+          <input type="number" className="input input-inline" min={0} max={240} step={5} value={g.after}
+            onChange={(e) => setG({ after: Number(e.target.value) })} />
+        </Field>
+      </div>
+      <h4 className="plan-sub">Tin lớn {NEWS_DAYS} ngày tới (giờ VN)</h4>
+      {events.length ? (
+        <ul className="news-list">
+          {events.map((e) => (
+            <li key={`${e.cur}${e.name}${e.t}`} className={inWindow(e) && g.enabled ? "news-hot" : ""}>
+              <span className="news-time">{newsTimeVn(e.t, true)}</span>
+              <span className="news-cur">{e.cur}</span>
+              <b>{e.name}</b>
+              <small>{e.note}{e.pasted ? " ✎" : ""}{e.t > now && e.t - now < 24 * 3600e3 ? ` · ${newsWhen(e, now)}` : e.t <= now ? ` · ${newsWhen(e, now)}` : ""}</small>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="plan-hint">Không có tin lớn trong {NEWS_DAYS} ngày tới.</p>}
+      <h4 className="plan-sub">Lịch dán (sửa khi họ dời lịch / thêm tin)</h4>
+      <p className="plan-hint">
+        Lịch có sẵn chép từ chỉ báo Tránh Tin Lớn (FOMC, NFP, CPI, ECB, BoE, BoJ, BoC, RBA, RBNZ, SNB) tới 02/2028. Tối Chủ nhật việc tự chạy
+        quét lịch chính thức 2 tuần tới và ghi đè ô này. Mỗi dòng <code>2026-11-06 20:30 USD NFP | ghi chú</code> (giờ VN, dòng # bỏ qua);
+        tin trùng tin có sẵn (cùng đồng + tên, lệch ≤ 10 ngày) thì thay tin có sẵn. {by}.
+      </p>
+      <textarea className="input news-paste" rows={6} value={text} spellCheck={false}
+        onChange={(e) => { setDraft(e.target.value); setMsg(""); }} onBlur={onBlur} />
+      {bad.length ? <p className="plan-hint news-bad">⚠️ Dòng sai mẫu (bot bỏ qua): {bad.join(" · ")}</p> : null}
+      {msg ? <p className="plan-hint">{msg}</p> : null}
     </>
   );
 }
@@ -874,6 +960,15 @@ export function PlansPanel({
   })();
   const hotOn = s.hotEnabled !== false;
   const alertData = useAlertRepeats(telegramReady);
+  const news = useNewsCalendar();
+  const newsSummary = (() => {
+    const g = guardOf(s.newsGuard);
+    if (!news.store) return "Đang tải…";
+    const now = Date.now();
+    const next = upcomingNews(newsEvents(news.store), now, NEWS_DAYS).filter((e) => e.t > now - g.after * 60000);
+    const head = next.slice(0, 3).map((e) => `${e.name} ${e.cur} ${newsTimeVn(e.t, true)}`).join(" · ");
+    return `±${g.before}/${g.after} phút — ${head || "không có tin 14 ngày tới"}`;
+  })();
   const hotSummary = (() => {
     const list = s.hotSymbols || [];
     if (!list.length) return "Chưa có mã nào — thêm mã để cảnh báo TradingView của mã đó nổi bật trên Telegram";
@@ -917,6 +1012,11 @@ export function PlansPanel({
       <PlanSection id="alerts" icon={Hourglass} title="Cảnh báo nhắc lại" summary={alertSummary(alertData.list)}
         open={open === "alerts"} onOpen={setOpen}>
         <AlertRechecksBody data={alertData} resources={resources} settings={s} />
+      </PlanSection>
+      <PlanSection id="news" icon={ShieldAlert} title="Tin lớn" summary={newsSummary}
+        on={guardOf(s.newsGuard).enabled} onToggle={(v) => onSettingsChange({ ...s, newsGuard: { ...guardOf(s.newsGuard), enabled: v } })}
+        open={open === "news"} onOpen={setOpen}>
+        <NewsBody settings={s} onChange={onSettingsChange} news={news} />
       </PlanSection>
       <PlanSection id="sl" icon={ArrowUpDown} title="Dời SL" summary={slSummary}
         on={!!s.enabled} onToggle={(v) => onSettingsChange({ ...s, enabled: v })} open={open === "sl"} onOpen={setOpen}>

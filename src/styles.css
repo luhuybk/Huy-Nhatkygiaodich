@@ -2703,3 +2703,16 @@ button.nt-check:hover { filter: brightness(1.25); }
   .hb-tfs { gap: 2px; }
   .hb-tf { min-width: 0; padding: 3px 4px; font-size: 10px; }
 }
+
+/* Lịch nhắc → Tin lớn */
+.news-guard-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.news-guard-row .input { width: 90px; }
+.news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.news-list li { display: flex; align-items: baseline; gap: 10px; padding: 5px 8px; border-radius: 6px; }
+.news-list li:nth-child(odd) { background: var(--surface-2, rgba(127,127,127,.06)); }
+.news-list li.news-hot { background: rgba(220, 38, 38, .16); }
+.news-time { font-variant-numeric: tabular-nums; color: var(--text-dim); min-width: 84px; }
+.news-cur { font-weight: 600; min-width: 34px; }
+.news-list small { color: var(--text-dim); }
+.news-paste { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; }
+.news-bad { color: #d97706; }
