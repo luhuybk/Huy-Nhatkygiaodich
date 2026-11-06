@@ -8,7 +8,7 @@ import { fxBase, SymbolBox } from "./SymbolBox.jsx";
 import { nextRecheck, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 import {
-  NEWS_KEY, guardOf, newsEvents, newsTimeVn, newsWhen, parseNewsPaste, upcomingNews,
+  NEWS_KEY, guardOf, newsEvents, newsTimeVn, newsWhen, parseNewsPaste, upcomingNews, TIER_ICON,
 } from "../../supabase/functions/_shared/newsCalendar.ts";
 import { ConfirmButton, DangerConfirmButton, Field, StatCard, Switch } from "./ui.jsx";
 import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./CandleSessions.jsx";
@@ -395,7 +395,9 @@ function NewsBody({ settings, onChange, news }) {
     <>
       <p className="plan-hint">
         Cảnh báo TradingView bắn trong khoảng <b>{g.before} phút trước → {g.after} phút sau</b> giờ tin lớn của <b>đồng tiền có trong mã</b>{" "}
-        thì tin Telegram có dòng <code>⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH</code> ở trên cùng. Mã không dính đồng đó
+        thì tin Telegram có dòng <code>⛔ SÁT TIN · 🔴 NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH</code> ở trên cùng. Mức tin theo độ giật
+        của nến H4 chứa giờ tin so với nến thường (đo 2024–2026): 🔴 ≥ 2× và 🟠 1.6–2× = không vào lệnh · 🟡 1.4–1.6× = <code>⚠️ GẦN TIN … cẩn thận</code> ·
+        ⚪ dưới 1.4× = không gắn gì. Mã không dính đồng đó
         (vd NFP USD với EURJPY) không bị gắn. Vàng, dầu, chỉ số Mỹ tính là USD; GER40 là EUR, JP225 là JPY… Cổ phiếu không gắn.
         BoJ không có giờ cố định nên nới ít nhất 90 phút mỗi bên.
       </p>
@@ -413,11 +415,13 @@ function NewsBody({ settings, onChange, news }) {
       {events.length ? (
         <ul className="news-list">
           {events.map((e) => (
-            <li key={`${e.cur}${e.name}${e.t}`} className={inWindow(e) && g.enabled ? "news-hot" : ""}>
+            <li key={`${e.cur}${e.name}${e.t}`} className={`${inWindow(e) && g.enabled && e.tier ? "news-hot" : ""} ${e.tier ? "" : "news-mild"}`}
+              title={e.h4 ? `Nến H4 chứa tin giật ×${e.h4} so với thường` : "Chưa có số đo — tính là 🟡"}>
+              <span className="news-tier">{TIER_ICON[e.tier]}</span>
               <span className="news-time">{newsTimeVn(e.t, true)}</span>
               <span className="news-cur">{e.cur}</span>
               <b>{e.name}</b>
-              <small>{e.note}{e.pasted ? " ✎" : ""}{e.t > now && e.t - now < 24 * 3600e3 ? ` · ${newsWhen(e, now)}` : e.t <= now ? ` · ${newsWhen(e, now)}` : ""}</small>
+              <small>{e.tier ? "" : "không gắn · "}{e.note}{e.h4 ? ` · H4 ×${e.h4}` : ""}{e.pasted ? " ✎" : ""}{e.t > now && e.t - now < 24 * 3600e3 ? ` · ${newsWhen(e, now)}` : e.t <= now ? ` · ${newsWhen(e, now)}` : ""}</small>
             </li>
           ))}
         </ul>
@@ -965,8 +969,8 @@ export function PlansPanel({
     const g = guardOf(s.newsGuard);
     if (!news.store) return "Đang tải…";
     const now = Date.now();
-    const next = upcomingNews(newsEvents(news.store), now, NEWS_DAYS).filter((e) => e.t > now - g.after * 60000);
-    const head = next.slice(0, 3).map((e) => `${e.name} ${e.cur} ${newsTimeVn(e.t, true)}`).join(" · ");
+    const next = upcomingNews(newsEvents(news.store), now, NEWS_DAYS).filter((e) => e.tier && e.t > now - g.after * 60000);
+    const head = next.slice(0, 3).map((e) => `${TIER_ICON[e.tier]} ${e.name} ${e.cur} ${newsTimeVn(e.t, true)}`).join(" · ");
     return `±${g.before}/${g.after} phút — ${head || "không có tin 14 ngày tới"}`;
   })();
   const hotSummary = (() => {

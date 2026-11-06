@@ -11,7 +11,8 @@
 //      Việc tự chạy tối Chủ nhật đẩy khối 14 ngày tới vào đây (alert-relay ?news=1), web sửa tay được.
 //      Tin dán TRÙNG tin có sẵn (cùng đồng + tên, lệch ≤ 10 ngày) thì thay tin có sẵn — họ dời lịch chỉ cần dán.
 
-export type NewsEvent = { t: number; cur: string; name: string; note: string; pasted: boolean };
+export type NewsTier = 0 | 1 | 2 | 3; // ⚪ nhẹ · 🟡 vừa · 🟠 mạnh · 🔴 rất mạnh
+export type NewsEvent = { t: number; cur: string; name: string; note: string; pasted: boolean; tier: NewsTier; h4?: number };
 export type NewsGuard = { enabled?: boolean; before?: number; after?: number };
 export type NewsStore = { text?: string; updatedAt?: string; by?: string } | null | undefined;
 
@@ -132,6 +133,30 @@ export const NEWS_NOTE: Record<string, string> = {
   RBNZ: "Lãi suất NZ",
   SNB: "Lãi suất Thụy Sĩ",
 };
+// Mức tin theo độ giật đo được (06/11/2026): nến H4 chứa giờ tin so với trung vị nến H4 cùng khung giờ 20 ngày trước,
+// 10 cặp OANDA, mọi tin đỏ ForexFactory 01/2024 → 11/2026. Người dùng chốt 4 mức:
+//   🔴 ≥ 2×  ·  🟠 1.6–2×  ·  🟡 1.4–1.6×  ·  ⚪ < 1.4× (không gắn gì)
+// 🔴🟠 → "⛔ … KHÔNG VÀO LỆNH"; 🟡 → "⚠️ … cẩn thận"; ⚪ bỏ qua. Tin lạ (phát biểu…) = 🟡.
+// Ghi chú tin dán bắt đầu bằng 🔴/🟠/🟡/⚪ thì theo mức đó.
+const TIERS: Record<string, [NewsTier, number]> = {
+  "USD:FOMC": [3, 3.6], "NZD:RBNZ": [3, 3.23], "CHF:SNB": [3, 2.36], "USD:NFP": [3, 2.19], "NZD:CPI": [3, 2.14],
+  "JPY:BOJ": [3, 2.13], "GBP:BOE": [3, 2.02],
+  "NZD:JOBS": [2, 1.93], "CAD:JOBS": [2, 1.89], "NZD:GDP": [2, 1.86], "USD:CPI": [2, 1.77], "AUD:RBA": [2, 1.74],
+  "AUD:JOBS": [2, 1.67],
+  "CHF:CPI": [1, 1.53], "AUD:CPI": [1, 1.49], "EUR:ECB": [1, 1.48], "CAD:BOC": [1, 1.47], "GBP:CPI": [1, 1.44],
+  "CAD:CPI": [0, 1.39], "GBP:JOBS": [0, 1.28], "EUR:CPI": [0, 1.27], "USD:PPI": [0, 1.24], "CAD:GDP": [0, 1.23],
+  "USD:GDP": [0, 1.21], "AUD:GDP": [0, 1.14], "USD:JOLTS": [0, 1.12], "GBP:GDP": [0, 1.1], "USD:CLAIMS": [0, 1.09],
+  "USD:RETAIL": [0, 1.08], "GBP:RETAIL": [0, 1.06], "USD:ADP": [0, 1.02], "USD:PCE": [0, 1.02], "CAD:RETAIL": [0, 0.81],
+};
+export const TIER_ICON = ["⚪", "🟡", "🟠", "🔴"];
+const ICON_TIER: Record<string, NewsTier> = { "⚪": 0, "🟡": 1, "🟠": 2, "🔴": 3 };
+export function tierOf(cur: string, name: string, note = ""): { tier: NewsTier; h4?: number } {
+  const mark = [...note.trim()][0];
+  const t = TIERS[`${cur}:${name.toUpperCase()}`];
+  if (mark && mark in ICON_TIER) return { tier: ICON_TIER[mark], h4: t?.[1] };
+  return t ? { tier: t[0], h4: t[1] } : { tier: 1 };
+}
+
 // BoJ không có giờ cố định (thường 11:30–13:00 Tokyo) → khoảng cấm nới ra ít nhất 90 phút mỗi bên
 const WIDE: Record<string, number> = { BoJ: 90 };
 
@@ -142,7 +167,7 @@ const DAY = 24 * 60 * MIN;
 export function builtinEvents(): NewsEvent[] {
   return BUILTIN.map((s) => {
     const [iso, cur, name] = s.split(" ");
-    return { t: Date.parse(iso + ":00Z"), cur, name, note: NEWS_NOTE[name] || "", pasted: false };
+    return { t: Date.parse(iso + ":00Z"), cur, name, note: NEWS_NOTE[name] || "", pasted: false, ...tierOf(cur, name) };
   });
 }
 
@@ -164,12 +189,9 @@ export function parseNewsPaste(text: string | undefined): { events: NewsEvent[];
     const [y, m, d] = toks[0].includes("-") ? [+dm[1], +dm[2], +dm[3]] : [+dm[3], +dm[2], +dm[1]];
     const hh = +tm[1], mi = +tm[2];
     if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31 || hh > 23 || mi > 59) { bad.push(raw); continue; }
-    events.push({
-      t: Date.UTC(y, m - 1, d, hh, mi) - VN_OFFSET,
-      cur: normCur(toks[2].toUpperCase()),
-      name: toks.slice(3).join(" "),
-      note, pasted: true,
-    });
+    const cur = normCur(toks[2].toUpperCase());
+    const name = toks.slice(3).join(" ");
+    events.push({ t: Date.UTC(y, m - 1, d, hh, mi) - VN_OFFSET, cur, name, note, pasted: true, ...tierOf(cur, name, note) });
   }
   return { events, bad };
 }
@@ -220,7 +242,7 @@ export function newsHits(sym: string, events: NewsEvent[], nowMs: number, guard:
   const curs = symbolCurrencies(sym);
   if (!curs.length) return [];
   return events.filter((e) => {
-    if (!curs.includes(e.cur)) return false;
+    if (!curs.includes(e.cur) || e.tier === 0) return false;
     const w = WIDE[e.name] || 0;
     return nowMs >= e.t - Math.max(g.before, w) * MIN && nowMs <= e.t + Math.max(g.after, w) * MIN;
   });
@@ -242,11 +264,15 @@ export function newsWhen(e: NewsEvent, nowMs: number) {
   return m > 0 ? `còn ${dur(m)}` : m === 0 ? "đang ra" : `ra ${dur(-m)} trước`;
 }
 
-// "⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH"
+// 🔴🟠: "⛔ SÁT TIN 🔴 · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH"; 🟡: "⚠️ GẦN TIN 🟡 · ECB EUR 19:15 (…) — cẩn thận"
+export const newsStrong = (hits: NewsEvent[]) => hits.some((e) => e.tier >= 2);
 export function newsLine(hits: NewsEvent[], nowMs: number) {
-  if (!hits.length) return "";
-  const parts = hits.map((e) => `${e.name} ${e.cur} ${hhmm(e.t)} (${newsWhen(e, nowMs)})`);
-  return `⛔ SÁT TIN · ${parts.join(" · ")} — KHÔNG VÀO LỆNH`;
+  const part = (e: NewsEvent) => `${TIER_ICON[e.tier]} ${e.name} ${e.cur} ${hhmm(e.t)} (${newsWhen(e, nowMs)})`;
+  const strong = hits.filter((e) => e.tier >= 2), mild = hits.filter((e) => e.tier === 1);
+  const out: string[] = [];
+  if (strong.length) out.push(`⛔ SÁT TIN · ${strong.map(part).join(" · ")} — KHÔNG VÀO LỆNH`);
+  if (mild.length) out.push(`⚠️ GẦN TIN · ${mild.map(part).join(" · ")} — cẩn thận`);
+  return out.join("\n");
 }
 
 export function upcomingNews(events: NewsEvent[], nowMs: number, days = 14) {

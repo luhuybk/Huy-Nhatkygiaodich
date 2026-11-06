@@ -2716,3 +2716,5 @@ button.nt-check:hover { filter: brightness(1.25); }
 .news-list small { color: var(--text-dim); }
 .news-paste { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; }
 .news-bad { color: #d97706; }
+.news-list li.news-mild { opacity: .5; }
+.news-tier { width: 16px; text-align: center; }

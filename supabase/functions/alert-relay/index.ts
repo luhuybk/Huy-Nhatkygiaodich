@@ -54,7 +54,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { alertBody, alertButtons, alertSymbol, allRow, groupKeyboard, liveRow, sortGroup, tfOf, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { hotHead, hotList, hotMatches, type HotSettings } from "../_shared/hotSymbols.ts";
 import {
-  NEWS_KEY, newsEvents, newsHits, newsLine, newsTimeVn, parseNewsPaste, upcomingNews, type NewsEvent, type NewsGuard,
+  NEWS_KEY, newsEvents, newsHits, newsLine, newsStrong, TIER_ICON, newsTimeVn, parseNewsPaste, upcomingNews, type NewsEvent, type NewsGuard,
   type NewsStore,
 } from "../_shared/newsCalendar.ts";
 import { flushSlBoards, slStatus } from "../_shared/slBoard.ts";
@@ -270,7 +270,8 @@ async function tick(supabase: ReturnType<typeof createClient>) {
       for (const [i, r] of sorted.entries()) {
         const isHot = hotMatches(r.text, hot).length > 0;
         const text = alertBody(r.text, tf).split("\n").filter((x) => x.trim()).join("\n   ");
-        const mark = (newsBy.get(r.id) || []).length ? "⛔" : isHot ? "🔥" : "•";
+        const nh = newsBy.get(r.id) || [];
+        const mark = nh.length ? (newsStrong(nh) ? "⛔" : "⚠️") : isHot ? "🔥" : "•";
         const line = `${mark} ${text.length > 300 ? text.slice(0, 299) + "…" : text}`;
         if (body + line.length > MAX_TEXT - 300) { lines.push(`… và ${sorted.length - i} mã nữa (xem trên web)`); break; }
         body += line.length;
@@ -414,7 +415,7 @@ async function newsApi(req: Request, url: URL, supabase: ReturnType<typeof creat
   return json({
     ok: true, saved: typeof body.text === "string", updatedAt: store?.updatedAt || null,
     bad: parseNewsPaste(store?.text).bad,
-    upcoming: upcomingNews(newsEvents(store), now).map((e) => `${newsTimeVn(e.t, true)} ${e.cur} ${e.name}${e.pasted ? " ✎" : ""}`),
+    upcoming: upcomingNews(newsEvents(store), now).map((e) => `${TIER_ICON[e.tier]} ${newsTimeVn(e.t, true)} ${e.cur} ${e.name}${e.pasted ? " ✎" : ""}`),
   });
 }
 
