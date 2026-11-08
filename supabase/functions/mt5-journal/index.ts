@@ -24,14 +24,15 @@
 //
 // Bảng dời SL (EA v2.90+): "event": "sl" — mỗi lệnh mỗi nến một dòng (status moved/be/keep/skip/wait/closed,
 // slOld, slNew, pnl nếu chạm SL…). Ghi ô riêng slMove:<login>:<ticket>:<bar>; alert-relay tick gom theo tài khoản
-// thành một tin Telegram — xem _shared/slBoard.ts.
+// thành một tin Telegram — xem _shared/slBoard.ts. Gói khớp mới / gói đóng còn ghi mốc slMove:<login>:<ticket>:0
+// ("open" / "gone") cho canh chừng EA + lịch sử SL (_shared/eaWatch.ts).
 //
 // Deploy: supabase functions deploy mt5-journal --no-verify-jwt
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { isCryptoSymbol, normTf, reentryPlan, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
-import { parseSlRow, slReplaces, slRowKey, type SlRow } from "../_shared/slBoard.ts";
+import { parseSlRow, SL_MOVE_PREFIX, slReplaces, slRowKey, type SlRow } from "../_shared/slBoard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -115,10 +116,11 @@ Deno.serve(async (req) => {
   // Đọc-sửa-ghi cả khối: hai MT5 báo cùng lúc thì một bên có thể ghi đè bên kia, nên ghi xong đọc
   // lại kiểm, mất thì ghi lại (tối đa 3 lần).
   let stored = false;
+  let dup = false;
   for (let attempt = 0; attempt < 3 && !stored; attempt++) {
     const inbox = await readInbox(supabase, userId);
     if (inbox.some((x) => x.id === item.id)) {
-      if (attempt === 0) return json({ ok: true, dup: true, id: item.id });
+      dup = attempt === 0;
       stored = true;
       break;
     }
@@ -132,9 +134,17 @@ Deno.serve(async (req) => {
   }
   if (!stored) stored = (await readInbox(supabase, userId)).some((x) => x.id === item.id);
   if (!stored) return json({ ok: false, error: "write lost" }, 503);
+  // Mốc khớp / đóng lệnh cho canh chừng EA + lịch sử SL (_shared/eaWatch.ts). Gói khớp gửi lại (EA khởi động lại) hay đến
+  // muộn (quét bù lịch sử — gói đóng theo sau vài giây) thì không ghi "open": ghi là canh nhầm lệnh đã đóng. Lệnh quét bù mà
+  // còn mở thì EA vừa khởi động cũng gửi ngay bảng "SL hiện tại".
+  const pre = !item.event && !dup ? await accountTf(supabase, userId, item).catch(() => null) : null;
+  if (item.event === "close" || (!dup && Date.now() - item.time * 1000 <= FILL_FRESH_MS)) {
+    try { await writeMark(supabase, userId, item, pre?.tf || null); } catch (e) { console.error("mark failed", item.id, String((e as Error).message || e)); }
+  }
+  if (dup) return json({ ok: true, dup: true, id: item.id });
   let fill: unknown;
   if (!item.event && FILL_TG) {
-    try { fill = (await fillMessage(supabase, userId, item)).fill; } catch (e) { fill = String((e as Error).message || e); }
+    try { fill = (await fillMessage(supabase, userId, item, false, pre)).fill; } catch (e) { fill = String((e as Error).message || e); }
     console.log("fill", item.id, item.symbol, item.accountName, JSON.stringify(fill)); // EA không in khi thành công → xem ở Logs
   }
   return json({ ok: true, id: item.id, fill });
@@ -165,8 +175,9 @@ async function accountTf(supabase: ReturnType<typeof createClient>, userId: stri
   return { acc, tf: last ? normTf(last.timeframe) : null };
 }
 
-async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item, test = false) {
-  const { acc, tf } = await accountTf(supabase, userId, item);
+async function fillMessage(supabase: ReturnType<typeof createClient>, userId: string, item: Item, test = false,
+  pre?: Awaited<ReturnType<typeof accountTf>> | null) {
+  const { acc, tf } = pre || await accountTf(supabase, userId, item);
   const info: Record<string, unknown> = { account: acc?.name || null, mt5Login: acc?.mt5Login || null, timeframes: acc?.timeframes || null, tf };
   const now = Date.now();
   const fillMs = item.time * 1000;
@@ -204,6 +215,24 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
 }
 
 // ───────────── Bảng dời SL ─────────────
+
+// Mốc slMove:<login>:<ticket>:0 — "open" lúc khớp (khung của tài khoản, đã có SL chưa), "gone" lúc đóng hẳn. Bảng Telegram
+// bỏ qua ô bar = 0; canh chừng EA biết lệnh mới khớp chưa có dòng nến nào và lệnh đã đóng; lịch sử SL lấy giờ vào / đóng.
+async function writeMark(supabase: ReturnType<typeof createClient>, userId: string, item: Item, tf: string | null) {
+  const close = item.event === "close";
+  const at = new Date().toISOString();
+  const row: SlRow = {
+    login: item.login, accountName: item.accountName, ticket: item.ticket, symbol: item.symbol,
+    side: item.side === "sell" ? "sell" : "buy", status: close ? "gone" : "open", no: "", tf: tf || "", bar: 0,
+    slOld: 0, slNew: 0, level: 0, open: 0, digits: 0, currency: item.currency || "", note: "", at, openedAt: item.time,
+    ...(close ? { closedAt: Math.max(...(item.closes || []).map((c) => c.time)) } : { hasSl: !!item.risk }),
+  };
+  const { error } = await supabase.from("app_data").upsert(
+    { user_id: userId, key: `${SL_MOVE_PREFIX}${item.login}:${item.ticket}:0`, value: row, updated_at: at },
+    { onConflict: "user_id,key" },
+  );
+  if (error) throw new Error(error.message);
+}
 
 async function slEvent(body: Record<string, unknown>) {
   const row = parseSlRow(body);

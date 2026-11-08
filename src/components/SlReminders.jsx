@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Clock, Settings2, Flame, Hourglass, ShieldAlert,
+  CalendarDays, Clock, Settings2, Flame, Hourglass, ShieldAlert, Shield,
 } from "lucide-react";
+import { EaSlBody, eaSummary, useEaData } from "./EaSl.jsx";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, useAlertRepeats } from "./AlertRechecks.jsx";
 import { fxBase, SymbolBox } from "./SymbolBox.jsx";
 import { recheckFor, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
@@ -15,7 +16,7 @@ import { AutoHoursPreview, CandleSessionsPanel, WatchHoursPreview } from "./Cand
 import { LifeHubExport } from "./Timeline.jsx";
 import { safeGet, safeSet } from "../lib/helpers.js";
 import {
-  daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
+  daysSince, emptyIncompleteReminder, emptyMorningBrief, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
   mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, seasonShiftDefault, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
@@ -333,14 +334,29 @@ function JobRow({ label, hint, cfg, onChange }) {
   );
 }
 
+// Tin buổi sáng: nhiều thứ trong tuần (mặc định T2–T6) — máy chủ: _shared/brief.ts, gửi từ sl-reminder
+function BriefRow({ cfg, onChange }) {
+  return (
+    <div className={`job-row ${cfg.enabled ? "" : "job-off"}`}>
+      <Switch checked={!!cfg.enabled} onChange={(v) => onChange({ enabled: v })} />
+      <span className="job-label"><b>Tin buổi sáng</b>
+        <small>tin lớn 24 giờ tới · SL các tài khoản (đã BE chưa) · EA chưa báo · cảnh báo chưa xử lý · hẹn kiểm lại · mã tiềm năng</small></span>
+      <DayChips days={cfg.days} onToggle={(d) => onChange({ days: toggleIn(cfg.days, d) })} />
+      <input type="time" className="input input-inline job-time" value={cfg.time || ""} onChange={(e) => onChange({ time: e.target.value })} />
+    </div>
+  );
+}
+
 function PeriodicBody({ settings, onChange, remindersNode }) {
   const s = settings;
+  const mb = { ...emptyMorningBrief(), ...(s.morningBrief || {}) };
   const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
   const rec = { ...emptyReconcileReminder(), ...(s.reconcileReminder || {}) };
   const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
   return (
     <>
       <div className="job-list">
+        <BriefRow cfg={mb} onChange={(p) => onChange({ ...s, morningBrief: { ...mb, ...p } })} />
         <JobRow label="Tổng kết tuần" hint="lệnh đóng, winrate, R, lãi/lỗ, setup miss — 7 ngày" cfg={ws}
           onChange={(p) => onChange({ ...s, weeklySummary: { ...ws, ...p } })} />
         <JobRow label="Đối chiếu file sàn" hint="nhắc xuất CSV từ sàn để quét lệnh quên ghi" cfg={rec}
@@ -965,6 +981,7 @@ export function PlansPanel({
   const hotOn = s.hotEnabled !== false;
   const alertData = useAlertRepeats(telegramReady);
   const news = useNewsCalendar();
+  const ea = useEaData(true);
   const newsSummary = (() => {
     const g = guardOf(s.newsGuard);
     if (!news.store) return "Đang tải…";
@@ -989,8 +1006,10 @@ export function PlansPanel({
     const jobs = [
       [s.weeklySummary, "Tổng kết tuần"], [s.reconcileReminder, "Đối chiếu sàn"], [s.incompleteReminder, "Điền nốt lệnh"],
     ].filter(([cfg]) => cfg && cfg.enabled).map(([cfg, name]) => `${name} ${cfg.weekday} ${hoursText([cfg.time])}`);
+    const mb = { ...emptyMorningBrief(), ...(s.morningBrief || {}) };
+    const brief = mb.enabled ? `Tin sáng ${hoursText([mb.time])}` : "";
     const n = (reminders || []).length;
-    return [...jobs, n ? `${n} nhắc riêng` : ""].filter(Boolean).join(" · ") || "Chưa bật việc nào";
+    return [brief, ...jobs, n ? `${n} nhắc riêng` : ""].filter(Boolean).join(" · ") || "Chưa bật việc nào";
   })();
 
   return (
@@ -1009,6 +1028,11 @@ export function PlansPanel({
         <button type="button" className="plan-link" onClick={() => setSeasonOpen(true)}>dời giờ ±1</button>
       </div>
 
+      <PlanSection id="eaSl" icon={Shield} title="SL hiện tại (EA)" summary={eaSummary(ea, trades, resources, s)}
+        on={s.eaWatch ? s.eaWatch.enabled !== false : true} onToggle={(v) => onSettingsChange({ ...s, eaWatch: { ...(s.eaWatch || {}), enabled: v } })}
+        open={open === "eaSl"} onOpen={setOpen}>
+        <EaSlBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} data={ea} />
+      </PlanSection>
       <PlanSection id="hot" icon={Flame} title="Mã tiềm năng" summary={hotSummary}
         on={hotOn} onToggle={(v) => onSettingsChange({ ...s, hotEnabled: v })} open={open === "hot"} onOpen={setOpen}>
         <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} alertData={telegramReady ? alertData : null} />
@@ -1071,6 +1095,7 @@ export function NotifySettingsPanel({ settings, onChange, resources, trades, wat
     onChange({ ...s, [key]: next });
   };
   const jobs = [
+    ["morningBrief", "Tin buổi sáng", emptyMorningBrief],
     ["weeklySummary", "Tổng kết tuần", emptyWeeklySummary],
     ["reconcileReminder", "Đối chiếu file sàn", emptyReconcileReminder],
     ["incompleteReminder", "Điền nốt lệnh chưa xong", emptyIncompleteReminder],

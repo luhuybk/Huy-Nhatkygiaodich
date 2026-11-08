@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavTab } from "../lib/useBackNav.js";
 import { BookOpen, X, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, CalendarDays, FileSpreadsheet, Filter, StickyNote, Copy, AlertCircle, ArrowUpDown, Download, Bookmark, BookmarkPlus, GitCompare, Columns3, SlidersHorizontal, Landmark } from "lucide-react";
 import { AccountTag, CompletionBar, ShotGallery, ImagePreviewStrip as Strip, ConfirmButton, DangerConfirmButton, DetailGroup, DetailRow, FxWarning, MultiFilterSelect, RiskAlertBanner, StarRating, NoteText } from "./ui.jsx";
+import { SlHistoryGroup } from "./EaSl.jsx";
 import { logRangeLabel, logsForTrade, moodMeta } from "../lib/journeyLog.js";
 import { groupOf, marketRegimesOf, regimeGroupsOf, riskBandText, riskFit, stateName, stateRiskBand, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { fxDetailText } from "./FxStrength.jsx";
@@ -415,6 +416,8 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
             </div>
           </DetailGroup>
 
+          {/* Lệnh từ MT5 (có ticket): các lần EA dời SL — supabase/functions/_shared/eaWatch.ts */}
+          {t.ticket ? <SlHistoryGroup trade={t} resources={resources} /> : null}
           {partialRows.length > 0 ? (
             <DetailGroup title="Thoát lệnh từng phần">
               {partialRows.map((row, i) => {

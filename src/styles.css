@@ -2718,3 +2718,42 @@ button.nt-check:hover { filter: brightness(1.25); }
 .news-bad { color: #d97706; }
 .news-list li.news-mild { opacity: .5; }
 .news-tier { width: 16px; text-align: center; }
+
+/* SL hiện tại (EA) + canh chừng EA + đánh giá EA kéo SL + lịch sử SL trong chi tiết lệnh — components/EaSl.jsx */
+.easl-cfg { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.easl-cfg .input { width: 80px; }
+.easl-upd { margin: 0 0 8px; }
+.easl-acc { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg); }
+.easl-alarm { border-color: rgba(224, 97, 90, .55); background: rgba(224, 97, 90, .07); }
+.easl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 4px; }
+.easl-meta { color: var(--text-dim); font-size: 12px; }
+.easl-warn { color: var(--loss); font-size: 12px; font-weight: 600; }
+.easl-mute { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; padding: 2px 6px; border-radius: 5px;
+  border: 1px solid var(--border); background: none; color: var(--text-dim); cursor: pointer; }
+.easl-mute.on { color: #d97706; border-color: rgba(217, 119, 6, .5); }
+.easl-rows { display: flex; flex-direction: column; }
+.easl-row { display: grid; grid-template-columns: 20px 34px minmax(96px, 1.1fr) minmax(104px, 1fr) 58px minmax(140px, 2fr);
+  gap: 8px; align-items: baseline; padding: 4px 2px; font-size: 13px; border-top: 1px solid var(--border); }
+.easl-row:first-child { border-top: none; }
+.easl-row-warn .easl-what, .easl-row-warn .easl-sl { color: #d97706; font-weight: 600; }
+.easl-no { color: var(--text-dim); font-size: 11.5px; }
+.easl-sl { font-variant-numeric: tabular-nums; }
+.easl-be { font-size: 12px; color: var(--text-dim); }
+.easl-be.text-win { color: var(--win); }
+.easl-what { color: var(--text-dim); font-size: 12px; }
+@media (max-width: 640px) {
+  .easl-row { grid-template-columns: 20px minmax(80px, 1fr) auto auto; }
+  .easl-no { display: none; }
+  .easl-what { grid-column: 2 / -1; }
+}
+.easl-stats { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
+.easl-stats summary { cursor: pointer; font-weight: 600; }
+.easl-stat-line { margin: 10px 0 4px; line-height: 1.6; }
+.easl-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+.easl-table th, .easl-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.easl-table th { color: var(--text-dim); font-weight: 500; }
+.easl-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.easl-hist-sum { font-size: 13px; margin: 0 0 6px; line-height: 1.6; }
+.easl-hist { display: flex; flex-direction: column; font-size: 12.5px; }
+.easl-hist-row { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.easl-hist-time { color: var(--text-dim); min-width: 104px; font-variant-numeric: tabular-nums; white-space: nowrap; }

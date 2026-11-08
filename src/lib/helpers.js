@@ -609,6 +609,8 @@ export function emptySlReminderSettings() {
     // Giờ đóng nến tự tính (src/lib/candles.js): phiên tự đặt, mã → phiên, và giờ không nhắc.
     sessions: [], symbolSessions: {}, autoQuiet: { ...DEFAULT_AUTO_QUIET },
     autoSlots: { ...DEFAULT_AUTO_SLOTS, hours: [...DEFAULT_AUTO_SLOTS.hours] },
+    morningBrief: emptyMorningBrief(),
+    eaWatch: emptyEaWatch(),
   };
 }
 
@@ -620,6 +622,18 @@ export function emptyIncompleteReminder() {
 // Tổng kết 7 ngày gần nhất gửi qua Telegram — mặc định tối Chủ nhật.
 export function emptyWeeklySummary() {
   return { enabled: false, weekday: "CN", time: "19:00", threadId: "" };
+}
+
+// Tin buổi sáng (sl-reminder + supabase/functions/_shared/brief.ts): tin lớn 24 giờ tới, SL các tài khoản, cảnh báo
+// chưa xử lý, hẹn kiểm lại, mã tiềm năng. Mặc định bật, 8:45 thứ 2–6 — khớp BRIEF_DEFAULT phía máy chủ.
+export function emptyMorningBrief() {
+  return { enabled: true, time: "08:45", days: ["T2", "T3", "T4", "T5", "T6"], threadId: "" };
+}
+
+// Canh chừng EA (alert-relay tick + _shared/eaWatch.ts): tài khoản có lệnh mà quá giờ đóng nến graceMin phút chưa báo
+// bảng SL → cảnh báo vào nhóm MT5. mute = các số MT5 không canh.
+export function emptyEaWatch() {
+  return { enabled: true, graceMin: 10, mute: [] };
 }
 
 // Bấm "Kết thúc lệnh" trên Telegram là hẹn sẽ điền nhật ký sau. Quá số ngày này mà
@@ -1744,6 +1758,22 @@ export async function safeGet(key, fallback) {
 }
 
 // Chỉ đọc dấu thời gian lần ghi gần nhất (nhẹ, không tải giá trị) — để biết nơi khác vừa lưu chưa
+// Mọi ô có key bắt đầu bằng `prefix` (vd "slMove:", "slHist:") — trả null khi lỗi, [] khi không có.
+export async function safeList(prefix) {
+  if (!currentUserId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("app_data")
+      .select("key, value, updated_at")
+      .eq("user_id", currentUserId)
+      .like("key", `${prefix}%`);
+    if (error) return null;
+    return data || [];
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function safeGetStamp(key) {
   if (!currentUserId) return { ok: false, stamp: null };
   try {

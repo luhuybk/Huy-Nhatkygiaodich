@@ -19,6 +19,8 @@
 // "🔥🔥🔥 MÃ TIỀM NĂNG · <mã> 🔥🔥🔥" (+ ghi chú) ở đầu, bỏ qua silent và luôn nhắc lại như repeat=1.
 //
 // Bảng dời SL: mỗi lượt tick gửi / sửa tin bảng SL theo tài khoản (_shared/slBoard.ts, dữ liệu từ mt5-journal).
+// Canh chừng EA + lịch sử SL (_shared/eaWatch.ts): tài khoản có lệnh mà quá X phút sau giờ đóng nến chưa báo bảng SL →
+// "⚠️ EA CHƯA BÁO SL" vào nhóm MT5 (EA báo lại thì sửa thành ✅); mỗi dòng bảng SL chép vào slHist:<login>:<ticket> (giữ luôn).
 //
 // Sát tin lớn: cảnh báo TradingView bắn trong khoảng X phút trước → Y phút sau giờ tin lớn của một đồng có trong mã
 // (slReminderSettings.newsGuard, mặc định 30/30) thì có dòng "⛔ SÁT TIN · NFP USD 20:30 (còn 12p) — KHÔNG VÀO LỆNH"
@@ -58,6 +60,7 @@ import {
   type NewsStore,
 } from "../_shared/newsCalendar.ts";
 import { flushSlBoards, slStatus } from "../_shared/slBoard.ts";
+import { EA_WATCH_KEY, eaTick, type EaWatchCfg } from "../_shared/eaWatch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -72,7 +75,7 @@ const KEEP_HOURS = 24; // tin nhắc lại đã xong giữ thêm 1 ngày để b
 // Máy chủ gửi webhook của TradingView (TradingView công bố, mục "About webhooks")
 const TV_WEBHOOK_IPS = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7"];
 
-type Settings = HotSettings & { telegramBotToken?: string; telegramChatId?: string; newsGuard?: NewsGuard };
+type Settings = HotSettings & { telegramBotToken?: string; telegramChatId?: string; newsGuard?: NewsGuard; eaWatch?: EaWatchCfg };
 type Repeat = {
   id: string; text: string; topic?: number; every: number; times: number; sent: number;
   nextAt: string; createdAt: string; messageIds: number[]; ackedAt?: string; doneAt?: string;
@@ -199,11 +202,16 @@ async function tick(supabase: ReturnType<typeof createClient>) {
     r.sent = 0;
     r.nextAt = new Date(now).toISOString();
   }
-  // Bảng dời SL của EA (mỗi tài khoản 1 tin mỗi nến) — xem _shared/slBoard.ts
-  let sl: unknown;
-  try { sl = await flushSlBoards(supabase, owner.userId, owner.settings.telegramBotToken!, now); } catch (e) { sl = String((e as Error).message || e); }
+  // Bảng dời SL của EA (mỗi tài khoản 1 tin mỗi nến) — _shared/slBoard.ts; rồi canh chừng EA (tài khoản có lệnh mà quá
+  // giờ đóng nến chưa báo) + chép lịch sử SL từng lệnh — _shared/eaWatch.ts
+  let sl: unknown, ea: unknown;
+  try {
+    const board = await flushSlBoards(supabase, owner.userId, owner.settings.telegramBotToken!, now);
+    sl = board.result;
+    try { ea = await eaTick(supabase, owner.userId, owner.settings.telegramBotToken!, owner.settings, board.raw, now); } catch (e) { ea = String((e as Error).message || e); }
+  } catch (e) { sl = String((e as Error).message || e); }
   const due = list.filter((r) => !r.ackedAt && !r.doneAt && Date.parse(r.nextAt) <= now);
-  if (!due.length && !changed.length) return json({ ok: true, due: 0, sl });
+  if (!due.length && !changed.length) return json({ ok: true, due: 0, sl, ea });
 
   const token = owner.settings.telegramBotToken!;
   const hot = hotList(owner.settings);
@@ -323,7 +331,7 @@ async function tick(supabase: ReturnType<typeof createClient>) {
   });
   const { error } = await writeRepeats(supabase, owner.userId, merged);
   if (error) return json({ error: error.message }, 500);
-  return json({ ok: true, due: due.length });
+  return json({ ok: true, due: due.length, sl, ea });
 }
 
 const CLEAN_SCAN = 1500; // dọn sạch: lùi tối đa ngần này id tính từ tin mới nhất
@@ -435,7 +443,9 @@ Deno.serve(async (req) => {
   if (url.searchParams.get("slstat")) {
     if (!RELAY_KEY || url.searchParams.get("key") !== RELAY_KEY) return json({ error: "Sai khoá" }, 401);
     const owner = await loadOwner(supabase);
-    return json(owner ? await slStatus(supabase, owner.userId) : { error: "no settings" });
+    if (!owner) return json({ error: "no settings" });
+    const { data: ew } = await supabase.from("app_data").select("value").eq("user_id", owner.userId).eq("key", EA_WATCH_KEY).maybeSingle();
+    return json({ ...(await slStatus(supabase, owner.userId)), eaWatch: ew?.value || null });
   }
   const cleanMode = url.searchParams.get("clean");
   if (cleanMode) {

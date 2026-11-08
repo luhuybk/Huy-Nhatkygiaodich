@@ -8,10 +8,14 @@
 import { fillChat, shortSymbol } from "./mt5Fill.ts";
 
 export type SlStatus = "moved" | "be" | "keep" | "skip" | "wait" | "closed" | "now";
+// Mốc của mt5-journal (bar = 0, ô slMove:<login>:<ticket>:0): "open" = vừa khớp (chưa có dòng nến), "gone" = đã đóng hẳn.
+// Bảng Telegram bỏ qua (bar = 0); canh chừng EA, lịch sử SL, bảng SL trên web dùng.
+export type SlMark = "open" | "gone";
 export type SlRow = {
-  login: string; accountName: string; ticket: string; symbol: string; side: "buy" | "sell"; status: SlStatus;
+  login: string; accountName: string; ticket: string; symbol: string; side: "buy" | "sell"; status: SlStatus | SlMark;
   no: string; tf: string; bar: number; slOld: number; slNew: number; level: number; open: number; digits: number;
   currency: string; note: string; at: string;
+  openedAt?: number; closedAt?: number; hasSl?: boolean; // chỉ mốc: giây UTC lúc khớp / đóng, lệnh khớp đã có SL chưa
 };
 
 export const SL_MOVE_PREFIX = "slMove:";
@@ -55,7 +59,7 @@ export const slRowKey = (r: SlRow) => `${SL_MOVE_PREFIX}${r.login}:${r.ticket}:$
 
 // Dòng mới có được thay dòng cũ cùng lệnh, cùng nến không
 export const slReplaces = (prev: SlRow | null | undefined, next: SlRow) =>
-  !prev || !FINAL.includes(prev.status) || FINAL.includes(next.status);
+  !prev || !FINAL.includes(prev.status as SlStatus) || FINAL.includes(next.status as SlStatus);
 
 const VN = 7 * 3600 * 1000;
 const hhmm = (sec: number) => {
@@ -67,13 +71,54 @@ const ddmm = (sec: number) => {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 const px = (v: number, d: number) => (v > 0 ? v.toFixed(d) : "—");
-const ICON: Record<SlStatus, string> = { moved: "✅", be: "🔒", keep: "⏸", skip: "🆕", wait: "⏳", closed: "❌", now: "📍" };
+export const SL_ICON: Record<SlStatus, string> = { moved: "✅", be: "🔒", keep: "⏸", skip: "🆕", wait: "⏳", closed: "❌", now: "📍" };
+const ICON = SL_ICON as Record<string, string>;
 const orderOf = (r: SlRow) => Number(r.no.split("/")[0]) || 999;
+// SL sau dòng này: đã dời / về BE thì SL mới, còn lại SL cũ
+export const slAfter = (r: { status?: string; st?: string; slOld?: number; slNew?: number; old?: number; nw?: number }) => {
+  const st = r.status ?? r.st;
+  return st === "moved" || st === "be" ? Number(r.slNew ?? r.nw) || 0 : Number(r.slOld ?? r.old) || 0;
+};
 // Đã BE = SL đang có (sau lần dời này) ở hoặc qua giá vào
 const isBe = (r: SlRow) => {
-  const sl = r.status === "moved" || r.status === "be" ? r.slNew : r.slOld;
+  const sl = slAfter(r);
   return r.open > 0 && sl > 0 && (r.side === "buy" ? sl >= r.open : sl <= r.open);
 };
+
+// Lệnh đang mở theo bảng SL: dòng nến mới nhất của mỗi lệnh (hoặc mốc khớp nếu chưa có dòng nào). Bỏ lệnh đã đóng
+// (mốc "gone", dòng "closed", hoặc isClosed — web: lệnh trong nhật ký đã có ngày thoát; tick: đóng tra từ hộp chờ).
+export type SlPos = {
+  key: string; login: string; accountName: string; ticket: string; symbol: string; side: "buy" | "sell"; tf: string;
+  sl: number; open: number; digits: number; be: boolean; status: SlStatus | "open"; no: string; note: string;
+  bar: number; at: string; marker: boolean; hasSl: boolean; openedAt?: number;
+};
+export function openPositions(rows: SlRow[], isClosed: (login: string, ticket: string) => boolean = () => false): SlPos[] {
+  const last = new Map<string, SlRow>();
+  const mark = new Map<string, SlRow>();
+  for (const r of rows) {
+    if (!r?.login || !r.ticket) continue;
+    const k = `${r.login}:${r.ticket}`;
+    if (!r.bar) { mark.set(k, r); continue; }
+    const p = last.get(k);
+    if (!p || r.bar > p.bar) last.set(k, r);
+  }
+  const out: SlPos[] = [];
+  for (const k of new Set([...last.keys(), ...mark.keys()])) {
+    const m = mark.get(k);
+    const r = last.get(k) || m!;
+    if (m?.status === "gone" || r.status === "closed" || isClosed(r.login, r.ticket)) continue;
+    const sl = r.bar ? slAfter(r) : 0;
+    const buy = r.side !== "sell";
+    out.push({
+      key: k, login: r.login, accountName: r.accountName || m?.accountName || "", ticket: r.ticket, symbol: r.symbol,
+      side: buy ? "buy" : "sell", tf: r.tf || m?.tf || "", sl, open: Number(r.open) || 0, digits: Number(r.digits) || 5,
+      be: r.open > 0 && sl > 0 && (buy ? sl >= r.open : sl <= r.open), status: r.bar ? (r.status as SlStatus) : "open",
+      no: r.no || "", note: r.note || "", bar: r.bar, at: r.at, marker: !r.bar,
+      hasSl: r.bar ? sl > 0 : !!m?.hasSl, openedAt: m?.openedAt,
+    });
+  }
+  return out;
+}
 
 // Chỉ tình trạng: dời hay giữ, đã BE chưa, SL bao nhiêu — không ghi lãi/lỗ (người dùng chọn 06/11)
 function rowLine(r: SlRow) {
@@ -127,9 +172,12 @@ async function tg(token: string, method: string, body: unknown) {
   return info;
 }
 
-// Gửi / sửa bảng của các tài khoản đã có dòng mới. Trả về số tin đã gửi + đã sửa.
+export type SlRawRow = { key: string; value: SlRow; updated_at: string };
+
+// Gửi / sửa bảng của các tài khoản đã có dòng mới. Trả về số tin đã gửi + đã sửa (result) và các ô slMove còn hạn (raw)
+// để canh chừng EA + lịch sử SL (_shared/eaWatch.ts) dùng lại, khỏi đọc lần nữa.
 export async function flushSlBoards(supabase: Supa, userId: string, token: string, nowMs = Date.now()) {
-  if ((Deno.env.get("MT5_SL_BOARD") || "").toLowerCase() === "off") return { sent: 0, edited: 0 };
+  const off = (Deno.env.get("MT5_SL_BOARD") || "").toLowerCase() === "off";
   const { data: moveRows } = await supabase.from("app_data").select("key, value, updated_at")
     .eq("user_id", userId).like("key", `${SL_MOVE_PREFIX}%`);
   const { data: boardRows } = await supabase.from("app_data").select("key, value, updated_at")
@@ -150,8 +198,10 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
   const boards = new Map<string, { mid?: number; text?: string; skipped?: boolean }>(
     (boardRows || []).map((r: { key: string; value: { mid?: number; text?: string; skipped?: boolean } }) => [r.key.slice(SL_BOARD_PREFIX.length), r.value || {}]),
   );
+  const raw = ((moveRows || []) as SlRawRow[]).filter((r) => !old(r) && r.value);
   const { chatId, topic } = fillChat();
   let sent = 0, edited = 0;
+  if (off) groups.clear(); // MT5_SL_BOARD=off: không gửi bảng, vẫn trả dòng cho canh chừng EA
   for (const [g, rows] of groups) {
     const text = boardText(rows);
     const board = boards.get(g);
@@ -181,7 +231,7 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
       edited++;
     }
   }
-  return { sent, edited };
+  return { result: { sent, edited, ...(off ? { off: true } : {}) }, raw };
 }
 
 // Soát nhanh (alert-relay ?slstat=1&key=…): các dòng + bảng 24 giờ qua, không gửi gì

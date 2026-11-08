@@ -8,10 +8,16 @@
 // Các nút bấm trong tin nhắn do function telegram-webhook xử lý.
 // Việc đã tự tích "xong" ở tab Timeline làm việc trên web (khoá timelineDone) thì bỏ qua, không gửi.
 // Ngoài ra còn nhắc hằng tuần: điền nốt lệnh dở, tổng kết tuần, và đối chiếu file sàn.
+// Tin buổi sáng (mặc định 8:45 thứ 2–6): tin lớn 24 giờ tới, SL các tài khoản, EA chưa báo, cảnh báo chưa xử lý, hẹn kiểm lại,
+// mã tiềm năng — _shared/brief.ts.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { vnTime } from "../_shared/alertRecheck.ts";
 import { hotList, hotMatches, type HotSettings, type HotSymbol } from "../_shared/hotSymbols.ts";
+import { briefBody, briefCfg, type BriefCfg, type BriefRepeat } from "../_shared/brief.ts";
+import { EA_WATCH_KEY, type EaWatchState } from "../_shared/eaWatch.ts";
+import { NEWS_KEY, newsEvents, type NewsStore } from "../_shared/newsCalendar.ts";
+import { openPositions, SL_MOVE_PREFIX, type SlPos, type SlRow } from "../_shared/slBoard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -50,6 +56,8 @@ const WEEKDAY_CODE_BY_EN_SHORT: Record<string, string> = {
 const JS_WEEKDAY_NUM_BY_EN_SHORT: Record<string, number> = {
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
 };
+
+const WEEKDAY_FULL: Record<string, string> = { T2: "Thứ 2", T3: "Thứ 3", T4: "Thứ 4", T5: "Thứ 5", T6: "Thứ 6", T7: "Thứ 7", CN: "Chủ nhật" };
 
 // Trả về ngày + giờ hiện tại theo múi giờ Việt Nam, bất kể server chạy ở UTC hay múi giờ nào khác.
 function vnNowParts(date: Date) {
@@ -593,6 +601,34 @@ function reminderDueOnVn(r: { frequency?: string; weekday?: number; dayOfMonth?:
   return false;
 }
 
+// Đọc dữ liệu cho tin buổi sáng: lịch tin, cảnh báo nhắc lại, bảng SL (lệnh đang mở theo EA), cảnh báo EA im lặng.
+async function morningBrief(
+  supabase: ReturnType<typeof createClient>, userId: string, settings: HotSettings, trades: Record<string, unknown>[],
+  resources: { accounts?: { name?: string; mt5Login?: string }[] } | null | undefined, nowMs: number,
+) {
+  const [{ data: newsRow }, { data: repRow }, { data: ewRow }, { data: moveRows }] = await Promise.all([
+    supabase.from("app_data").select("value").eq("user_id", userId).eq("key", NEWS_KEY).maybeSingle(),
+    supabase.from("app_data").select("value").eq("user_id", userId).eq("key", "alertRepeats").maybeSingle(),
+    supabase.from("app_data").select("value").eq("user_id", userId).eq("key", EA_WATCH_KEY).maybeSingle(),
+    supabase.from("app_data").select("value").eq("user_id", userId).like("key", `${SL_MOVE_PREFIX}%`),
+  ]);
+  const ew = (ewRow?.value || {}) as EaWatchState;
+  // Lệnh đã đóng trong nhật ký (EA báo đóng, hoặc tự điền) thì không còn tính là đang mở
+  const closed = new Set(trades.filter((t) => t && t.ticket && (t.exitDate || t.mt5Closed)).map((t) => String(t.ticket)));
+  const rows = ((moveRows || []) as { value: SlRow }[]).map((r) => r.value).filter(Boolean);
+  const positions = openPositions(rows, (login, ticket) => closed.has(ticket) || !!ew.closed?.[`${login}:${ticket}`]);
+  const accounts = (resources?.accounts || []).filter(Boolean);
+  const byLogin = (login: string) => accounts.find((a) => String(a.mt5Login || "").replace(/\D/g, "") === login)?.name;
+  const nameOf = (p: SlPos) => byLogin(p.login) || p.accountName || `#${p.login}`;
+  const alarms = Object.entries(ew.alarms || {}).filter(([, a]) => a && !a.okAt).map(([login, a]) => ({
+    name: byLogin(login) || positions.find((p) => p.login === login)?.accountName || `#${login}`, bar: a.bar,
+  }));
+  return briefBody({
+    nowMs, news: newsEvents(newsRow?.value as NewsStore), positions, nameOf, alarms,
+    repeats: (Array.isArray(repRow?.value) ? repRow!.value : []) as BriefRepeat[], hot: hotList(settings),
+  });
+}
+
 Deno.serve(async () => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const now = new Date();
@@ -631,6 +667,7 @@ Deno.serve(async () => {
       capitalPickReminder?: { enabled?: boolean; weekday?: string; time?: string; threadId?: string };
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
+      morningBrief?: BriefCfg;
     } & HotSettings;
     // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
@@ -1101,6 +1138,25 @@ Deno.serve(async () => {
           log[logKey] = true;
           logChanged = true;
           sent++;
+        }
+      }
+    }
+
+    // Tin buổi sáng (mặc định 8:45 thứ 2–6) — xem _shared/brief.ts
+    const mb = briefCfg(settings.morningBrief);
+    if (mb.enabled && mb.days.includes(todayWeekdayCode) && minutesDiff(mb.time, currentHHMM) <= MATCH_TOLERANCE_MIN) {
+      const logKey = `brief_${today}`;
+      if (!log[logKey]) {
+        try {
+          const body = await morningBrief(supabase, row.user_id, settings, trades, resourcesRow?.value, now.getTime());
+          const text = buildMessage("☀️", "TIN SÁNG", "📌", `${WEEKDAY_FULL[todayWeekdayCode] || todayWeekdayCode} ${ddmm(today)}`, undefined, body);
+          if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, mb.threadId)) {
+            log[logKey] = true;
+            logChanged = true;
+            sent++;
+          }
+        } catch (e) {
+          console.error("morning brief failed", e);
         }
       }
     }
