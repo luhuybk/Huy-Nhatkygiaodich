@@ -4,9 +4,9 @@
 //   eaWatch                         cảnh báo "EA chưa báo SL" đang mở, lệnh đã đóng tra từ hộp chờ
 //   slHist:<login>:<ticket>         lịch sử SL từng lệnh (giữ luôn)
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, BellOff, RefreshCw } from "lucide-react";
+import { Bell, BellOff, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { computeResult, fmtR, safeGet, safeList } from "../lib/helpers.js";
-import { DetailGroup, Field } from "./ui.jsx";
+import { DetailGroup, Field, Switch } from "./ui.jsx";
 import { vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { shortSymbol } from "../../supabase/functions/_shared/mt5Fill.ts";
 import { openPositions, slAfter, SL_ICON } from "../../supabase/functions/_shared/slBoard.ts";
@@ -54,9 +54,11 @@ export function eaPositions(data, trades) {
 const activeAlarms = (data) => Object.entries((data && data.watch && data.watch.alarms) || {}).filter(([, a]) => a && !a.okAt);
 
 export function eaSummary(data, trades, resources, settings) {
-  const pos = eaPositions(data, trades);
-  if (!pos) return data && data.at ? "Không tải được dữ liệu EA" : "Đang tải…";
-  const alarms = activeAlarms(data);
+  const hide = watchCfg(settings && settings.eaWatch).hide;
+  const all = eaPositions(data, trades);
+  if (!all) return data && data.at ? "Không tải được dữ liệu EA" : "Đang tải…";
+  const pos = all.filter((p) => !hide.includes(p.login));
+  const alarms = activeAlarms(data).filter(([login]) => !hide.includes(login));
   const warn = alarms.length ? ` · ⚠️ EA ${alarms.map(([login]) => mt5AccountName(login, resources, (pos.find((p) => p.login === login) || {}).accountName)).join(", ")} chưa báo` : "";
   const off = watchCfg(settings && settings.eaWatch).enabled ? "" : " · đang tắt canh EA";
   if (!pos.length) return `Không có lệnh đang mở${warn}${off}`;
@@ -100,7 +102,7 @@ function EaRow({ p, now }) {
   );
 }
 
-function EaAccount({ g, alarm, muted, onMute, watchOn, now }) {
+function EaAccount({ g, alarm, muted, onMute, onHide, watchOn, now }) {
   const real = g.list.filter((p) => !p.marker);
   const last = Math.max(0, ...real.map((p) => p.bar));
   const tfs = [...new Set(g.list.map((p) => tfLabel(p.tf)).filter(Boolean))].join("/");
@@ -119,6 +121,10 @@ function EaAccount({ g, alarm, muted, onMute, watchOn, now }) {
             {muted ? <BellOff size={12} /> : <Bell size={12} />}{muted ? " không canh" : ""}
           </button>
         ) : null}
+        <button type="button" className={`easl-mute ${watchOn ? "" : "easl-push"}`} onClick={onHide}
+          title="Ẩn tài khoản này (test, demo…): không hiện ở đây, không lên tin sáng, không canh">
+          <EyeOff size={12} /> Ẩn
+        </button>
       </div>
       <div className="easl-rows">{g.list.map((p) => <EaRow key={p.key} p={p} now={now} />)}</div>
     </div>
@@ -127,19 +133,28 @@ function EaAccount({ g, alarm, muted, onMute, watchOn, now }) {
 
 export function EaSlBody({ settings, onChange, resources, trades, data }) {
   const cfg = watchCfg(settings.eaWatch);
-  const setCfg = (patch) => onChange({ ...settings, eaWatch: { ...cfg, ...patch } });
+  // cfg.mute đã gộp cả tài khoản ẩn (cho máy chủ) — lưu lại thì dùng danh sách "không canh" gốc
+  const raw = (settings.eaWatch && Array.isArray(settings.eaWatch.mute)) ? settings.eaWatch.mute.map(String) : [];
+  const setCfg = (patch) => onChange({ ...settings, eaWatch: { ...cfg, mute: raw, ...patch } });
   const pos = eaPositions(data, trades);
-  const groups = pos ? groupByAccount(pos, resources) : [];
+  const all = pos ? groupByAccount(pos, resources) : [];
+  const groups = all.filter((g) => !cfg.hide.includes(g.login));
   const alarms = (data.watch && data.watch.alarms) || {};
   // Cảnh báo của tài khoản không còn lệnh nào trên bảng (vd lệnh vừa đóng) vẫn hiện cho biết
-  const orphan = activeAlarms(data).filter(([login]) => !groups.some((g) => g.login === login));
+  const orphan = activeAlarms(data).filter(([login]) => !cfg.hide.includes(login) && !groups.some((g) => g.login === login));
   const now = Date.now();
-  const toggleMute = (login) => setCfg({ mute: cfg.mute.includes(login) ? cfg.mute.filter((x) => x !== login) : [...cfg.mute, login] });
+  const toggleMute = (login) => setCfg({ mute: raw.includes(login) ? raw.filter((x) => x !== login) : [...raw, login] });
+  const hideAcc = (login) => setCfg({ hide: [...cfg.hide, login] });
+  const showAcc = (login) => setCfg({ hide: cfg.hide.filter((x) => x !== login) });
+  const hiddenNames = cfg.hide.map((login) => {
+    const g = all.find((x) => x.login === login);
+    return { login, name: g ? g.name : mt5AccountName(login, resources, `#${login}`) };
+  });
   return (
     <>
       <p className="plan-hint">
         SL của mọi lệnh EA đang quản, theo lần EA báo gần nhất (mỗi lần nến khung đóng) — như bảng 🛡 trên Telegram nhưng xem lúc nào cũng được.
-        {" "}<b>Canh chừng EA</b> (công tắc bên trên): tài khoản có lệnh mà quá <b>{cfg.graceMin} phút</b> sau giờ đóng nến chưa thấy bảng SL thì bot
+        {" "}<b>Canh chừng EA</b> (công tắc góc trên): tài khoản có lệnh mà quá <b>{cfg.graceMin} phút</b> sau giờ đóng nến chưa thấy bảng SL thì bot
         báo <code>⚠️ EA CHƯA BÁO SL</code> vào nhóm MT5 — EA tắt, VPS treo, Algo Trading tắt, EA chưa nạp bản mới… EA báo lại thì tin tự sửa thành ✅.
         Cổ phiếu và khung dưới H1 không canh.
       </p>
@@ -159,9 +174,16 @@ export function EaSlBody({ settings, onChange, resources, trades, data }) {
       {!pos ? <p className="field-hint">{data.at ? "Không tải được dữ liệu EA — thử Tải lại." : "Đang tải…"}</p>
         : !groups.length ? <p className="field-hint">Không có lệnh đang mở (EA chỉ báo khi có lệnh; dữ liệu 3 ngày gần nhất).</p>
           : groups.map((g) => (
-            <EaAccount key={g.login} g={g} alarm={alarms[g.login]} muted={cfg.mute.includes(g.login)} onMute={() => toggleMute(g.login)}
-              watchOn={cfg.enabled} now={now} />
+            <EaAccount key={g.login} g={g} alarm={alarms[g.login]} muted={raw.includes(g.login)} onMute={() => toggleMute(g.login)}
+              onHide={() => hideAcc(g.login)} watchOn={cfg.enabled} now={now} />
           ))}
+      {hiddenNames.length ? (
+        <p className="field-hint easl-hidden">
+          <Eye size={12} /> Đã ẩn: {hiddenNames.map((h, i) => (
+            <span key={h.login}>{i ? " · " : ""}{h.name} <button type="button" className="plan-link" onClick={() => showAcc(h.login)}>hiện lại</button></span>
+          ))}
+        </p>
+      ) : null}
       <EaStats trades={trades} resources={resources} />
     </>
   );
@@ -326,5 +348,25 @@ export function SlHistoryGroup({ trade, resources }) {
         ))}
       </div>
     </DetailGroup>
+  );
+}
+
+// Trang riêng "SL hiện tại (EA)" (menu Theo dõi) — công tắc canh chừng EA ở đầu trang
+export function EaSlPage({ settings, onChange, resources, trades }) {
+  const data = useEaData(true);
+  const cfg = watchCfg(settings.eaWatch);
+  return (
+    <div className="reminders-page">
+      <div className="reminders-page-head easl-page-head">
+        <h2 style={{ fontSize: 19 }}>SL hiện tại (EA)</h2>
+        <span className="easl-page-sum">{eaSummary(data, trades, resources, settings)}</span>
+        <span className="easl-page-sw">
+          <span className="field-hint">Canh chừng EA</span>
+          <Switch checked={cfg.enabled} onChange={(v) => onChange({ ...settings, eaWatch: { ...(settings.eaWatch || {}), enabled: v } })}
+            title={cfg.enabled ? "Đang canh — bấm để tắt" : "Đang tắt — bấm để bật"} />
+        </span>
+      </div>
+      <EaSlBody settings={settings} onChange={onChange} resources={resources} trades={trades} data={data} />
+    </div>
   );
 }

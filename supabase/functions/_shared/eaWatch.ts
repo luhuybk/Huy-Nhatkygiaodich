@@ -5,7 +5,8 @@
 //    khoản lỡ cùng lượt chung một tin; EA báo lại thì sửa tin, dòng tài khoản đó thêm "✅ đã báo lại HH:MM". Mỗi nến lỡ
 //    báo một lần. Cổ phiếu không canh (nến H4 theo mốc New York rơi vào giờ đóng cửa nên EA không có nến để báo).
 //    Lệnh mới khớp chưa có dòng nào thì tính từ mốc khớp lệnh của mt5-journal (slMove:<login>:<ticket>:0).
-//    Cài đặt: slReminderSettings.eaWatch = { enabled (mặc định bật), graceMin (10), mute: [số MT5 không canh] }.
+//    Cài đặt: slReminderSettings.eaWatch = { enabled (mặc định bật), graceMin (10), mute: [số MT5 không canh],
+//    hide: [số MT5 ẩn hẳn — test/demo: web không hiện, tin sáng bỏ, không canh] }.
 // 2. Lịch sử SL: dòng bảng SL chỉ giữ 3 ngày → chép từng dòng vào slHist:<login>:<ticket> (giữ luôn) — web hiện ở
 //    chi tiết lệnh và mục "Đánh giá EA kéo SL" (dời mấy lần, mấy nến tới BE, đóng ở SL ban đầu hay SL đã kéo).
 // Trạng thái ở app_data "eaWatch" (cảnh báo đã gửi, lệnh đã đóng tra từ hộp chờ, mốc đã chép lịch sử) — chỉ tick ghi.
@@ -17,7 +18,7 @@ import { openPositions, slAfter, type SlPos, type SlRawRow, type SlRow, type SlS
 export const EA_WATCH_KEY = "eaWatch";
 export const SL_HIST_PREFIX = "slHist:";
 
-export type EaWatchCfg = { enabled?: boolean; graceMin?: number; mute?: string[] };
+export type EaWatchCfg = { enabled?: boolean; graceMin?: number; mute?: string[]; hide?: string[] };
 export type EaAlarm = { bar: number; mid?: number; line: string; at: string; okAt?: string; ok?: string };
 export type EaWatchState = {
   alarms?: Record<string, EaAlarm>;   // theo số MT5: cảnh báo gần nhất
@@ -40,7 +41,9 @@ export function watchCfg(c: EaWatchCfg | undefined | null) {
   return {
     enabled: c?.enabled !== false,
     graceMin: Number.isFinite(g) && g > 0 ? Math.min(120, Math.max(3, g)) : 10,
-    mute: Array.isArray(c?.mute) ? c!.mute.map((x) => String(x)) : [],
+    // hide = tài khoản ẩn hẳn (test, demo): không hiện trên web, không lên tin sáng, cũng không canh
+    hide: Array.isArray(c?.hide) ? c!.hide.map((x) => String(x)) : [],
+    mute: [...new Set([...(Array.isArray(c?.mute) ? c!.mute : []), ...(Array.isArray(c?.hide) ? c!.hide : [])].map((x) => String(x)))],
   };
 }
 

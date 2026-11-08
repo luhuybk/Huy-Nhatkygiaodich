@@ -15,7 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { vnTime } from "../_shared/alertRecheck.ts";
 import { hotList, hotMatches, type HotSettings, type HotSymbol } from "../_shared/hotSymbols.ts";
 import { briefBody, briefCfg, type BriefCfg, type BriefRepeat } from "../_shared/brief.ts";
-import { EA_WATCH_KEY, type EaWatchState } from "../_shared/eaWatch.ts";
+import { EA_WATCH_KEY, watchCfg, type EaWatchCfg, type EaWatchState } from "../_shared/eaWatch.ts";
 import { NEWS_KEY, newsEvents, type NewsStore } from "../_shared/newsCalendar.ts";
 import { openPositions, SL_MOVE_PREFIX, type SlPos, type SlRow } from "../_shared/slBoard.ts";
 
@@ -616,11 +616,13 @@ async function morningBrief(
   // Lệnh đã đóng trong nhật ký (EA báo đóng, hoặc tự điền) thì không còn tính là đang mở
   const closed = new Set(trades.filter((t) => t && t.ticket && (t.exitDate || t.mt5Closed)).map((t) => String(t.ticket)));
   const rows = ((moveRows || []) as { value: SlRow }[]).map((r) => r.value).filter(Boolean);
-  const positions = openPositions(rows, (login, ticket) => closed.has(ticket) || !!ew.closed?.[`${login}:${ticket}`]);
+  const hide = watchCfg((settings as { eaWatch?: EaWatchCfg }).eaWatch).hide; // tài khoản test / demo đã ẩn
+  const positions = openPositions(rows, (login, ticket) => closed.has(ticket) || !!ew.closed?.[`${login}:${ticket}`])
+    .filter((p) => !hide.includes(p.login));
   const accounts = (resources?.accounts || []).filter(Boolean);
   const byLogin = (login: string) => accounts.find((a) => String(a.mt5Login || "").replace(/\D/g, "") === login)?.name;
   const nameOf = (p: SlPos) => byLogin(p.login) || p.accountName || `#${p.login}`;
-  const alarms = Object.entries(ew.alarms || {}).filter(([, a]) => a && !a.okAt).map(([login, a]) => ({
+  const alarms = Object.entries(ew.alarms || {}).filter(([login, a]) => a && !a.okAt && !hide.includes(login)).map(([login, a]) => ({
     name: byLogin(login) || positions.find((p) => p.login === login)?.accountName || `#${login}`, bar: a.bar,
   }));
   return briefBody({

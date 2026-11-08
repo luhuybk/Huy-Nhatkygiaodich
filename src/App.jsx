@@ -9,7 +9,7 @@ import {
   BookOpen, PlusCircle, Database, LayoutDashboard, Star, StickyNote, Settings, Layers,
   Wallet, Hash, Grid3x3, Grid2x2, Target, TrendingUp, AlertTriangle, Ruler, PiggyBank,
   Shapes, GraduationCap, CalendarDays, LineChart as LineChartIcon, Bell, Menu, X, Gauge, ListChecks, Bug, Activity, CalendarRange, Stethoscope, TrendingDown, Scale,
-  NotebookPen, Globe2, Search,
+  NotebookPen, Globe2, Search, Shield,
 } from "lucide-react";
 import "./styles.css";
 import { DEFAULT_RESOURCES, DEFAULT_UI_SETTINGS, DEFAULT_PRINCIPLES, THEME_PRESETS, ACCENT_PRESETS, SYMBOL_CATALOG_VERSION } from "./lib/constants.js";
@@ -47,6 +47,7 @@ const JourneySection = lazy(() => import("./components/LessonsAndSetups.jsx").th
 const SetupLibrarySection = lazy(() => import("./components/LessonsAndSetups.jsx").then((m) => ({ default: m.SetupLibrarySection })));
 const SetupErrorsPage = lazy(() => import("./components/SetupErrors.jsx").then((m) => ({ default: m.SetupErrorsPage })));
 const CapitalPlanPage = lazy(() => import("./components/CapitalPlan.jsx").then((m) => ({ default: m.CapitalPlanPage })));
+const EaSlPage = lazy(() => import("./components/EaSl.jsx").then((m) => ({ default: m.EaSlPage })));
 const JourneyLogSection = lazy(() => import("./components/JourneyLog.jsx").then((m) => ({ default: m.JourneyLogSection })));
 // Các trang ít mở — tải khi bấm tới, cho lần mở app nhẹ hơn.
 const RemindersPage = lazy(() => import("./components/Reminders.jsx").then((m) => ({ default: m.RemindersPage })));
@@ -61,6 +62,7 @@ const NAV_GROUPS = [
     label: "Theo dõi", items: [
       { key: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
       { key: "journal", label: "Nhật ký", icon: BookOpen },
+      { key: "easl", label: "SL hiện tại (EA)", icon: Shield },
       { key: "journeylog", label: "Log hành trình", icon: NotebookPen },
       { key: "equityindex", label: "Đường cong vốn", icon: TrendingUp },
       { key: "capitaltracker", label: "Vốn thực tế (thủ công)", icon: PiggyBank },
@@ -971,6 +973,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "reminders" ? <RemindersPage reminders={reminders} onChange={persistReminders} resources={resources} slReminderSettings={slReminderSettings} onSlReminderSettingsChange={persistSlReminderSettings} symbolWatches={symbolWatches} onSymbolWatchesChange={(next) => persistSymbolWatches(next, symbolWatches)}
                   taskDone={taskDone} onTaskDoneChange={persistTaskDone} onSetupCheckLogChange={persistSetupCheckLog}
                   trades={trades} setupCheckLog={setupCheckLog} slMutedTrades={slMutedTrades} onSlMutedTradesChange={persistSlMutedTrades} /> :
+              view === "easl" ? <EaSlPage settings={slReminderSettings} onChange={persistSlReminderSettings} resources={resources} trades={trades} /> :
               view === "equityindex" ? <EquityIndexPage resources={resources} ledger={ledger} trades={trades} /> :
               view === "capitaltracker" ? <CapitalTrackerPage accounts={capitalAccounts} entries={capitalEntries} flows={capitalFlows} onAccountsChange={persistCapitalAccounts} onEntriesChange={persistCapitalEntries} onFlowsChange={persistCapitalFlows} /> :
               view === "setuphub" ? (

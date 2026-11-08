@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Bell, CheckCircle2, XCircle, Eye, EyeOff, PlusCircle, Trash2, X, ChevronDown, ArrowUpDown, Search,
-  CalendarDays, Clock, Settings2, Flame, Hourglass, ShieldAlert, Shield,
+  CalendarDays, Clock, Settings2, Flame, Hourglass, ShieldAlert,
 } from "lucide-react";
-import { EaSlBody, eaSummary, useEaData } from "./EaSl.jsx";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, useAlertRepeats } from "./AlertRechecks.jsx";
 import { fxBase, SymbolBox } from "./SymbolBox.jsx";
 import { recheckFor, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
@@ -981,7 +980,6 @@ export function PlansPanel({
   const hotOn = s.hotEnabled !== false;
   const alertData = useAlertRepeats(telegramReady);
   const news = useNewsCalendar();
-  const ea = useEaData(true);
   const newsSummary = (() => {
     const g = guardOf(s.newsGuard);
     if (!news.store) return "Đang tải…";
@@ -1028,11 +1026,6 @@ export function PlansPanel({
         <button type="button" className="plan-link" onClick={() => setSeasonOpen(true)}>dời giờ ±1</button>
       </div>
 
-      <PlanSection id="eaSl" icon={Shield} title="SL hiện tại (EA)" summary={eaSummary(ea, trades, resources, s)}
-        on={s.eaWatch ? s.eaWatch.enabled !== false : true} onToggle={(v) => onSettingsChange({ ...s, eaWatch: { ...(s.eaWatch || {}), enabled: v } })}
-        open={open === "eaSl"} onOpen={setOpen}>
-        <EaSlBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} data={ea} />
-      </PlanSection>
       <PlanSection id="hot" icon={Flame} title="Mã tiềm năng" summary={hotSummary}
         on={hotOn} onToggle={(v) => onSettingsChange({ ...s, hotEnabled: v })} open={open === "hot"} onOpen={setOpen}>
         <HotBody settings={s} onChange={onSettingsChange} resources={resources} trades={trades} watches={watches} alertData={telegramReady ? alertData : null} />
