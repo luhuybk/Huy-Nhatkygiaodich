@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient.js";
 import { safeGet, safeSet } from "../lib/helpers.js";
 import { SymbolBox } from "./SymbolBox.jsx";
 // Dùng đúng hàm của máy chủ (alert-relay / telegram-webhook) để giờ nến trên web khớp Telegram
-import { nextRecheck, RECHECK_DAYS, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
+import { recheckFor, RECHECK_DAYS, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotList, hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 
 // Danh sách cảnh báo nhắc lại của alert-relay (app_data.alertRepeats) — xem / thêm / xoá trên web.
@@ -54,7 +54,7 @@ const tfRank = (r) => { const i = TF_ORDER.indexOf((r && (r.tf || r.candleTf)) |
 
 // Một nhắc kiểm lại theo nến (thêm tay ở đây, hoặc tự thêm khi điền Mã tiềm năng — hotId = id mã đó)
 export function recheckRecord({ name, tf, note, hotId }, t = Date.now()) {
-  const rc = nextRecheck(tf, t);
+  const rc = recheckFor(tf, t, name);
   const iso = (ms) => new Date(ms).toISOString();
   return {
     id: newId(), text: recheckText(name, tf, note), every: 2, times: 5, sent: 0, tf, rev: 0,
@@ -186,9 +186,9 @@ function AddAlertForm({ resources, hot, onAdd, onCancel }) {
   }, [resources, hot]);
   const pinned = useMemo(() => ({ name: "🔥 Tiềm năng", list: [...new Set((hot || []).map((h) => String(h.name || "").toUpperCase()).filter(Boolean))] }), [hot]);
   const preview = useMemo(() => {
-    const r = nextRecheck(tf, Date.now());
+    const r = recheckFor(tf, Date.now(), syms[0]);
     return `nến ${tf} đóng ${vnTime(r.close)} → nhắc lúc ${vnTime(r.at)}`;
-  }, [tf]);
+  }, [tf, syms]);
   const submit = async () => {
     if (!syms.length) { setErr("Chọn ít nhất một mã."); return; }
     setErr("");
@@ -287,7 +287,7 @@ export function AlertRechecksBody({ data, resources, settings }) {
   const next = (r) => edit((all) => all.map((x) => {
     if (x.id !== r.id) return x;
     const t = Date.now();
-    const rc = nextRecheck(x.tf || "D", t);
+    const rc = recheckFor(x.tf || "D", t, x.text);
     return {
       ...x, ackedAt: x.ackedAt || new Date(t).toISOString(),
       recheckAt: new Date(rc.at).toISOString(), recheckClose: new Date(rc.close).toISOString(),

@@ -29,7 +29,7 @@
 //   https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<PROJECT_REF>.supabase.co/functions/v1/telegram-webhook
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { groupKeyboard, isCryptoSymbol, nextRecheck, normTf, RECHECK_DAYS, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
+import { groupKeyboard, isCryptoSymbol, normTf, RECHECK_DAYS, recheckFor, reentryId, reentryPlan, type Tf, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -159,7 +159,13 @@ Deno.serve(async (req) => {
       const cb = JSON.parse(raw)?.callback_query;
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
       const { data } = await supabase.from("app_data").select("user_id, value").eq("key", "slReminderSettings");
-      const owner = (data || []).find((r) => String((r.value as { telegramChatId?: string })?.telegramChatId) === String(cb?.message?.chat?.id));
+      // Nút ở nhóm cảnh báo riêng / nhóm vào lệnh MT5 cũng phải báo được lỗi, không thì nút quay mãi
+      const chat = String(cb?.message?.chat?.id ?? "");
+      const shared = chat !== "" && (chat === (Deno.env.get("ALERT_RELAY_CHAT_ID") || "").trim() || chat === fillChat().chatId);
+      const owner = (data || []).find((r) => {
+        const v = r.value as { telegramChatId?: string; telegramBotToken?: string };
+        return !!v?.telegramBotToken && (String(v.telegramChatId) === chat || shared);
+      });
       const token = (owner?.value as { telegramBotToken?: string })?.telegramBotToken;
       if (cb?.id && token) await answerCallback(token, cb.id, `⚠️ Bot gặp lỗi: ${String((e as Error)?.message || e).slice(0, 150)}`, true);
     } catch (_e) { /* không báo được thì thôi */ }
@@ -467,7 +473,7 @@ async function alertAction(
   for (const item of items) {
     const tooOld = Date.parse(item.createdAt || "") < now - RECHECK_DAYS * 24 * 3600 * 1000;
     if (kind === "tr" && tooOld) old += 1;
-    const recheck = kind === "tr" && !tooOld ? nextRecheck(item.tf || "D", now) : null;
+    const recheck = kind === "tr" && !tooOld ? recheckFor(item.tf || "D", now, item.text) : null;
     if (recheck && !firstRecheck) firstRecheck = recheck;
     item.ackedAt = item.ackedAt || new Date(now).toISOString();
     item.recheckAt = recheck ? new Date(recheck.at).toISOString() : undefined;

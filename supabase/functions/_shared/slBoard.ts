@@ -19,6 +19,10 @@ export const SL_BOARD_PREFIX = "slBoard:";
 const QUIET_MS = 60 * 1000;
 const KEEP_MS = 3 * 24 * 3600 * 1000;
 const STALE_MS = 3 * 3600 * 1000;
+// Bảng đã im quá 12 giờ = xong, chỉ chờ dọn. Dọn theo từng ô nên ô bảng có khi bị xoá trước các dòng (EA khởi động lại
+// gửi lại dòng y hệt → dòng mới hơn bảng) hoặc các dòng bị xoá lệch nhau — không có chặn này thì 3 ngày sau bot gửi lại
+// bảng cũ như tin mới, hoặc sửa tin cũ mất bớt dòng.
+const IDLE_MS = 12 * 3600 * 1000;
 // now = hiện trạng lúc EA khởi động (EA v2.91+), không phải kết quả của nến nào
 const STATUSES: SlStatus[] = ["moved", "be", "keep", "skip", "wait", "closed", "now"];
 // Đã dời / về BE / đã đóng là kết quả cuối của nến đó: dòng "giữ" đến sau (lúc nến đóng hẳn, sau khi đã dời sớm
@@ -156,7 +160,7 @@ export async function flushSlBoards(supabase: Supa, userId: string, token: strin
       { user_id: userId, key: `${SL_BOARD_PREFIX}${g}`, value: v, updated_at: new Date(nowMs).toISOString() },
       { onConflict: "user_id,key" },
     );
-    if (board?.skipped) continue;
+    if (board?.skipped || nowMs - newest > IDLE_MS) continue;
     if (!board?.mid) {
       if (nowMs - newest < QUIET_MS) continue; // tài khoản còn đang báo các lệnh khác của nến này
       // EA khởi động lại thì tính lại nến đã đóng gần nhất → dòng "giữ" của nến cũ: không gửi bảng nến đóng quá 3 tiếng

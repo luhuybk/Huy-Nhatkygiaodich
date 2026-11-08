@@ -85,6 +85,12 @@ export function nextRecheck(tf: Tf, nowMs: number, allWeek = false): { at: numbe
   return { at: nowMs + 24 * HOUR, close: nowMs + 24 * HOUR };
 }
 
+// Giờ kiểm lại của một cảnh báo / mã: crypto (BTCUSDT…) nến chia từ 0h UTC và chạy cả tuần, còn lại nến New York.
+// `text` = nội dung tin hoặc tên mã. Mọi chỗ hẹn ⏳ Kiểm lại (bot, web) đi qua đây để giờ nhắc khớp nhau.
+export function recheckFor(tf: Tf, nowMs: number, text?: string) {
+  return nextRecheck(tf, nowMs, isCryptoSymbol(alertSymbol(text)));
+}
+
 // 16:00 hoặc 08:45 30/10 (giờ VN) — kèm ngày khi không phải hôm nay
 export function vnTime(ms: number, nowMs = Date.now()) {
   const t = new Date(ms + VN_OFFSET);

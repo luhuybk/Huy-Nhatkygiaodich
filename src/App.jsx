@@ -316,8 +316,13 @@ function AppShell({ onSignOut, userEmail }) {
     }
     // Trong lúc đang thử lại người dùng vẫn có thể sửa tiếp và hỏng thêm — giữ lại những key
     // mới rơi vào hàng chờ, chỉ gỡ đúng những key vừa lưu được.
-    const saved = new Set(queue.filter((x) => !stillBad.includes(x)).map((x) => x.key));
-    setPendingSaves((prev) => [...prev.filter((x) => !saved.has(x.key)), ...stillBad.filter((x) => !prev.some((p) => p.key === x.key))]);
+    // Key vừa lưu lại được mà trong lúc đó có bản MỚI HƠN hỏng tiếp (at lớn hơn) thì giữ bản mới — gỡ đi là bản mới
+    // không bao giờ lên máy chủ, mở lại app là mất.
+    const savedAt = new Map(queue.filter((x) => !stillBad.includes(x)).map((x) => [x.key, x.at]));
+    setPendingSaves((prev) => [
+      ...prev.filter((x) => !(savedAt.has(x.key) && x.at <= savedAt.get(x.key))),
+      ...stillBad.filter((x) => !prev.some((p) => p.key === x.key)),
+    ]);
     setRetrying(false);
     if (!stillBad.length) { setSaveState("Đã lưu"); setTimeout(() => setSaveState(""), 1200); }
   };

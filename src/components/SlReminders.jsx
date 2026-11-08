@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { AlertRechecksBody, alertSummary, recheckPending, recheckRecord, useAlertRepeats } from "./AlertRechecks.jsx";
 import { fxBase, SymbolBox } from "./SymbolBox.jsx";
-import { nextRecheck, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
+import { recheckFor, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { hotMatches } from "../../supabase/functions/_shared/hotSymbols.ts";
 import {
   NEWS_KEY, guardOf, newsEvents, newsTimeVn, newsWhen, parseNewsPaste, upcomingNews, TIER_ICON,
@@ -17,9 +17,9 @@ import { safeGet, safeSet } from "../lib/helpers.js";
 import {
   daysSince, emptyIncompleteReminder, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
   emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
-  looksTelexed, mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
+  mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, seasonShiftDefault, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
-  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, untelexSymbol, WEEKDAY_CODES,
+  SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, WEEKDAY_CODES,
   watchIsAuto, watchLiveSymbols, watchScheduleHours,
 } from "../lib/helpers.js";
 import { DEFAULT_AUTO_SLOTS, tfHours, usSeason, vnToday } from "../lib/candles.js";
@@ -566,7 +566,7 @@ export function HotBody({ settings, onChange, resources, alertData }) {
     if (rec) return <button key={tf} type="button" className="hb-tf hb-tf-ring" onClick={() => toggleTf(sym, tf)} title={`Bot đang nhắc nến ${tf} trên Telegram. Bấm để bỏ.`}>{tf}🔔</button>;
     return (
       <button key={tf} type="button" className="hb-tf" onClick={() => toggleTf(sym, tf)} disabled={!alerts && !!h}
-        title={alerts ? `Tiềm năng khung ${tf}: nhắc kiểm lại lúc nến ${tf} kế tiếp đóng (${vnTime(nextRecheck(tf, Date.now()).at)})` : "Cần Bot Telegram để nhắc theo nến"}>
+        title={alerts ? `Tiềm năng khung ${tf}: nhắc kiểm lại lúc nến ${tf} kế tiếp đóng (${vnTime(recheckFor(tf, Date.now(), sym).at)})` : "Cần Bot Telegram để nhắc theo nến"}>
         {tf}
       </button>
     );

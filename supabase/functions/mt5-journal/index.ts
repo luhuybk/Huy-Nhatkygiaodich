@@ -214,7 +214,10 @@ async function slEvent(body: Record<string, unknown>) {
   if (body.test === true) return json({ ok: true, test: true, row, key: slRowKey(row) });
   const key = slRowKey(row);
   const { data } = await supabase.from("app_data").select("value").eq("user_id", userId).eq("key", key).maybeSingle();
-  if (!slReplaces(data?.value as SlRow | null, row)) return json({ ok: true, kept: (data!.value as SlRow).status });
+  const prev = data?.value as SlRow | null;
+  if (!slReplaces(prev, row)) return json({ ok: true, kept: prev!.status });
+  // EA khởi động lại gửi lại y hệt dòng cũ: khỏi ghi, để giờ của dòng vẫn là lúc nội dung đổi lần cuối
+  if (prev && JSON.stringify({ ...prev, at: "" }) === JSON.stringify({ ...row, at: "" })) return json({ ok: true, same: true, key });
   const { error } = await supabase.from("app_data").upsert(
     { user_id: userId, key, value: row, updated_at: new Date().toISOString() },
     { onConflict: "user_id,key" },

@@ -105,6 +105,12 @@ const clampInt = (v: unknown, def: number, min: number, max: number) => {
 
 // Trả về message_id khi gửi được, hoặc chuỗi lỗi
 async function sendTelegram(botToken: string, payload: Record<string, unknown>): Promise<number | string> {
+  // Telegram từ chối cả tin dài quá 4096 ký tự: tin gần 4000 chữ + dòng ⛔ / 🔥 / "Nhắc lần" ở đầu có thể vượt
+  if (typeof payload.text === "string" && payload.text.length > 4096) {
+    let t = payload.text.slice(0, 4095);
+    if (/[\ud800-\udbff]$/.test(t)) t = t.slice(0, -1); // không cắt đôi emoji
+    payload = { ...payload, text: t + "…" };
+  }
   // Nhiều MT5 cùng báo lúc nến đóng dễ dính 429 "retry after N": đợi đúng N giây rồi thử lại một lần
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {

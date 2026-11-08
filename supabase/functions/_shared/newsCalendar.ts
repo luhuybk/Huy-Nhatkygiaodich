@@ -190,6 +190,8 @@ export function parseNewsPaste(text: string | undefined): { events: NewsEvent[];
     const hh = +tm[1], mi = +tm[2];
     if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31 || hh > 23 || mi > 59) { bad.push(raw); continue; }
     const cur = normCur(toks[2].toUpperCase());
+    // Đồng lạ / gõ ngược "NFP USD" thì không mã nào khớp được — báo dòng sai thay vì im lặng bỏ qua
+    if (!NEWS_CURS.includes(cur)) { bad.push(raw); continue; }
     const name = toks.slice(3).join(" ");
     events.push({ t: Date.UTC(y, m - 1, d, hh, mi) - VN_OFFSET, cur, name, note, pasted: true, ...tierOf(cur, name, note) });
   }
