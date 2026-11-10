@@ -269,7 +269,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="equity" name="Lãi/lỗ cộng dồn" stroke={ACCENT} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -294,7 +294,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-              <Bar dataKey="pnl" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Bar dataKey="pnl" name="Lãi/lỗ" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -305,7 +305,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-              <Bar dataKey="count" fill={ACCENT} maxBarSize={64} />
+              <Bar dataKey="count" name="Số lệnh" fill={ACCENT} maxBarSize={64} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -319,7 +319,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
               <XAxis type="number" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: MUTED }} width={110} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-              <Bar dataKey="pnl" maxBarSize={28}>{sessionData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Bar dataKey="pnl" name="Lãi/lỗ" maxBarSize={28}>{sessionData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -330,7 +330,7 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
               <XAxis type="number" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: MUTED }} width={80} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-              <Bar dataKey="pnl" maxBarSize={28}>{topSymbols.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Bar dataKey="pnl" name="Lãi/lỗ" maxBarSize={28}>{topSymbols.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -466,7 +466,7 @@ export function RDistribution({ closed, resources, onViewTrade }) {
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: MUTED }} interval={0} angle={-30} textAnchor="end" height={60} />
             <YAxis tick={{ fontSize: 10, fill: MUTED }} width={36} allowDecimals={false} />
             <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-            <Bar dataKey="count" maxBarSize={48}>{buckets.map((b, i) => <Cell key={i} fill={b.tone === "win" ? WIN : b.tone === "loss" ? LOSS : MUTED} />)}</Bar>
+            <Bar dataKey="count" name="Số lệnh" maxBarSize={48}>{buckets.map((b, i) => <Cell key={i} fill={b.tone === "win" ? WIN : b.tone === "loss" ? LOSS : MUTED} />)}</Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -528,7 +528,7 @@ export function PerformanceDrilldown({ closed }) {
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-              <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="equity" name="Lãi/lỗ cộng dồn" stroke={ACCENT} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -720,7 +720,7 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} minTickGap={30} padding={{ left: 20, right: 20 }} />
                 <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} />
-                <Line type="monotone" dataKey="equity" stroke={ACCENT} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="equity" name="Lãi/lỗ cộng dồn" stroke={ACCENT} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -743,7 +743,7 @@ export function DimensionPerformance({ trades, resources, dimension, onViewTrade
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: MUTED }} />
               <YAxis tick={{ fontSize: 10, fill: MUTED }} width={46} />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} cursor={tooltipCursor} />
-              <Bar dataKey="pnl" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
+              <Bar dataKey="pnl" name="Lãi/lỗ" maxBarSize={64}>{pnlByMonth.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? WIN : LOSS} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

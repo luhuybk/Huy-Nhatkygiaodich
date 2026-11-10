@@ -963,6 +963,7 @@
         .app *::-webkit-scrollbar-track { background:transparent; }
         .app *::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; }
         .app *::-webkit-scrollbar-thumb:hover { background:#33393f; }
+        .app *::-webkit-scrollbar-corner { background:transparent; }
         .sidebar { background:linear-gradient(180deg, rgba(var(--accent-rgb),0.05), transparent 40%); position:relative; }
         .sidebar::after { content:""; position:absolute; top:0; bottom:0; right:-1px; width:1px; background:linear-gradient(180deg, var(--accent), transparent 60%); opacity:0.3; }
         .nav-btn { transition:background .15s ease, color .15s ease, transform .1s ease; }
@@ -2764,3 +2765,12 @@ button.nt-check:hover { filter: brightness(1.25); }
 .easl-page-sum { color: var(--text-dim); font-size: 12.5px; flex: 1; min-width: 200px; }
 .easl-page-sw { display: inline-flex; align-items: center; gap: 8px; }
 .easl-page-sw .field-hint { margin: 0; }
+
+/* Màn vừa (nửa màn hình laptop, iPad ngang): huy hiệu rủi ro đang mở xuống hàng riêng. Để chung hàng thì chỗ còn lại
+   chỉ vài chục px, huy hiệu (không xuống dòng được) tràn đè lên chuông và nút Đăng xuất. */
+@media (min-width: 821px) and (max-width: 1280px) {
+  .open-risk-row { order: 10; flex-basis: 100%; }
+  .topbar .quick-jump-btn { margin-right: auto; }
+}
+/* Màn cảm ứng không có phím Shift */
+@media (hover: none) { .sort-shift-hint { display: none; } }

@@ -588,7 +588,7 @@ function SortBar({ sort, onChange }) {
           {available.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
         </select>
       ) : null}
-      <span className="field-hint" style={{ margin: 0 }}>Hoặc giữ Shift khi bấm tiêu đề cột.</span>
+      <span className="field-hint sort-shift-hint" style={{ margin: 0 }}>Hoặc giữ Shift khi bấm tiêu đề cột.</span>
     </div>
   );
 }

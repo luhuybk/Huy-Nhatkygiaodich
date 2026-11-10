@@ -858,7 +858,7 @@ function AppShell({ onSignOut, userEmail }) {
   // Mọi kho dữ liệu có thể chứa đường dẫn ảnh. Quét ảnh mồ côi đi sâu toàn bộ object này, nên
   // thiếu MỘT kho ở đây là ảnh đang dùng bị coi là mồ côi — thêm state mới thì thêm cả vào đây.
   const allData = {
-    trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, skills,
+    trades, resources, ledger, notes, lessons, processImprovements, problemLogs, newsLogs, journeyLog, skills, tradingPlans,
     principles, setupLibrary, missedSetups, skippedSetups, setupVariants, setupErrors, reminders,
     capitalAccounts, capitalEntries, capitalFlows, uiSettings, slReminderSettings, symbolWatches,
     setupCheckLog, slMutedTrades, taskDone, filterPresets,
