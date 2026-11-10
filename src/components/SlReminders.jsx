@@ -16,7 +16,7 @@ import { LifeHubExport } from "./Timeline.jsx";
 import { safeGet, safeSet } from "../lib/helpers.js";
 import {
   daysSince, emptyIncompleteReminder, emptyMorningBrief, emptyMutedFillReminder, emptyReconcileReminder, emptyReminderSchedule, emptySymbolWatch,
-  emptyTimeframeSchedule, emptyWeeklySummary, tradeInSchedule,
+  emptyTimeframeSchedule, emptyWeeklyBackup, emptyWeeklySummary, tradeInSchedule,
   mergeSymbolList, migrateSkipHours, mutedFillDays, parseHoursInput,
   parseSymbolList, readLocalUi, seasonShiftDefault, seasonShiftPlan, setupCheckStats, setupCheckStreak, writeLocalUi,
   SL_REMINDER_DEFAULT_HOURS, SYMBOL_WATCH_DEFAULT_HOURS, sortSymbolNames, sortWatchSymbols, symbolSuggestions, uid, WEEKDAY_CODES,
@@ -339,7 +339,7 @@ function BriefRow({ cfg, onChange }) {
     <div className={`job-row ${cfg.enabled ? "" : "job-off"}`}>
       <Switch checked={!!cfg.enabled} onChange={(v) => onChange({ enabled: v })} />
       <span className="job-label"><b>Tin buổi sáng</b>
-        <small>tin lớn 24 giờ tới · SL các tài khoản (đã BE chưa) · EA chưa báo · cảnh báo chưa xử lý · hẹn kiểm lại · mã tiềm năng</small></span>
+        <small>tin lớn 24 giờ tới · SL các tài khoản (đã BE chưa) · EA chưa báo · kết quả hôm qua · lệnh đã đóng chưa ghi xong · cảnh báo chưa xử lý · hẹn kiểm lại · mã tiềm năng</small></span>
       <DayChips days={cfg.days} onToggle={(d) => onChange({ days: toggleIn(cfg.days, d) })} />
       <input type="time" className="input input-inline job-time" value={cfg.time || ""} onChange={(e) => onChange({ time: e.target.value })} />
     </div>
@@ -352,6 +352,7 @@ function PeriodicBody({ settings, onChange, remindersNode }) {
   const ws = { ...emptyWeeklySummary(), ...(s.weeklySummary || {}) };
   const rec = { ...emptyReconcileReminder(), ...(s.reconcileReminder || {}) };
   const inc = { ...emptyIncompleteReminder(), ...(s.incompleteReminder || {}) };
+  const bk = { ...emptyWeeklyBackup(), ...(s.weeklyBackup || {}) };
   return (
     <>
       <div className="job-list">
@@ -362,6 +363,8 @@ function PeriodicBody({ settings, onChange, remindersNode }) {
           onChange={(p) => onChange({ ...s, reconcileReminder: { ...rec, ...p } })} />
         <JobRow label="Điền nốt lệnh chưa xong" hint="liệt kê lệnh có tiến độ dưới 100%" cfg={inc}
           onChange={(p) => onChange({ ...s, incompleteReminder: { ...inc, ...p } })} />
+        <JobRow label="Sao lưu tuần ra Telegram" hint="bot gửi file JSON toàn bộ dữ liệu vào chat — bản dự phòng nằm ngoài cơ sở dữ liệu; file không chứa mã bot" cfg={bk}
+          onChange={(p) => onChange({ ...s, weeklyBackup: { ...bk, ...p } })} />
       </div>
       <h4 className="plan-sub">Nhắc nhở riêng</h4>
       {remindersNode}
@@ -1006,8 +1009,10 @@ export function PlansPanel({
     ].filter(([cfg]) => cfg && cfg.enabled).map(([cfg, name]) => `${name} ${cfg.weekday} ${hoursText([cfg.time])}`);
     const mb = { ...emptyMorningBrief(), ...(s.morningBrief || {}) };
     const brief = mb.enabled ? `Tin sáng ${hoursText([mb.time])}` : "";
+    const bk = { ...emptyWeeklyBackup(), ...(s.weeklyBackup || {}) };
+    const backup = bk.enabled ? `Sao lưu ${bk.weekday} ${hoursText([bk.time])}` : "";
     const n = (reminders || []).length;
-    return [brief, ...jobs, n ? `${n} nhắc riêng` : ""].filter(Boolean).join(" · ") || "Chưa bật việc nào";
+    return [brief, ...jobs, backup, n ? `${n} nhắc riêng` : ""].filter(Boolean).join(" · ") || "Chưa bật việc nào";
   })();
 
   return (
@@ -1092,6 +1097,7 @@ export function NotifySettingsPanel({ settings, onChange, resources, trades, wat
     ["weeklySummary", "Tổng kết tuần", emptyWeeklySummary],
     ["reconcileReminder", "Đối chiếu file sàn", emptyReconcileReminder],
     ["incompleteReminder", "Điền nốt lệnh chưa xong", emptyIncompleteReminder],
+    ["weeklyBackup", "Sao lưu tuần", emptyWeeklyBackup],
     ["mutedFillReminder", "Nhắc điền lệnh đã bấm Kết thúc", emptyMutedFillReminder],
   ];
 

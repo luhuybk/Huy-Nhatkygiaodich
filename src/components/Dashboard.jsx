@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { LayoutDashboard, ChevronLeft, ChevronRight, GraduationCap, Map as MapIcon } from "lucide-react";
+import { LayoutDashboard, ChevronDown, ChevronLeft, ChevronRight, GraduationCap, Map as MapIcon } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { ACCENT, DIM_CONFIG, DRILL_DIMS, GRADE_OPTIONS, GRID, LOSS, MUTED, RANGE_OPTIONS, R_BUCKETS, WEEKDAY_LABEL, WEEKDAY_ORDER, WIN, tooltipCursor, tooltipItemStyle, tooltipLabelStyle, tooltipStyle } from "../lib/constants.js";
 import { ChartCard, MultiFilterSelect, RiskAlertBanner, StatCard } from "./ui.jsx";
 import { CapitalSummaryCard } from "./CapitalPlan.jsx";
 import { JournalTable } from "./Journal.jsx";
-import { symbolGroupKey, accountFamily, accountOptions, openTradeIssues, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
+import { readLocalUi, writeLocalUi, symbolGroupKey, accountFamily, accountOptions, openTradeIssues, corePlanItems, lessonLevel, avgPillarScore, closedOf, closedOfUSD, computeAdvancedMetrics, computeRiskAlerts, dateKey, fmt, fmtHold, fmtMoney, fmtR, groupStats, heatColor, inRange, keyForDim, monthKey, weekdayIndex } from "../lib/helpers.js";
 import { useAssetFilter } from "../lib/assetGroups.js";
 
 function renderPieSliceLabel(total) {
@@ -118,6 +118,22 @@ function OpenIssuesNote({ trades, onOpen }) {
   );
 }
 
+// Nhóm chỉ số thu gọn được — nhớ theo từng nhóm trên thiết bị này (mặc định mở)
+function StatFold({ id, title, children }) {
+  const [open, setOpen] = useState(() => readLocalUi(`dashFold:${id}`, "1") !== "0");
+  const toggle = () => { const next = !open; setOpen(next); writeLocalUi(`dashFold:${id}`, next ? "1" : "0"); };
+  return (
+    <>
+      <h3 className="block-title">
+        <button type="button" className="block-fold-btn" onClick={toggle} aria-expanded={open} title={open ? "Thu gọn nhóm này" : "Mở nhóm này"}>
+          {title} {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+      </h3>
+      {open ? children : null}
+    </>
+  );
+}
+
 export function Dashboard({ trades, resources, ledger, account, onAccountChange, onViewTrade, lessons, onGoToLessons, tradingPlans, onGoToPlans, capitalPlan, onGoToCapital, onGoToIssues }) {
   const [range, setRange] = useState("");
   const [rangeFrom, setRangeFrom] = useState("");
@@ -217,51 +233,8 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
         <StatCard label="Kỳ vọng trung bình / lệnh (R)" value={fmtR(m.netProfitR / closed.length)} tone={m.netProfitR >= 0 ? "win" : "loss"} />
       </div>
 
-      <h3 className="block-title">Chi tiết 1 — Tổng quan lệnh</h3>
-      <div className="stat-grid">
-        <StatCard label="Tổng lệnh đã đóng" value={closed.length} />
-        <StatCard label="Thắng / Thua / Hòa" value={`${wins} / ${losses} / ${be}`} />
-        <StatCard label="Tỷ lệ thắng" value={`${winRate.toFixed(1)}%`} tone={winRate >= 50 ? "win" : "loss"} />
-        <StatCard label="RR trung bình / lệnh (theo tiền)" value={m.avgLoss ? (m.avgWin / Math.abs(m.avgLoss)).toFixed(2) : "—"} tone={m.avgWin >= Math.abs(m.avgLoss) ? "win" : "loss"} />
-        <StatCard label="RR trung bình / lệnh (theo R)" value={m.avgLossR ? (m.avgWinR / Math.abs(m.avgLossR)).toFixed(2) : "—"} tone={m.avgWinR >= Math.abs(m.avgLossR) ? "win" : "loss"} />
-      </div>
-
-      <h3 className="block-title">Chi tiết 2 — Lãi / Lỗ</h3>
-      <div className="stat-grid">
-        <StatCard label="Tổng lãi/lỗ (theo tiền)" value={fmtMoney(totalPnl, currencyUnit)} tone={totalPnl >= 0 ? "win" : "loss"} />
-        <StatCard label="Tổng lãi/lỗ (theo R)" value={`${totalR > 0 ? "+" : ""}${totalR.toFixed(2)}R`} tone={totalR >= 0 ? "win" : "loss"} />
-        <StatCard label="Tổng lời" value={fmtMoney(m.grossWin, currencyUnit)} tone="win" />
-        <StatCard label="Tổng lỗ" value={fmtMoney(m.grossLoss, currencyUnit)} tone="loss" />
-        <StatCard label="Lãi TB / lệnh thắng" value={fmtMoney(m.avgWin, currencyUnit)} tone="win" />
-        <StatCard label="Lỗ TB / lệnh thua" value={fmtMoney(m.avgLoss, currencyUnit)} tone="loss" />
-      </div>
-
-      <h3 className="block-title">Chi tiết 3 — Kỷ lục & thời gian giữ lệnh</h3>
-      <div className="stat-grid">
-        <StatCard label="Lệnh thắng lớn nhất" value={fmtMoney(m.largestWin, currencyUnit)} tone="win" />
-        <StatCard label="Lệnh thua lớn nhất" value={fmtMoney(m.largestLoss, currencyUnit)} tone="loss" />
-        <StatCard label="Chuỗi thắng dài nhất" value={m.maxWinStreak} tone="win" />
-        <StatCard label="Chuỗi thua dài nhất" value={m.maxLossStreak} tone="loss" />
-        <StatCard label="TG giữ lệnh TB (thắng)" value={fmtHold(m.avgHoldWin)} />
-        <StatCard label="TG giữ lệnh TB (thua)" value={fmtHold(m.avgHoldLoss)} />
-      </div>
-
-      <h3 className="block-title">Chi tiết 4 — Long / Short</h3>
-      <div className="stat-grid">
-        <StatCard label="Số lệnh Long" value={m.longsCount} />
-        <StatCard label="Số lệnh Short" value={m.shortsCount} />
-        <StatCard label="Winrate Long" value={m.longWinrate === null ? "—" : `${m.longWinrate.toFixed(1)}%`} tone={m.longWinrate >= 50 ? "win" : "loss"} />
-        <StatCard label="Winrate Short" value={m.shortWinrate === null ? "—" : `${m.shortWinrate.toFixed(1)}%`} tone={m.shortWinrate >= 50 ? "win" : "loss"} />
-        <StatCard label="Net Profit lệnh Long" value={fmtMoney(m.longsPnl, currencyUnit)} tone={m.longsPnl >= 0 ? "win" : "loss"} />
-        <StatCard label="Net Profit lệnh Short" value={fmtMoney(m.shortsPnl, currencyUnit)} tone={m.shortsPnl >= 0 ? "win" : "loss"} />
-      </div>
-
-      <h3 className="block-title">Chấm điểm trung bình (4 trụ cột)</h3>
-      <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
-        <StatCard label="Chấm điểm trung bình (4 trụ cột)" value={avgScoreAll === null ? "—" : `${avgScoreAll.toFixed(1)} / 5 ★`} tone={avgScoreAll >= 3.5 ? "win" : avgScoreAll !== null && avgScoreAll <= 2.5 ? "loss" : ""} />
-      </div>
-
-      <div className="chart-row">
+      {/* Đường cong vốn ngay dưới chỉ số quan trọng: trước đây phải cuộn qua ~30 ô số mới tới */}
+      <div className="chart-row" style={{ marginTop: 14 }}>
         <ChartCard title="Đường cong vốn" subtitle="Lãi/lỗ cộng dồn theo thời gian">
           <ResponsiveContainer>
             <LineChart data={equityData}>
@@ -285,6 +258,55 @@ export function Dashboard({ trades, resources, ledger, account, onAccountChange,
           </ResponsiveContainer>
         </ChartCard>
       </div>
+
+      <StatFold id="d1" title="Chi tiết 1 — Tổng quan lệnh">
+        <div className="stat-grid">
+          <StatCard label="Tổng lệnh đã đóng" value={closed.length} />
+          <StatCard label="Thắng / Thua / Hòa" value={`${wins} / ${losses} / ${be}`} />
+          <StatCard label="Tỷ lệ thắng" value={`${winRate.toFixed(1)}%`} tone={winRate >= 50 ? "win" : "loss"} />
+          <StatCard label="RR trung bình / lệnh (theo tiền)" value={m.avgLoss ? (m.avgWin / Math.abs(m.avgLoss)).toFixed(2) : "—"} tone={m.avgWin >= Math.abs(m.avgLoss) ? "win" : "loss"} />
+          <StatCard label="RR trung bình / lệnh (theo R)" value={m.avgLossR ? (m.avgWinR / Math.abs(m.avgLossR)).toFixed(2) : "—"} tone={m.avgWinR >= Math.abs(m.avgLossR) ? "win" : "loss"} />
+        </div>
+      </StatFold>
+
+      <StatFold id="d2" title="Chi tiết 2 — Lãi / Lỗ">
+        <div className="stat-grid">
+          <StatCard label="Tổng lãi/lỗ (theo tiền)" value={fmtMoney(totalPnl, currencyUnit)} tone={totalPnl >= 0 ? "win" : "loss"} />
+          <StatCard label="Tổng lãi/lỗ (theo R)" value={`${totalR > 0 ? "+" : ""}${totalR.toFixed(2)}R`} tone={totalR >= 0 ? "win" : "loss"} />
+          <StatCard label="Tổng lời" value={fmtMoney(m.grossWin, currencyUnit)} tone="win" />
+          <StatCard label="Tổng lỗ" value={fmtMoney(m.grossLoss, currencyUnit)} tone="loss" />
+          <StatCard label="Lãi TB / lệnh thắng" value={fmtMoney(m.avgWin, currencyUnit)} tone="win" />
+          <StatCard label="Lỗ TB / lệnh thua" value={fmtMoney(m.avgLoss, currencyUnit)} tone="loss" />
+        </div>
+      </StatFold>
+
+      <StatFold id="d3" title="Chi tiết 3 — Kỷ lục & thời gian giữ lệnh">
+        <div className="stat-grid">
+          <StatCard label="Lệnh thắng lớn nhất" value={fmtMoney(m.largestWin, currencyUnit)} tone="win" />
+          <StatCard label="Lệnh thua lớn nhất" value={fmtMoney(m.largestLoss, currencyUnit)} tone="loss" />
+          <StatCard label="Chuỗi thắng dài nhất" value={m.maxWinStreak} tone="win" />
+          <StatCard label="Chuỗi thua dài nhất" value={m.maxLossStreak} tone="loss" />
+          <StatCard label="TG giữ lệnh TB (thắng)" value={fmtHold(m.avgHoldWin)} />
+          <StatCard label="TG giữ lệnh TB (thua)" value={fmtHold(m.avgHoldLoss)} />
+        </div>
+      </StatFold>
+
+      <StatFold id="d4" title="Chi tiết 4 — Long / Short">
+        <div className="stat-grid">
+          <StatCard label="Số lệnh Long" value={m.longsCount} />
+          <StatCard label="Số lệnh Short" value={m.shortsCount} />
+          <StatCard label="Winrate Long" value={m.longWinrate === null ? "—" : `${m.longWinrate.toFixed(1)}%`} tone={m.longWinrate >= 50 ? "win" : "loss"} />
+          <StatCard label="Winrate Short" value={m.shortWinrate === null ? "—" : `${m.shortWinrate.toFixed(1)}%`} tone={m.shortWinrate >= 50 ? "win" : "loss"} />
+          <StatCard label="Net Profit lệnh Long" value={fmtMoney(m.longsPnl, currencyUnit)} tone={m.longsPnl >= 0 ? "win" : "loss"} />
+          <StatCard label="Net Profit lệnh Short" value={fmtMoney(m.shortsPnl, currencyUnit)} tone={m.shortsPnl >= 0 ? "win" : "loss"} />
+        </div>
+      </StatFold>
+
+      <StatFold id="score" title="Chấm điểm trung bình (4 trụ cột)">
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+          <StatCard label="Chấm điểm trung bình (4 trụ cột)" value={avgScoreAll === null ? "—" : `${avgScoreAll.toFixed(1)} / 5 ★`} tone={avgScoreAll >= 3.5 ? "win" : avgScoreAll !== null && avgScoreAll <= 2.5 ? "loss" : ""} />
+        </div>
+      </StatFold>
 
       <div className="chart-row">
         <ChartCard title="Lãi/Lỗ theo tháng" legend={[{ color: WIN, label: "Lãi" }, { color: LOSS, label: "Lỗ" }]}>

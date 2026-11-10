@@ -4,8 +4,8 @@
 //   eaWatch                         cảnh báo "EA chưa báo SL" đang mở, lệnh đã đóng tra từ hộp chờ
 //   slHist:<login>:<ticket>         lịch sử SL từng lệnh (giữ luôn)
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, BellOff, Eye, EyeOff, RefreshCw } from "lucide-react";
-import { computeResult, fmtR, safeGet, safeList } from "../lib/helpers.js";
+import { Bell, BellOff, Eye, EyeOff, HelpCircle, RefreshCw } from "lucide-react";
+import { computeResult, fmtR, readLocalUi, safeGet, safeList, writeLocalUi } from "../lib/helpers.js";
 import { DetailGroup, Field, Switch } from "./ui.jsx";
 import { vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { shortSymbol } from "../../supabase/functions/_shared/mt5Fill.ts";
@@ -150,22 +150,32 @@ export function EaSlBody({ settings, onChange, resources, trades, data }) {
     const g = all.find((x) => x.login === login);
     return { login, name: g ? g.name : mt5AccountName(login, resources, `#${login}`) };
   });
+  // Giải thích + số phút canh chừng thu vào một nút: bảng SL là thứ cần xem, phải nằm ngay đầu trang (nhất là trên điện thoại)
+  const [help, setHelp] = useState(() => readLocalUi("easlHelp", "") === "1");
+  const toggleHelp = () => { const next = !help; setHelp(next); writeLocalUi("easlHelp", next ? "1" : ""); };
   return (
     <>
-      <p className="plan-hint">
-        SL của mọi lệnh EA đang quản, theo lần EA báo gần nhất (mỗi lần nến khung đóng) — như bảng 🛡 trên Telegram nhưng xem lúc nào cũng được.
-        {" "}<b>Canh chừng EA</b> (công tắc góc trên): tài khoản có lệnh mà quá <b>{cfg.graceMin} phút</b> sau giờ đóng nến chưa thấy bảng SL thì bot
-        báo <code>⚠️ EA CHƯA BÁO SL</code> vào nhóm MT5 — EA tắt, VPS treo, Algo Trading tắt, EA chưa nạp bản mới… EA báo lại thì tin tự sửa thành ✅.
-        Cổ phiếu và khung dưới H1 không canh.
-      </p>
       <div className="easl-cfg">
-        <Field label="Báo sau giờ đóng nến (phút)">
-          <input type="number" className="input input-inline" min={3} max={120} step={1} value={cfg.graceMin}
-            onChange={(e) => setCfg({ graceMin: Number(e.target.value) })} />
-        </Field>
         <span className="field-hint easl-upd">Cập nhật {data.at ? vnTime(data.at, now) : "—"} · tự tải lại mỗi phút</span>
         <button type="button" className="btn btn-ghost btn-xs" onClick={data.load}><RefreshCw size={12} /> Tải lại</button>
+        <button type="button" className={`btn btn-ghost btn-xs easl-help-btn ${help ? "filter-toggle-on" : ""}`} onClick={toggleHelp} aria-expanded={help}>
+          <HelpCircle size={12} /> Giải thích &amp; cài đặt
+        </button>
       </div>
+      {help ? (
+        <div className="easl-help">
+          <p className="plan-hint">
+            SL của mọi lệnh EA đang quản, theo lần EA báo gần nhất (mỗi lần nến khung đóng) — như bảng 🛡 trên Telegram nhưng xem lúc nào cũng được.
+            {" "}<b>Canh chừng EA</b> (công tắc góc trên): tài khoản có lệnh mà quá <b>{cfg.graceMin} phút</b> sau giờ đóng nến chưa thấy bảng SL thì bot
+            báo <code>⚠️ EA CHƯA BÁO SL</code> vào nhóm MT5 — EA tắt, VPS treo, Algo Trading tắt, EA chưa nạp bản mới… EA báo lại thì tin tự sửa thành ✅.
+            Cổ phiếu và khung dưới H1 không canh.
+          </p>
+          <Field label="Báo sau giờ đóng nến (phút)">
+            <input type="number" className="input input-inline" min={3} max={120} step={1} value={cfg.graceMin}
+              onChange={(e) => setCfg({ graceMin: Number(e.target.value) })} />
+          </Field>
+        </div>
+      ) : null}
       {orphan.map(([login, a]) => (
         <div key={login} className="easl-acc easl-alarm">
           <div className="easl-head"><b>{mt5AccountName(login, resources, `#${login}`)}</b><span className="easl-warn">⚠️ EA chưa báo nến {vnTime(a.bar, now)}</span></div>

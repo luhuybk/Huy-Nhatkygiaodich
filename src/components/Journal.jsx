@@ -46,12 +46,12 @@ function PresetBar({ trades, resources, setupErrors, skills, filters, setFilters
   const startNaming = () => { setDraft(""); setNaming(true); };
   const dupName = list.some((p) => (p.name || "").trim().toLowerCase() === draft.trim().toLowerCase());
 
+  // Chưa lưu bộ lọc nào và cũng chưa lọc gì: không có gì để hiện — bỏ cả hàng (trên điện thoại nó chiếm gần 100px
+  // ngay trên danh sách lệnh). Đang lọc thì hàng hiện lại với nút "Lưu bộ lọc này".
+  if (!list.length && !activeCount && !naming) return null;
   return (
     <div className="filter-presets">
-      <span className="filter-foot-label"><Bookmark size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Bộ lọc đã lưu:</span>
-      {list.length === 0 && !naming ? (
-        <span className="preset-empty">Chưa lưu bộ lọc nào — chọn vài mục bên dưới rồi bấm "Lưu bộ lọc này".</span>
-      ) : null}
+      {list.length ? <span className="filter-foot-label"><Bookmark size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Bộ lọc đã lưu:</span> : null}
       {list.map((p) => {
         const on = filterFingerprint(p.filters) === current;
         const n = counts.get(p.id);

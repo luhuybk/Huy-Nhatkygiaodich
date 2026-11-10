@@ -1,6 +1,7 @@
 // Tin buổi sáng — sl-reminder gửi vào chat chính lúc 8:45 (mặc định, thứ 2–6): tin lớn 24 giờ tới, SL các tài khoản theo
-// lần EA báo gần nhất (đã BE chưa, chưa có SL, chưa dời được), EA chưa báo, cảnh báo TradingView chưa xử lý (cả loạt bắn
-// đêm qua đã hết lượt nhắc mà chưa bấm), hẹn kiểm lại 24 giờ tới, mã tiềm năng. Hàm thuần — sl-reminder đọc dữ liệu rồi gọi.
+// lần EA báo gần nhất (đã BE chưa, chưa có SL, chưa dời được), EA chưa báo, kết quả hôm qua (thứ 2: từ thứ 6) + lệnh đã
+// đóng chưa ghi xong, cảnh báo TradingView chưa xử lý (cả loạt bắn đêm qua đã hết lượt nhắc mà chưa bấm), hẹn kiểm lại
+// 24 giờ tới, mã tiềm năng. Hàm thuần — sl-reminder đọc dữ liệu rồi gọi.
 // Cài đặt: slReminderSettings.morningBrief = { enabled (mặc định bật), time "08:45", days ["T2"…"T6"], threadId }.
 
 import { alertSymbol, vnTime } from "./alertRecheck.ts";
@@ -20,6 +21,9 @@ export function briefCfg(c?: BriefCfg | null) {
   };
 }
 
+// Kết quả các lệnh đóng từ lần tin sáng trước (theo ngày thoát): label = "Hôm qua 09/11" / "Từ thứ 6 06/11"
+export type BriefResult = { label: string; count: number; win: number; loss: number; r: number; rCount: number };
+
 export type BriefRepeat = {
   text?: string; tf?: string | null; kind?: string; ackedAt?: string; doneAt?: string; recheckAt?: string; createdAt?: string;
 };
@@ -31,6 +35,7 @@ const cap = (list: string[], n: number) => (list.length > n ? `${list.slice(0, n
 export function briefBody(o: {
   nowMs: number; news: NewsEvent[]; positions: SlPos[]; nameOf: (p: SlPos) => string;
   alarms: { name: string; bar: number }[]; repeats: BriefRepeat[]; hot: HotSymbol[];
+  result?: BriefResult | null; unfinished?: string[]; // unfinished = mã của lệnh sàn đã đóng mà nhật ký chưa ghi xong
 }): string {
   const { nowMs } = o;
   const out: string[] = [];
@@ -62,6 +67,23 @@ export function briefBody(o: {
     out.push(`• ${name}: ${parts.join(" · ")}`);
   }
   if (o.alarms.length) out.push(`⚠️ EA chưa báo: ${o.alarms.map((a) => `${a.name} (nến ${vnTime(a.bar, nowMs)})`).join(" · ")}`);
+
+  const res = o.result;
+  const todo = o.unfinished || [];
+  if (res || todo.length) out.push("");
+  if (res) {
+    const be = res.count - res.win - res.loss;
+    const rText = !res.rCount ? "chưa lệnh nào ghi rủi ro"
+      : `${res.r > 0 ? "+" : ""}${res.r.toFixed(2)}R${res.rCount < res.count ? ` (tính trên ${res.rCount} lệnh có ghi rủi ro)` : ""}`;
+    out.push(res.count
+      ? `📊 ${res.label}: ${res.count} lệnh đóng · ${res.win} thắng / ${res.loss} thua${be > 0 ? ` / ${be} hòa` : ""} · ${rText}`
+      : `📊 ${res.label}: không có lệnh đóng`);
+  }
+  if (todo.length) {
+    const names = todo.map((x) => shortSymbol(x) || "?");
+    const times = (n: string) => names.filter((x) => x === n).length;
+    out.push(`📝 Đã đóng, chưa ghi xong (${todo.length}): ${cap(uniq(names).map((n) => (times(n) > 1 ? `${n} ×${times(n)}` : n)), 10)}`);
+  }
 
   // Đang nhắc, hoặc đã hết lượt nhắc trong 12 giờ qua mà chưa bấm ✅ / ⏳ (bắn lúc ngủ)
   const cutoff = nowMs - 12 * HOUR;

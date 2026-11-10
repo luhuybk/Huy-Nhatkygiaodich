@@ -744,7 +744,13 @@ function AppShell({ onSignOut, userEmail }) {
     if (data.capitalAccounts) persistCapitalAccounts(data.capitalAccounts);
     if (data.capitalEntries) persistCapitalEntries(data.capitalEntries);
     if (data.capitalFlows) persistCapitalFlows(data.capitalFlows);
-    if (data.slReminderSettings) persistSlReminderSettings({ ...emptySlReminderSettings(), ...data.slReminderSettings });
+    // File sao lưu bot gửi qua Telegram không chứa mã bot (file nằm trong nhóm chat) — nhập lại thì giữ mã đang có
+    if (data.slReminderSettings) {
+      persistSlReminderSettings({
+        ...emptySlReminderSettings(), ...data.slReminderSettings,
+        telegramBotToken: data.slReminderSettings.telegramBotToken || slReminderSettings.telegramBotToken || "",
+      });
+    }
     if (data.symbolWatches) persistSymbolWatches(data.symbolWatches, symbolWatches);
     if (data.setupCheckLog) persistSetupCheckLog(data.setupCheckLog, { replace: true });
     if (data.setupErrors) persistSetupErrors(data.setupErrors);

@@ -610,6 +610,7 @@ export function emptySlReminderSettings() {
     sessions: [], symbolSessions: {}, autoQuiet: { ...DEFAULT_AUTO_QUIET },
     autoSlots: { ...DEFAULT_AUTO_SLOTS, hours: [...DEFAULT_AUTO_SLOTS.hours] },
     morningBrief: emptyMorningBrief(),
+    weeklyBackup: emptyWeeklyBackup(),
     eaWatch: emptyEaWatch(),
   };
 }
@@ -628,6 +629,12 @@ export function emptyWeeklySummary() {
 // chưa xử lý, hẹn kiểm lại, mã tiềm năng. Mặc định bật, 8:45 thứ 2–6 — khớp BRIEF_DEFAULT phía máy chủ.
 export function emptyMorningBrief() {
   return { enabled: true, time: "08:45", days: ["T2", "T3", "T4", "T5", "T6"], threadId: "" };
+}
+
+// Sao lưu tuần ra Telegram (sl-reminder + supabase/functions/_shared/backup.ts): bot gửi file JSON toàn bộ dữ liệu vào chat,
+// nằm ngoài cơ sở dữ liệu. Mặc định bật, 21:00 Chủ nhật — khớp BACKUP_DEFAULT phía máy chủ.
+export function emptyWeeklyBackup() {
+  return { enabled: true, weekday: "CN", time: "21:00", threadId: "" };
 }
 
 // Canh chừng EA (alert-relay tick + _shared/eaWatch.ts): tài khoản có lệnh mà quá giờ đóng nến graceMin phút chưa báo

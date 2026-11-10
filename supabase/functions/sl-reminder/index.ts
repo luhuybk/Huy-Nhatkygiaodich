@@ -14,8 +14,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { vnTime } from "../_shared/alertRecheck.ts";
 import { hotList, hotMatches, type HotSettings, type HotSymbol } from "../_shared/hotSymbols.ts";
-import { briefBody, briefCfg, type BriefCfg, type BriefRepeat } from "../_shared/brief.ts";
-import { EA_WATCH_KEY, watchCfg, type EaWatchCfg, type EaWatchState } from "../_shared/eaWatch.ts";
+import { BACKUP_KEYS, backupCaption, backupCfg, buildBackup, sendBackupFile, type BackupCfg } from "../_shared/backup.ts";
+import { briefBody, briefCfg, type BriefCfg, type BriefRepeat, type BriefResult } from "../_shared/brief.ts";
+import { EA_WATCH_KEY, SL_HIST_PREFIX, watchCfg, type EaWatchCfg, type EaWatchState } from "../_shared/eaWatch.ts";
 import { NEWS_KEY, newsEvents, type NewsStore } from "../_shared/newsCalendar.ts";
 import { openPositions, SL_MOVE_PREFIX, type SlPos, type SlRow } from "../_shared/slBoard.ts";
 
@@ -601,16 +602,61 @@ function reminderDueOnVn(r: { frequency?: string; weekday?: number; dayOfMonth?:
   return false;
 }
 
-// Đọc dữ liệu cho tin buổi sáng: lịch tin, cảnh báo nhắc lại, bảng SL (lệnh đang mở theo EA), cảnh báo EA im lặng.
+// Tin sáng báo kết quả từ lần tin trước: các ngày từ thứ gần nhất có gửi tin tới hôm qua (thứ 2 → từ thứ 6).
+const WD_CODE = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const weekdayCodeOf = (dateStr: string) => WD_CODE[new Date(`${dateStr}T00:00:00Z`).getUTCDay()];
+function briefRange(today: string, days: string[]) {
+  const to = shiftDateStr(today, -1);
+  let from = to;
+  for (let i = 0; i < 6 && !days.includes(weekdayCodeOf(from)); i++) from = shiftDateStr(from, -1);
+  const label = from === to ? `Hôm qua ${ddmm(to)}` : `Từ ${(WEEKDAY_FULL[weekdayCodeOf(from)] || "").toLowerCase()} ${ddmm(from)}`;
+  return { from, to, label };
+}
+
+const hasProfit = (t: Record<string, unknown>) => t.profit !== "" && t.profit !== null && t.profit !== undefined && !Number.isNaN(Number(t.profit));
+type InboxClose = { event?: string; login?: string; ticket?: string; fees?: number; risk?: number; closes?: { time?: number; profit?: number }[] };
+
+// Lệnh đóng trong khoảng ngày: theo nhật ký (ngày thoát + lợi nhuận); lệnh EA báo đóng mà nhật ký chưa kịp nhận (chưa mở
+// app từ lúc đó) thì lấy từ hộp chờ MT5 — tin sáng là lúc cần biết nhất các lệnh dính SL trong đêm.
+function briefResult(trades: Record<string, unknown>[], inbox: InboxClose[], hide: string[], from: string, to: string, label: string): BriefResult {
+  const res: BriefResult = { label, count: 0, win: 0, loss: 0, r: 0, rCount: 0 };
+  const add = (profit: number, risk: number) => {
+    res.count++;
+    if (profit > 0) res.win++; else if (profit < 0) res.loss++;
+    if (risk > 0) { res.r += profit / risk; res.rCount++; }
+  };
+  const inRange = (d: string) => !!d && d >= from && d <= to;
+  const done = new Set<string>();
+  for (const t of trades) {
+    if (!t || !t.exitDate || !hasProfit(t)) continue;
+    if (t.ticket) done.add(String(t.ticket));
+    if (!inRange(String(t.exitDate))) continue;
+    add(Number(t.profit) + partialProfitOf(t) + feesOf(t), Number(t.riskAmount) || 0);
+  }
+  for (const x of inbox) {
+    if (!x || x.event !== "close" || !x.ticket || done.has(String(x.ticket)) || hide.includes(String(x.login || ""))) continue;
+    const closes = (Array.isArray(x.closes) ? x.closes : []).filter((c) => c && Number(c.time) > 0);
+    if (!closes.length) continue;
+    const last = Math.max(...closes.map((c) => Number(c.time)));
+    if (!inRange(new Date(last * 1000 + 7 * 3600 * 1000).toISOString().slice(0, 10))) continue;
+    done.add(String(x.ticket));
+    add(closes.reduce((sum, c) => sum + (Number(c.profit) || 0), 0) + (Number(x.fees) || 0), Number(x.risk) || 0);
+  }
+  return res;
+}
+
+// Đọc dữ liệu cho tin buổi sáng: lịch tin, cảnh báo nhắc lại, bảng SL (lệnh đang mở theo EA), cảnh báo EA im lặng,
+// hộp chờ MT5 (lệnh đóng chưa vào nhật ký).
 async function morningBrief(
   supabase: ReturnType<typeof createClient>, userId: string, settings: HotSettings, trades: Record<string, unknown>[],
-  resources: { accounts?: { name?: string; mt5Login?: string }[] } | null | undefined, nowMs: number,
+  resources: { accounts?: { name?: string; mt5Login?: string }[] } | null | undefined, nowMs: number, today: string, days: string[],
 ) {
-  const [{ data: newsRow }, { data: repRow }, { data: ewRow }, { data: moveRows }] = await Promise.all([
+  const [{ data: newsRow }, { data: repRow }, { data: ewRow }, { data: moveRows }, { data: inboxRow }] = await Promise.all([
     supabase.from("app_data").select("value").eq("user_id", userId).eq("key", NEWS_KEY).maybeSingle(),
     supabase.from("app_data").select("value").eq("user_id", userId).eq("key", "alertRepeats").maybeSingle(),
     supabase.from("app_data").select("value").eq("user_id", userId).eq("key", EA_WATCH_KEY).maybeSingle(),
     supabase.from("app_data").select("value").eq("user_id", userId).like("key", `${SL_MOVE_PREFIX}%`),
+    supabase.from("app_data").select("value").eq("user_id", userId).eq("key", "mt5Inbox").maybeSingle(),
   ]);
   const ew = (ewRow?.value || {}) as EaWatchState;
   // Lệnh đã đóng trong nhật ký (EA báo đóng, hoặc tự điền) thì không còn tính là đang mở
@@ -625,9 +671,16 @@ async function morningBrief(
   const alarms = Object.entries(ew.alarms || {}).filter(([login, a]) => a && !a.okAt && !hide.includes(login)).map(([login, a]) => ({
     name: byLogin(login) || positions.find((p) => p.login === login)?.accountName || `#${login}`, bar: a.bar,
   }));
+  const range = briefRange(today, days);
+  const inbox = (Array.isArray(inboxRow?.value) ? inboxRow!.value : []) as InboxClose[];
+  // Như mục "Lệnh đã đóng — chưa ghi xong" trên web (awaitingJournal): kết quả do sàn điền hộ, phần đánh giá còn trống
+  const unfinished = trades
+    .filter((t) => t && (t.mt5Closed || t.brokerFilled) && t.exitDate && hasProfit(t) && completionPercent(t) < 100)
+    .map((t) => String(t.symbol || "?"));
   return briefBody({
     nowMs, news: newsEvents(newsRow?.value as NewsStore), positions, nameOf, alarms,
     repeats: (Array.isArray(repRow?.value) ? repRow!.value : []) as BriefRepeat[], hot: hotList(settings),
+    result: briefResult(trades, inbox, hide, range.from, range.to, range.label), unfinished,
   });
 }
 
@@ -670,6 +723,7 @@ Deno.serve(async () => {
       symbolWatchEnabled?: boolean;
       symbolWatchThreadId?: string;
       morningBrief?: BriefCfg;
+      weeklyBackup?: BackupCfg;
     } & HotSettings;
     // Bot Token + Chat ID dùng chung cho cả nhắc dời SL, nhắc kiểm tra setup và nhắc việc chung — thiếu 1 trong 2 thì bỏ qua toàn bộ.
     if (!settings?.telegramBotToken || !settings.telegramChatId) continue;
@@ -1150,7 +1204,7 @@ Deno.serve(async () => {
       const logKey = `brief_${today}`;
       if (!log[logKey]) {
         try {
-          const body = await morningBrief(supabase, row.user_id, settings, trades, resourcesRow?.value, now.getTime());
+          const body = await morningBrief(supabase, row.user_id, settings, trades, resourcesRow?.value, now.getTime(), today, mb.days);
           const text = buildMessage("☀️", "TIN SÁNG", "📌", `${WEEKDAY_FULL[todayWeekdayCode] || todayWeekdayCode} ${ddmm(today)}`, undefined, body);
           if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, mb.threadId)) {
             log[logKey] = true;
@@ -1159,6 +1213,50 @@ Deno.serve(async () => {
           }
         } catch (e) {
           console.error("morning brief failed", e);
+        }
+      }
+    }
+
+    // Sao lưu tuần ra Telegram (mặc định Chủ nhật 21:00) — xem _shared/backup.ts. Gửi hỏng thì các lượt sau thử lại
+    // trong 60 phút; lần hỏng đầu báo một tin chữ để biết tuần này chưa có file.
+    const bk = backupCfg(settings.weeklyBackup);
+    const sinceBackupTime = hhmmToMin(currentHHMM) - hhmmToMin(bk.time);
+    if (bk.enabled && bk.weekday === todayWeekdayCode && sinceBackupTime >= -MATCH_TOLERANCE_MIN && sinceBackupTime <= 60) {
+      const logKey = `backup_${today}`;
+      if (!log[logKey]) {
+        try {
+          const [{ data: mainRows, error: e1 }, { data: histRows, error: e2 }] = await Promise.all([
+            supabase.from("app_data").select("key, value").eq("user_id", row.user_id).in("key", BACKUP_KEYS),
+            supabase.from("app_data").select("key, value").eq("user_id", row.user_id).like("key", `${SL_HIST_PREFIX}%`),
+          ]);
+          if (e1 || e2) throw new Error((e1 || e2)!.message);
+          const b = buildBackup([...(mainRows || []), ...(histRows || [])] as { key: string; value: unknown }[], now.toISOString());
+          const warn = async (why: string) => {
+            if (log[`backupFail_${today}`]) return;
+            const text = buildMessage("💾", "SAO LƯU TUẦN", "⚠️", "Chưa gửi được file sao lưu", undefined, why);
+            if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, text, bk.threadId)) {
+              log[`backupFail_${today}`] = true;
+              logChanged = true;
+            }
+          };
+          if (b.tooBig) {
+            await warn("File lớn hơn mức Telegram nhận (45 MB) dù đã bỏ ảnh nhúng. Xuất tay ở web → Cài đặt → Xuất JSON.");
+            log[logKey] = true;
+            logChanged = true;
+          } else {
+            const r = await sendBackupFile(settings.telegramBotToken!, settings.telegramChatId!, bk.threadId,
+              `nhat-ky-sao-luu-${today}.json`, b.json, backupCaption(b, ddmm(today)));
+            if (r.ok) {
+              log[logKey] = true;
+              logChanged = true;
+              sent++;
+            } else {
+              console.error("weekly backup send failed", r.description);
+              await warn(`Telegram báo: ${r.description || "không rõ"}. Bot sẽ thử lại trong 1 giờ; không được thì xuất tay ở web → Cài đặt → Xuất JSON.`);
+            }
+          }
+        } catch (e) {
+          console.error("weekly backup failed", e);
         }
       }
     }

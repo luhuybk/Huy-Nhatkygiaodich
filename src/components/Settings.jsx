@@ -116,6 +116,10 @@ export function SettingsSection({ trades, resources, ledger, notes, lessons, pro
         Cứ 7 ngày mở web một lần, hệ thống tự chụp lại toàn bộ dữ liệu và giữ {BACKUP_KEEP} bản gần nhất.
         Một bản cũng được chụp ngay trước khi bạn bấm "Xóa toàn bộ dữ liệu". Khôi phục sẽ ghi đè dữ liệu hiện tại bằng bản đã chọn. Bản sao lưu giữ toàn bộ chữ và đường dẫn ảnh, nhưng bỏ ảnh base64 còn sót lại để không phình dung lượng — chuyển chúng lên kho ảnh ở trên thì bản sao lưu sẽ giữ được đầy đủ.
       </p>
+      <p className="field-hint" style={{ marginBottom: 12 }}>
+        Các bản này nằm chung cơ sở dữ liệu với dữ liệu gốc. Bản dự phòng nằm ngoài: mỗi tuần bot gửi một file JSON vào Telegram
+        (bật / đổi giờ ở Thông báo → Lịch nhắc → Việc định kỳ → Sao lưu tuần ra Telegram) — khôi phục bằng nút Nhập JSON ở trên.
+      </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <button type="button" className="btn btn-ghost" onClick={onBackupNow}><Save size={14} /> Sao lưu ngay</button>
       </div>

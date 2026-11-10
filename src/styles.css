@@ -2721,9 +2721,12 @@ button.nt-check:hover { filter: brightness(1.25); }
 .news-tier { width: 16px; text-align: center; }
 
 /* SL hiện tại (EA) + canh chừng EA + đánh giá EA kéo SL + lịch sử SL trong chi tiết lệnh — components/EaSl.jsx */
-.easl-cfg { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.easl-cfg .input { width: 80px; }
-.easl-upd { margin: 0 0 8px; }
+.easl-cfg { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.easl-upd { margin: 0; }
+.easl-help-btn { margin-left: auto; }
+.easl-help { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+.easl-help .plan-hint { margin-top: 0; }
+.easl-help .input { width: 80px; }
 .easl-acc { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg); }
 .easl-alarm { border-color: rgba(224, 97, 90, .55); background: rgba(224, 97, 90, .07); }
 .easl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 4px; }
@@ -2774,3 +2777,9 @@ button.nt-check:hover { filter: brightness(1.25); }
 }
 /* Màn cảm ứng không có phím Shift */
 @media (hover: none) { .sort-shift-hint { display: none; } }
+
+/* Tổng quan: tiêu đề nhóm chỉ số bấm để thu gọn / mở (StatFold) */
+.block-fold-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.block-fold-btn svg { color: var(--text-dim); }
+.block-fold-btn:hover, .block-fold-btn:hover svg { color: var(--accent); }
+.block-fold-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
