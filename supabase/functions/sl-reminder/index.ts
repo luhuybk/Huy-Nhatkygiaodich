@@ -92,14 +92,18 @@ type CandleSession = { id?: string; tz?: string; spec?: string; open?: string; l
 const NY_TZ = "America/New_York";
 const SESSION_PRESETS: CandleSession[] = [
   { id: "fx", tz: NY_TZ, spec: "1700-1700" },
-  { id: "lme", tz: "Europe/London", spec: "0100-1850", intradayAs: "fx" },
-  { id: "usoil", tz: "Etc/UTC", spec: "2200-0000:1|0000-0000:2345|0000-2100:6", intradayAs: "fx" },
-  { id: "ukoil", tz: "Etc/UTC", spec: "2200-2200:2|0000-2200:3456", intradayAs: "fx" },
+  { id: "lme", tz: "Europe/London", spec: "0100-1850" },
+  { id: "pgm", tz: NY_TZ, spec: "1800-1700" },
+  { id: "usoil", tz: NY_TZ, spec: "1800-1700" },
+  { id: "ukoil", tz: NY_TZ, spec: "1800-1700:2|2000-1700:3456" },
+  { id: "crypto", tz: "Etc/UTC", spec: "24x7" },
 ];
 const DEFAULT_SYMBOL_RULES: [RegExp, string][] = [
   [/^X(CU|AL|NI|PB|ZN)/, "lme"],
+  [/^XP[TD]/, "pgm"],
   [/^(US?OIL|WTI|XTI)/, "usoil"],
   [/^(UKOIL|BRENT|XBR)/, "ukoil"],
+  [/^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/, "crypto"],
 ];
 const DEFAULT_AUTO_QUIET = { from: "00:30", to: "08:30" };
 const DEFAULT_AUTO_SLOTS = { enabled: false, hours: ["00:00", "08:30", "12:00", "16:00", "20:00"] };

@@ -1,13 +1,17 @@
 // Giờ đóng nến tự tính, để nhắc dời SL đúng lúc nến của CHÍNH lệnh đó đóng.
 //
 // Nến H4/H8/D trên TradingView xếp từ giờ MỞ PHIÊN của từng mã chứ không xếp từ 0h, và mỗi NGUỒN
-// dữ liệu một phiên khác nhau — đo thật trên chart (10/2026):
-//   - FX:, OANDA: (vàng, bạc, XPD, XPT), FXTF:XNGUSD — "1700-1700" New York → H4 đóng 0-4-8-12-16-20h VN
-//   - FUSIONMARKETS: đồng/nhôm/niken/chì/kẽm (LME) — "0100-1850" London → 11-15-19-23h, nến cuối đóng 0h50
-//   - FOREXCOM:USOIL — theo UTC, liền từ tối CN tới tối T6 → 3-7-11-15-19-23h, KHÔNG đổi giờ mùa
-//   - FOREXCOM:UKOIL — theo UTC, nghỉ 22h–24h UTC mỗi đêm → 11-15-19-23-3h, nến cuối đóng 5h
+// dữ liệu một phiên khác nhau — đo thật trên chart 10/11/2026, theo nguồn trong 3 danh sách theo dõi
+// (Forex - D / H8 / H4); giờ VN mùa đông, mùa hè sớm hơn 1 tiếng (trừ crypto):
+//   - FX:, OANDA:, FOREXCOM: cặp tiền · OANDA: vàng, bạc · FXTF:XNGUSD — "1700-1700" New York → H4 đóng 1-5-9-13-17-21h
+//   - FUSIONMARKETS: đồng/nhôm/niken/chì/kẽm (LME) — "0100-1850" London → 12-16-20-0h, nến cuối đóng 1h50
+//   - PEPPERSTONE:XPT, XPD · FPMARKETS:XTIUSD (dầu WTI) — "1800-1700" New York → 10-14-18-22-2h, nến cuối đóng 5h
+//   - FPMARKETS:XBRUSD (dầu Brent) — T2 "1800-1700", T3–T6 "2000-1700" New York → T3–T6: 12-16-20-0-4h, nến cuối 5h
+//   - COINBASE / BINANCE crypto — 24x7 theo UTC → 3-7-11-15-19-23h, không đổi giờ mùa
 // Nên lưu đúng CHUỖI PHIÊN TradingView + múi giờ, và tính bằng múi giờ thật: New York đổi giờ
 // tháng 3/11, London đổi sớm hơn một tuần (cuối tháng 3/10), UTC thì không đổi.
+// CÙNG BẢNG với EA KeoSLDuoiNen v2.92+ (SESS_DEFAULT) và supabase/functions/_shared/alertRecheck.ts (SESSION_RULES):
+// đổi nguồn dữ liệu trên TradingView thì sửa cả ba.
 //
 // BẢN CHÉP Y HỆT nằm ở supabase/functions/sl-reminder/index.ts (bot) — sửa một bên phải sửa bên kia.
 
@@ -20,18 +24,22 @@ export const UTC_TZ = "Etc/UTC";
 // Thứ đánh số 1 = Chủ nhật … 7 = Thứ 7; bỏ trống = thứ 2–thứ 6. Giờ kết thúc ≤ giờ bắt đầu nghĩa là
 // phiên qua đêm, bắt đầu từ hôm trước ("1700-1700" của thứ 2 mở từ 17h Chủ nhật). "0000" ở cuối = 24h.
 export const SESSION_PRESETS = [
-  { id: "fx", name: "Forex · OANDA kim loại · FXTF", note: "FX:, OANDA: vàng/bạc/XPD/XPT, FXTF:XNGUSD", tz: NY_TZ, spec: "1700-1700", preset: true },
-  { id: "lme", name: "Kim loại LME · FUSIONMARKETS", note: "đồng XCU, nhôm XAL, niken XNI, chì XPB, kẽm XZN · H4/H8 nhắc theo giờ FX", tz: LONDON_TZ, spec: "0100-1850", intradayAs: "fx", preset: true },
-  { id: "usoil", name: "Dầu WTI · FOREXCOM:USOIL", note: "theo giờ UTC, không đổi giờ mùa · H4/H8 nhắc theo giờ FX", tz: UTC_TZ, spec: "2200-0000:1|0000-0000:2345|0000-2100:6", intradayAs: "fx", preset: true },
-  { id: "ukoil", name: "Dầu Brent · FOREXCOM:UKOIL", note: "theo giờ UTC, nghỉ 2 tiếng mỗi đêm · H4/H8 nhắc theo giờ FX", tz: UTC_TZ, spec: "2200-2200:2|0000-2200:3456", intradayAs: "fx", preset: true },
+  { id: "fx", name: "Forex · vàng bạc OANDA · khí FXTF", note: "FX:, OANDA:, FOREXCOM: cặp tiền; OANDA: vàng, bạc; FXTF:XNGUSD", tz: NY_TZ, spec: "1700-1700", preset: true },
+  { id: "lme", name: "Kim loại LME · FUSIONMARKETS", note: "đồng XCU, nhôm XAL, niken XNI, chì XPB, kẽm XZN", tz: LONDON_TZ, spec: "0100-1850", preset: true },
+  { id: "pgm", name: "Bạch kim, paladi · PEPPERSTONE", note: "XPT, XPD — mở 18:00, nghỉ 1 tiếng mỗi ngày", tz: NY_TZ, spec: "1800-1700", preset: true },
+  { id: "usoil", name: "Dầu WTI · FPMARKETS:XTIUSD", note: "mở 18:00 New York, nghỉ 1 tiếng mỗi ngày", tz: NY_TZ, spec: "1800-1700", preset: true },
+  { id: "ukoil", name: "Dầu Brent · FPMARKETS:XBRUSD", note: "thứ 2 mở 18:00, thứ 3–6 mở 20:00 New York", tz: NY_TZ, spec: "1800-1700:2|2000-1700:3456", preset: true },
+  { id: "crypto", name: "Crypto · COINBASE / BINANCE", note: "BTC, ETH… chạy cả tuần, nến chia từ 0h UTC", tz: UTC_TZ, spec: "24x7", preset: true },
 ];
 
 // Mã chưa tự gán phiên thì đoán theo tên — đúng với các nguồn đang dùng trên chart, sửa được ở
 // bảng "Mã nào thuộc phiên nào".
 export const DEFAULT_SYMBOL_RULES = [
   [/^X(CU|AL|NI|PB|ZN)/, "lme"],
+  [/^XP[TD]/, "pgm"],
   [/^(US?OIL|WTI|XTI)/, "usoil"],
   [/^(UKOIL|BRENT|XBR)/, "ukoil"],
+  [/^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/, "crypto"],
 ];
 
 // Giờ nghỉ: sau lần dời cuối lúc 0h tới 8h30 mới ngồi lại máy — nến đóng trong khoảng này dồn về 8h30.
@@ -159,8 +167,8 @@ function sessionRanges(session, vnDate) {
 
 // Mọi mốc nến khung `hours` đóng trong ngày `vnDate` (giờ VN), theo phiên `session`. Nến xếp từ
 // đầu mỗi phiên; nến cuối phiên đóng ở giờ hết phiên dù chưa đủ độ dài (đồng đóng 0h50, Brent 5h).
-// intradayAs: nến dưới D của phiên này xếp theo phiên khác — kim loại LME, dầu WTI / Brent lệch FX một
-// hai tiếng (H4 đóng 1h-15h-23h thay vì 0h-16h-20h), lệch ít nên nhắc chung giờ FX cho đỡ lắt nhắt. Nến D giữ phiên thật.
+// intradayAs (chỉ còn cho phiên tự đặt): nến dưới D của phiên này xếp theo phiên khác. Các phiên có sẵn từ 10/11/2026
+// không dùng nữa — mọi mã nhắc đúng giờ nến của chính nó đóng; muốn gom bớt lần nhắc thì bật "Mốc nhắc theo nến".
 export function candleClosesVN(hours, session, vnDate) {
   if (!hours || !session) return [];
   if (hours < 24 && session.intradayAs) session = SESSION_PRESETS.find((x) => x.id === session.intradayAs) || session;

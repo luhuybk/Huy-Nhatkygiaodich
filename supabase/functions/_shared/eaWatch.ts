@@ -52,7 +52,7 @@ const FX = new Set(["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SGD
 // Mã có nến gần như cả ngày → mỗi lần nến khung đóng EA phải báo. Cổ phiếu nghỉ cả đêm → không canh.
 export function watchable(symbol: string) {
   const s = shortSymbol(symbol).toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (isCryptoSymbol(s) || /^(XAU|XAG|XPT|XPD)/.test(s)) return true;
+  if (isCryptoSymbol(s) || /^(XAU|XAG|XPT|XPD|XCU|XAL|XNI|XPB|XZN)/.test(s)) return true;
   if (s.length >= 6 && FX.has(s.slice(0, 3)) && FX.has(s.slice(3, 6))) return true;
   return /^(US30|US100|US500|US2000|USTEC|NAS100|SPX500|SP500|DJ30|UK100|DE30|DE40|GER30|GER40|FR40|EU50|STOXX50|JP225|AUS200|HK50|USOIL|UKOIL|XTI|XBR|XNG|WTI|BRENT)/.test(s);
 }
@@ -63,10 +63,10 @@ export function lastMissedClose(p: SlPos, nowMs: number, graceMs: number): numbe
   const tf = normTf(p.tf);
   const from = p.bar || p.openedAt || 0;
   if (!tf || !from) return 0;
-  const allWeek = isCryptoSymbol(shortSymbol(p.symbol));
+  const sym = shortSymbol(p.symbol); // crypto nến 0h UTC, kim loại LME / XPT-XPD / dầu theo phiên riêng — như EA v2.92+
   let after = from * 1000, missed = 0;
   for (let i = 0; i < 400; i++) {
-    const c = nextRecheck(tf, after, allWeek).close;
+    const c = nextRecheck(tf, after, sym).close;
     if (c + graceMs > nowMs) break;
     missed = c;
     after = c;

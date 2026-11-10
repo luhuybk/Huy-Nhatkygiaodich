@@ -4,8 +4,9 @@
 //
 // Khung lấy từ tiền tố trong tin: [H4] → H4, [H8] → H8, [Re-Entry] → không nhắc nến,
 // còn lại (kể cả [D] và tin không ghi tiền tố) → D.
-// Nến dựng theo giờ New York như TradingView (mốc 17:00 NY, tự đổi giờ mùa hè/đông). Nến đóng trong
-// giờ nghỉ (sau 0h tới trước 8h45 giờ VN) thì dồn sang 8h45; khung D chỉ nhắc lúc 8h45.
+// Nến dựng như TradingView: mặc định mốc 17:00 New York (tự đổi giờ mùa hè/đông), crypto từ 0h UTC, còn kim loại
+// LME / bạch kim-paladi / dầu chia từ giờ MỞ PHIÊN của nguồn dữ liệu (SESSION_RULES — cùng bảng với EA KeoSLDuoiNen
+// v2.92+, sửa một bên phải sửa bên kia). Nến đóng trong giờ nghỉ (sau 0h tới trước 8h45 giờ VN) thì dồn sang 8h45.
 
 export type Tf = "H1" | "H2" | "H3" | "H4" | "H6" | "H8" | "H12" | "D";
 const TF_HOURS: Record<Tf, number> = { H1: 1, H2: 2, H3: 3, H4: 4, H6: 6, H8: 8, H12: 12, D: 24 };
@@ -57,6 +58,90 @@ export function isCryptoSymbol(symbol: string) {
   return /^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/i.test(String(symbol || "").trim());
 }
 
+// ───── Phiên riêng theo mã ─────
+// TradingView chia nến H2–D từ giờ mở phiên của nguồn dữ liệu, nến cuối phiên đóng lúc hết phiên dù chưa đủ độ dài.
+// Đo trên chart 10/11/2026 (3 danh sách theo dõi Forex - D / H8 / H4), giờ VN mùa đông:
+//   FUSIONMARKETS: đồng, nhôm, niken, chì, kẽm   0100-1850 London          H4 đóng 12-16-20-0h, 1h50
+//   PEPPERSTONE:XPT, XPD · FPMARKETS:XTIUSD      1800-1700 New York        H4 đóng 10-14-18-22-2h, 5h
+//   FPMARKETS:XBRUSD                             T2 1800-1700, T3–T6 2000-1700 New York
+// `spec` đúng chuỗi phiên TradingView: HHMM-HHMM[:thứ] nối bằng "|", thứ 1 = Chủ nhật … 7 = thứ Bảy, không ghi = T2–T6;
+// giờ kết thúc ≤ giờ bắt đầu = phiên qua đêm, mở từ hôm trước. Mã không khớp dòng nào → mốc 17:00 New York.
+export type SessTz = "NY" | "LON" | "UTC";
+export type SessionRule = { id: string; re: RegExp; tz: SessTz; spec: string; label: string };
+export const SESSION_RULES: SessionRule[] = [
+  { id: "lme", re: /^X(CU|AL|NI|PB|ZN)/, tz: "LON", spec: "0100-1850", label: "kim loại LME · 01:00–18:50 London" },
+  { id: "pgm-wti", re: /^(XPT|XPD|USOIL|XTI)/, tz: "NY", spec: "1800-1700", label: "XPT, XPD, dầu WTI · 18:00–17:00 New York" },
+  { id: "brent", re: /^(UKOIL|XBR)/, tz: "NY", spec: "1800-1700:2|2000-1700:3456", label: "dầu Brent · T2 18:00, T3–T6 20:00 → 17:00 New York" },
+];
+const symKeyOf = (symbol: unknown) => String(symbol ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+export function sessionRuleOf(symbol: unknown): SessionRule | null {
+  const s = symKeyOf(symbol);
+  return (s && SESSION_RULES.find((r) => r.re.test(s))) || null;
+}
+
+// Giờ mùa hè Anh: 1h UTC Chủ nhật cuối tháng 3 → 1h UTC Chủ nhật cuối tháng 10
+function lastSundayUtc(year: number, month: number) {
+  const last = Date.UTC(year, month + 1, 0);
+  return last - new Date(last).getUTCDay() * 24 * HOUR;
+}
+function tzOffsetMs(tz: SessTz, utcMs: number) {
+  if (tz === "NY") return -nyOffsetHours(utcMs) * HOUR;
+  if (tz === "LON") {
+    const y = new Date(utcMs).getUTCFullYear();
+    return utcMs >= lastSundayUtc(y, 2) + HOUR && utcMs < lastSundayUtc(y, 9) + HOUR ? HOUR : 0;
+  }
+  return 0;
+}
+function localToUtc(tz: SessTz, local: number) {
+  const utc = local - tzOffsetMs(tz, local);
+  return local - tzOffsetMs(tz, utc);
+}
+type Seg = { a: number; b: number; days: string };
+const segCache = new Map<string, Seg[]>();
+function segsOf(spec: string): Seg[] {
+  if (!segCache.has(spec)) {
+    segCache.set(spec, spec.split("|").map((x) => {
+      const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})(?::([1-7]+))?$/.exec(x.trim());
+      if (!m) return null;
+      const b = +m[3] * 60 + +m[4];
+      return { a: +m[1] * 60 + +m[2], b: b === 0 ? 1440 : b, days: m[5] || "23456" };
+    }).filter(Boolean) as Seg[]);
+  }
+  return segCache.get(spec)!;
+}
+const DAY_MS = 24 * HOUR;
+// Phiên chứa mốc utcMs; mốc rơi vào giờ nghỉ thì trả phiên gần nhất đã mở trước đó (bản chép SessionAt của EA)
+export function sessionAt(rule: { tz: SessTz; spec: string }, utcMs: number): { start: number; end: number } | null {
+  const local = utcMs + tzOffsetMs(rule.tz, utcMs);
+  const day0 = Math.floor(local / DAY_MS) * DAY_MS;
+  let best: { start: number; end: number } | null = null;
+  let foundK = 0;
+  for (let k = 1; k >= -8; k--) {
+    if (best && k < foundK - 1) break;
+    const day = day0 + k * DAY_MS;
+    const wd = String(new Date(day).getUTCDay() + 1);
+    for (const g of segsOf(rule.spec)) {
+      if (!g.days.includes(wd)) continue;
+      const start = localToUtc(rule.tz, (g.b <= g.a ? day - DAY_MS : day) + g.a * 60000);
+      const end = localToUtc(rule.tz, day + g.b * 60000);
+      if (start <= utcMs && (!best || start > best.start)) { best = { start, end }; foundK = k; }
+    }
+  }
+  return best;
+}
+// Nến khung `step` (ms) đóng kế tiếp sau mốc afterMs theo phiên riêng
+export function nextSessionClose(rule: { tz: SessTz; spec: string }, step: number, afterMs: number): number {
+  let s = sessionAt(rule, afterMs);
+  if (!s) return afterMs + step;
+  if (afterMs < s.end) return Math.min(s.start + (Math.floor((afterMs - s.start) / step) + 1) * step, s.end);
+  // Đang giờ nghỉ: dò tới phiên kế tiếp (nghỉ dài nhất là cuối tuần + lễ)
+  for (let t = Math.floor(afterMs / HOUR) * HOUR + HOUR, i = 0; i < 24 * 9; i++, t += HOUR) {
+    const n = sessionAt(rule, t);
+    if (n && n.start > s.start) return Math.min(n.start + step, n.end);
+  }
+  return afterMs + step;
+}
+
 // Giờ VN rơi vào giờ nghỉ (sau 0h tới trước 8h45) thì dồn sang 8h45 cùng sáng
 function restShift(close: number) {
   const vn = new Date(close + VN_OFFSET);
@@ -67,9 +152,16 @@ function restShift(close: number) {
   return close + 60 * 1000; // chừa 1 phút cho nến đóng hẳn
 }
 
-// Lúc gửi tin kiểm lại kế tiếp (ms UTC) và giờ nến đóng tương ứng. allWeek = crypto (nến 0h UTC, có cuối tuần).
-export function nextRecheck(tf: Tf, nowMs: number, allWeek = false): { at: number; close: number } {
+// Lúc gửi tin kiểm lại kế tiếp (ms UTC) và giờ nến đóng tương ứng. `sym` = tên mã (tự nhận crypto / phiên riêng);
+// true = crypto (nến 0h UTC, có cuối tuần); bỏ trống / false = nến 17:00 New York.
+export function nextRecheck(tf: Tf, nowMs: number, sym: boolean | string = false): { at: number; close: number } {
   const step = (TF_HOURS[tf] || 24) * HOUR;
+  const allWeek = sym === true || (typeof sym === "string" && isCryptoSymbol(symKeyOf(sym)));
+  const rule = typeof sym === "string" && !allWeek ? sessionRuleOf(sym) : null;
+  if (rule) {
+    const close = nextSessionClose(rule, step, nowMs);
+    return { at: restShift(close), close };
+  }
   if (allWeek) {
     const close = Math.floor(nowMs / step) * step + step; // mọi khung đều chia hết 24 giờ nên mốc 0h UTC luôn trùng
     return { at: restShift(close), close };
@@ -85,10 +177,11 @@ export function nextRecheck(tf: Tf, nowMs: number, allWeek = false): { at: numbe
   return { at: nowMs + 24 * HOUR, close: nowMs + 24 * HOUR };
 }
 
-// Giờ kiểm lại của một cảnh báo / mã: crypto (BTCUSDT…) nến chia từ 0h UTC và chạy cả tuần, còn lại nến New York.
-// `text` = nội dung tin hoặc tên mã. Mọi chỗ hẹn ⏳ Kiểm lại (bot, web) đi qua đây để giờ nhắc khớp nhau.
+// Giờ kiểm lại của một cảnh báo / mã: crypto (BTCUSDT…) nến chia từ 0h UTC và chạy cả tuần, kim loại LME / XPT-XPD /
+// dầu theo phiên riêng, còn lại nến New York. `text` = nội dung tin hoặc tên mã. Mọi chỗ hẹn ⏳ Kiểm lại (bot, web)
+// đi qua đây để giờ nhắc khớp nhau.
 export function recheckFor(tf: Tf, nowMs: number, text?: string) {
-  return nextRecheck(tf, nowMs, isCryptoSymbol(alertSymbol(text)));
+  return nextRecheck(tf, nowMs, alertSymbol(text));
 }
 
 // 16:00 hoặc 08:45 30/10 (giờ VN) — kèm ngày khi không phải hôm nay
@@ -106,9 +199,9 @@ export function vnTime(ms: number, nowMs = Date.now()) {
 // khớp lệnh (mt5-journal gửi) → lúc nến vào lệnh đóng thì nhắc dời SL tay 1 lần.
 //   close = nến vào lệnh đóng, at = lúc nhắc (giờ nghỉ → 8h45), eaAt = nến kế tiếp đóng (EA tự kéo)
 // Nhắc chỉ có ích khi at < eaAt: nến vào lệnh đóng lúc 1h mà nến sau đóng 5h thì EA kéo trước 8h45.
-export function reentryPlan(tf: Tf, fillMs: number, allWeek = false) {
-  const first = nextRecheck(tf, fillMs, allWeek);
-  const eaAt = nextRecheck(tf, first.close, allWeek).close;
+export function reentryPlan(tf: Tf, fillMs: number, sym: boolean | string = false) {
+  const first = nextRecheck(tf, fillMs, sym);
+  const eaAt = nextRecheck(tf, first.close, sym).close;
   return { close: first.close, at: first.at, eaAt, useful: first.at < eaAt };
 }
 

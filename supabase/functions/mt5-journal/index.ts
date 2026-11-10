@@ -30,7 +30,7 @@
 // Deploy: supabase functions deploy mt5-journal --no-verify-jwt
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { isCryptoSymbol, normTf, reentryPlan, vnTime } from "../_shared/alertRecheck.ts";
+import { normTf, reentryPlan, vnTime } from "../_shared/alertRecheck.ts";
 import { fillChat, shortSymbol } from "../_shared/mt5Fill.ts";
 import { parseSlRow, SL_MOVE_PREFIX, slReplaces, slRowKey, type SlRow } from "../_shared/slBoard.ts";
 
@@ -182,7 +182,7 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
   const now = Date.now();
   const fillMs = item.time * 1000;
   if (!test && now - fillMs > FILL_FRESH_MS) return { ...info, fill: "old" };
-  const plan = tf ? reentryPlan(tf, fillMs, isCryptoSymbol(item.symbol)) : null;
+  const plan = tf ? reentryPlan(tf, fillMs, shortSymbol(item.symbol)) : null;
   // Nút 🔁 chỉ khi nhắc còn kịp trước lần EA tự kéo (nến vào đóng lúc nghỉ đêm thì thường EA kéo trước 8h45)
   const canRemind = !!plan && plan.useful && now < plan.eaAt;
   if (plan) Object.assign(info, { close: vnTime(plan.close, now), remindAt: vnTime(plan.at, now), eaAt: vnTime(plan.eaAt, now), button: canRemind });
