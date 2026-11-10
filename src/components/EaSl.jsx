@@ -7,10 +7,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, BellOff, Eye, EyeOff, HelpCircle, RefreshCw } from "lucide-react";
 import { computeResult, fmtR, readLocalUi, safeGet, safeList, writeLocalUi } from "../lib/helpers.js";
 import { DetailGroup, Field, Switch } from "./ui.jsx";
-import { vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
+import { isCryptoSymbol, nextRecheck, normTf, sessionRuleOf, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { shortSymbol } from "../../supabase/functions/_shared/mt5Fill.ts";
 import { openPositions, slAfter, SL_ICON } from "../../supabase/functions/_shared/slBoard.ts";
-import { EA_WATCH_KEY, histFacts, SL_HIST_PREFIX, watchCfg } from "../../supabase/functions/_shared/eaWatch.ts";
+import { EA_WATCH_KEY, histFacts, lastMissedClose, SL_HIST_PREFIX, watchCfg } from "../../supabase/functions/_shared/eaWatch.ts";
 
 const digitsOnly = (v) => String(v || "").replace(/\D/g, "");
 const pad = (n) => String(n).padStart(2, "0");
@@ -77,7 +77,48 @@ function groupByAccount(pos, resources) {
   return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function EaRow({ p, now }) {
+// Nến kế tiếp EA sẽ báo / dời SL — cùng hàm giờ nến với canh chừng EA trên máy chủ (nextRecheck, phiên riêng theo mã như
+// EA v2.92), để đối chiếu: tới giờ đó mà bảng SL không có dòng nến mới là EA và hệ thống lệch nhau.
+//   late  = nến đã đóng sau lần báo cuối mà EA chưa báo (0 = không có)
+//   skip  = lệnh mới khớp: nến kế là nến đầu, EA bỏ qua (InpSkipBars = 1) → kéo thật từ `after`
+export function eaNextPlan(p, now) {
+  const tf = normTf(p.tf);
+  if (!tf) return null;
+  const sym = shortSymbol(p.symbol);
+  const rule = sessionRuleOf(sym);
+  const basis = rule ? rule.label : isCryptoSymbol(sym) ? "crypto · nến chia từ 0h UTC" : "nến 17:00 New York (Forex, vàng, bạc, khí…)";
+  const next = nextRecheck(tf, now, sym).close;
+  const skip = !!(p.marker && p.openedAt) && nextRecheck(tf, p.openedAt * 1000, sym).close === next;
+  return { tf, basis, next, late: lastMissedClose(p, now, 0), skip, after: skip ? nextRecheck(tf, next, sym).close : 0 };
+}
+
+const leftText = (ms) => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m < 60 ? `còn ${m}p` : `còn ${Math.floor(m / 60)}g${m % 60 ? pad(m % 60) : ""}`;
+};
+
+function EaNext({ p, now, graceMin }) {
+  const plan = eaNextPlan(p, now);
+  if (!plan) return <span className="easl-next field-hint">—</span>;
+  const tip = `Giờ đóng nến ${tfLabel(plan.tf)} theo ${plan.basis}. Đúng giờ này EA dời/giữ SL và gửi dòng lên bảng SL — tới giờ mà không thấy dòng mới là EA lệch với hệ thống.`;
+  // Nến vừa đóng: EA cần vài giây tới vài phút để báo (chờ spread hết giãn) — quá thời gian canh chừng thì tô cam
+  if (plan.late && now - plan.late > 90 * 1000) {
+    const over = now - plan.late > graceMin * 60000;
+    return (
+      <span className={`easl-next ${over ? "easl-next-late" : ""}`} title={tip}>
+        ⏳ chờ EA báo nến {vnTime(plan.late, now)}
+      </span>
+    );
+  }
+  return (
+    <span className="easl-next" title={tip}>
+      ⏭ <b className="mono">{vnTime(plan.next, now)}</b> <small>{leftText(plan.next - now)}</small>
+      {plan.skip ? <small> · bỏ nến đầu, kéo từ {vnTime(plan.after, now)}</small> : null}
+    </span>
+  );
+}
+
+function EaRow({ p, now, graceMin }) {
   const px = (v) => (v > 0 ? Number(v).toFixed(p.digits || 5) : "—");
   const noSl = !p.marker && !(p.sl > 0);
   const at = p.bar ? vnTime(p.bar * 1000, now) : "";
@@ -98,11 +139,12 @@ function EaRow({ p, now }) {
       <span className="easl-sl mono">{p.marker ? "" : `SL ${px(p.sl)}`}</span>
       <span className={`easl-be ${p.be ? "text-win" : ""}`}>{p.marker ? "" : p.be ? "đã BE" : "chưa BE"}</span>
       <span className="easl-what">{what}</span>
+      <EaNext p={p} now={now} graceMin={graceMin} />
     </div>
   );
 }
 
-function EaAccount({ g, alarm, muted, onMute, onHide, watchOn, now }) {
+function EaAccount({ g, alarm, muted, onMute, onHide, watchOn, now, graceMin }) {
   const real = g.list.filter((p) => !p.marker);
   const last = Math.max(0, ...real.map((p) => p.bar));
   const tfs = [...new Set(g.list.map((p) => tfLabel(p.tf)).filter(Boolean))].join("/");
@@ -126,7 +168,7 @@ function EaAccount({ g, alarm, muted, onMute, onHide, watchOn, now }) {
           <EyeOff size={12} /> Ẩn
         </button>
       </div>
-      <div className="easl-rows">{g.list.map((p) => <EaRow key={p.key} p={p} now={now} />)}</div>
+      <div className="easl-rows">{g.list.map((p) => <EaRow key={p.key} p={p} now={now} graceMin={graceMin} />)}</div>
     </div>
   );
 }
@@ -170,6 +212,12 @@ export function EaSlBody({ settings, onChange, resources, trades, data }) {
             báo <code>⚠️ EA CHƯA BÁO SL</code> vào nhóm MT5 — EA tắt, VPS treo, Algo Trading tắt, EA chưa nạp bản mới… EA báo lại thì tin tự sửa thành ✅.
             Cổ phiếu và khung dưới H1 không canh.
           </p>
+          <p className="plan-hint">
+            Cột <b>⏭</b> là giờ nến kế tiếp đóng — lúc EA sẽ dời/giữ SL — tính bằng cùng bảng phiên với EA v2.92: Forex, vàng, bạc, khí theo
+            nến 17:00 New York; đồng, nhôm, niken, chì, kẽm theo phiên London 01:00; XPT, XPD, dầu theo phiên New York 18:00 (Brent T3–T6 20:00);
+            crypto từ 0h UTC. Lệnh mới khớp thì EA bỏ qua nến đầu. Tới giờ đó mà dòng của lệnh không đổi sang nến mới (cột hiện
+            <code>⏳ chờ EA báo</code>) là EA và hệ thống lệch nhau. Rê chuột vào giờ để xem lệnh tính theo phiên nào.
+          </p>
           <Field label="Báo sau giờ đóng nến (phút)">
             <input type="number" className="input input-inline" min={3} max={120} step={1} value={cfg.graceMin}
               onChange={(e) => setCfg({ graceMin: Number(e.target.value) })} />
@@ -185,7 +233,7 @@ export function EaSlBody({ settings, onChange, resources, trades, data }) {
         : !groups.length ? <p className="field-hint">Không có lệnh đang mở (EA chỉ báo khi có lệnh; dữ liệu 3 ngày gần nhất).</p>
           : groups.map((g) => (
             <EaAccount key={g.login} g={g} alarm={alarms[g.login]} muted={raw.includes(g.login)} onMute={() => toggleMute(g.login)}
-              onHide={() => hideAcc(g.login)} watchOn={cfg.enabled} now={now} />
+              onHide={() => hideAcc(g.login)} watchOn={cfg.enabled} now={now} graceMin={cfg.graceMin} />
           ))}
       {hiddenNames.length ? (
         <p className="field-hint easl-hidden">
