@@ -54,8 +54,12 @@ function closesInWeekend(nyWall: Date) {
 }
 
 // Crypto giao dịch cả tuần, TradingView (Binance) và EA chia nến từ 0h UTC — không theo mốc New York
+// Tên coin phải có đồng định giá đi liền sau (BTCUSD, ETHUSDT, BTCJPY, ETHBTC…): chỉ xét tiền tố thì cổ phiếu
+// "UnitedHealth", "Unisys", "SOLV", "LTC", "ATOM"… bị tính nến 0h UTC và bị canh EA cả cuối tuần.
+// src/lib/candles.js (DEFAULT_SYMBOL_RULES) dùng cùng mẫu — sửa một bên phải sửa bên kia.
+const CRYPTO_RE = /^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)(USD|EUR|GBP|JPY|AUD|CAD|CHF|KRW|CNH|THB|ZAR|XAU|XAG|BTC|ETH|BUSD|PERP)/;
 export function isCryptoSymbol(symbol: string) {
-  return /^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/i.test(String(symbol || "").trim());
+  return CRYPTO_RE.test(String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
 }
 
 // ───── Phiên riêng theo mã ─────

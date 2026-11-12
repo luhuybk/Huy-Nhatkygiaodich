@@ -10,7 +10,7 @@ import { DetailGroup, Field, Switch } from "./ui.jsx";
 import { isCryptoSymbol, nextRecheck, normTf, sessionRuleOf, vnTime } from "../../supabase/functions/_shared/alertRecheck.ts";
 import { shortSymbol } from "../../supabase/functions/_shared/mt5Fill.ts";
 import { openPositions, slAfter, SL_ICON } from "../../supabase/functions/_shared/slBoard.ts";
-import { EA_WATCH_KEY, histFacts, lastMissedClose, SL_HIST_PREFIX, watchCfg } from "../../supabase/functions/_shared/eaWatch.ts";
+import { EA_WATCH_KEY, histFacts, lastMissedClose, SL_HIST_PREFIX, watchable, watchCfg } from "../../supabase/functions/_shared/eaWatch.ts";
 
 const digitsOnly = (v) => String(v || "").replace(/\D/g, "");
 const pad = (n) => String(n).padStart(2, "0");
@@ -38,7 +38,10 @@ export function useEaData(active = true) {
     if (!active) return undefined;
     load();
     const id = setInterval(() => { if (!document.hidden) load(); }, 60000);
-    return () => clearInterval(id);
+    // Quay lại tab sau khi để ẩn: tải ngay, khỏi nhìn giờ đếm ngược và bảng SL cũ tới gần 1 phút
+    const onShow = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
   }, [active, load]);
   return { ...st, load };
 }
@@ -80,26 +83,33 @@ function groupByAccount(pos, resources) {
 // Nến kế tiếp EA sẽ báo / dời SL — cùng hàm giờ nến với canh chừng EA trên máy chủ (nextRecheck, phiên riêng theo mã như
 // EA v2.92), để đối chiếu: tới giờ đó mà bảng SL không có dòng nến mới là EA và hệ thống lệch nhau.
 //   late  = nến đã đóng sau lần báo cuối mà EA chưa báo (0 = không có)
-//   skip  = lệnh mới khớp: nến kế là nến đầu, EA bỏ qua (InpSkipBars = 1) → kéo thật từ `after`
+//   skip  = nến kế là nến đầu sau khi vào lệnh, EA bỏ qua (InpSkipBars = 1) → kéo thật từ `after`
+// Trả null (cột hiện —) khi không tính trước được: khung lạ, hoặc mã ngoài nhóm canh chừng (cổ phiếu…) ở khung dưới D —
+// EA dựng nến từ nến H1 có giao dịch nên phần lớn mốc nến trong ngày của cổ phiếu không có dòng nào.
 export function eaNextPlan(p, now) {
   const tf = normTf(p.tf);
-  if (!tf) return null;
+  if (!tf || (tf !== "D" && !watchable(p.symbol))) return null;
   const sym = shortSymbol(p.symbol);
   const rule = sessionRuleOf(sym);
-  const basis = rule ? rule.label : isCryptoSymbol(sym) ? "crypto · nến chia từ 0h UTC" : "nến 17:00 New York (Forex, vàng, bạc, khí…)";
-  const next = nextRecheck(tf, now, sym).close;
-  const skip = !!(p.marker && p.openedAt) && nextRecheck(tf, p.openedAt * 1000, sym).close === next;
+  const basis = rule ? rule.label : isCryptoSymbol(sym) ? "crypto · nến chia từ 0h UTC" : "nến 17:00 New York (Forex, vàng, bạc, khí, cổ phiếu…)";
+  // EA có thể báo SỚM nến sắp đóng (thị trường nghỉ trước giờ đóng nến: cổ phiếu khung D báo ~3:45, nến ghi 5:00) —
+  // nến đó coi như xong, nến kế tiếp tính từ sau nó
+  const next = nextRecheck(tf, Math.max(now, (p.bar || 0) * 1000), sym).close;
+  // Dòng mốc khớp giữ 3 ngày nên lệnh còn trong nến đầu luôn có openedAt, kể cả khi dòng mới nhất là 📍 lúc EA khởi động
+  const skip = !!p.openedAt && nextRecheck(tf, p.openedAt * 1000, sym).close === next;
   return { tf, basis, next, late: lastMissedClose(p, now, 0), skip, after: skip ? nextRecheck(tf, next, sym).close : 0 };
 }
 
 const leftText = (ms) => {
   const m = Math.max(0, Math.round(ms / 60000));
-  return m < 60 ? `còn ${m}p` : `còn ${Math.floor(m / 60)}g${m % 60 ? pad(m % 60) : ""}`;
+  if (m < 60) return `còn ${m}p`;
+  if (m < 48 * 60) return `còn ${Math.floor(m / 60)}g${m % 60 ? pad(m % 60) : ""}`;
+  return `còn ${Math.floor(m / 1440)} ngày${Math.floor((m % 1440) / 60) ? ` ${Math.floor((m % 1440) / 60)}g` : ""}`;
 };
 
 function EaNext({ p, now, graceMin }) {
   const plan = eaNextPlan(p, now);
-  if (!plan) return <span className="easl-next field-hint">—</span>;
+  if (!plan) return <span className="easl-next field-hint" title="Không tính trước được giờ nến: khung không chia hết 24 giờ, hoặc cổ phiếu ở khung dưới D (EA chỉ báo nến có giao dịch).">—</span>;
   const tip = `Giờ đóng nến ${tfLabel(plan.tf)} theo ${plan.basis}. Đúng giờ này EA dời/giữ SL và gửi dòng lên bảng SL — tới giờ mà không thấy dòng mới là EA lệch với hệ thống.`;
   // Nến vừa đóng: EA cần vài giây tới vài phút để báo (chờ spread hết giãn) — quá thời gian canh chừng thì tô cam
   if (plan.late && now - plan.late > 90 * 1000) {

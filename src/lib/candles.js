@@ -39,7 +39,9 @@ export const DEFAULT_SYMBOL_RULES = [
   [/^XP[TD]/, "pgm"],
   [/^(US?OIL|WTI|XTI)/, "usoil"],
   [/^(UKOIL|BRENT|XBR)/, "ukoil"],
-  [/^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)/, "crypto"],
+  // tên coin + đồng định giá (BTCUSD, ETH/USDT…) — cùng mẫu với isCryptoSymbol ở _shared/alertRecheck.ts; chỉ xét
+  // tiền tố thì cổ phiếu SOLV, UNIT, LTC, "UnitedHealth"… bị xếp nhầm vào crypto
+  [/^(BTC|ETH|SOL|XRP|LTC|BCH|ADA|DOGE|DOT|LINK|BNB|AVAX|TRX|XLM|UNI|ATOM|TON|SHIB)[^A-Z0-9]*(USD|EUR|GBP|JPY|AUD|CAD|CHF|KRW|CNH|THB|ZAR|XAU|XAG|BTC|ETH|BUSD|PERP)/, "crypto"],
 ];
 
 // Giờ nghỉ: sau lần dời cuối lúc 0h tới 8h30 mới ngồi lại máy — nến đóng trong khoảng này dồn về 8h30.
