@@ -34,6 +34,7 @@ const HeatmapPage = lazy(() => import("./components/Analysis.jsx").then((m) => (
 const SystemQualityPage = lazy(() => import("./components/SystemQuality.jsx").then((m) => ({ default: m.SystemQualityPage })));
 const MarketRegimePage = lazy(() => import("./components/MarketRegime.jsx").then((m) => ({ default: m.MarketRegimePage })));
 const MistakeCostPage = lazy(() => import("./components/MistakeCost.jsx").then((m) => ({ default: m.MistakeCostPage })));
+const EdgePage = lazy(() => import("./components/EdgeAnalysis.jsx").then((m) => ({ default: m.EdgePage })));
 const StreakPage = lazy(() => import("./components/Streaks.jsx").then((m) => ({ default: m.StreakPage })));
 const WeeklyReportPage = lazy(() => import("./components/WeeklyReport.jsx").then((m) => ({ default: m.WeeklyReportPage })));
 const AccountsSection = lazy(() => import("./components/Accounts.jsx").then((m) => ({ default: m.AccountsSection })));
@@ -83,6 +84,7 @@ const NAV_GROUPS = [
       { key: "weeklyreport", label: "Báo cáo tuần/tháng", icon: CalendarRange },
       { key: "streaks", label: "Chuỗi thắng / thua", icon: Activity },
       { key: "systemquality", label: "Chất lượng hệ thống", icon: Gauge },
+      { key: "edge", label: "Kỳ vọng & R", icon: Scale },
       { key: "mistakecost", label: "Lỗi tốn bao nhiêu R", icon: TrendingDown },
     ]
   },
@@ -1000,6 +1002,7 @@ function AppShell({ onSignOut, userEmail }) {
               view === "weeklyreport" ? <WeeklyReportPage trades={trades} resources={resources} ledger={ledger} journeyLog={journeyLog} setupErrors={setupErrors} skills={skills} /> :
               view === "streaks" ? <StreakPage trades={trades} resources={resources} setupErrors={setupErrors} /> :
               view === "systemquality" ? <SystemQualityPage trades={trades} resources={resources} /> :
+              view === "edge" ? <EdgePage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "marketregime" ? <MarketRegimePage trades={trades} resources={resources} onResourcesChange={handleResourcesChange} onOpenTrade={setViewingTrade} /> :
               view === "mistakecost" ? <MistakeCostPage trades={trades} resources={resources} onOpenTrade={setViewingTrade} /> :
               view === "accounts" ? (

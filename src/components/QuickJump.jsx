@@ -20,6 +20,7 @@ const KEYWORDS = {
   heatmap: "heatmap",
   weeklyreport: "in pdf tong ket",
   mistakecost: "sai lam",
+  edge: "ky vong expectancy winrate ti le thang payoff home run chia von",
   reminders: "nhac nho telegram lich",
   accounts: "ty gia broker",
   capitalplan: "mang rui ro risk",

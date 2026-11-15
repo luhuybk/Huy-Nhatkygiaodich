@@ -2794,3 +2794,15 @@ button.nt-check:hover { filter: brightness(1.25); }
 .homerun-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700;
   color: #b45309; background: rgba(234, 140, 30, 0.14); border: 1px solid rgba(234, 140, 30, 0.45); }
 .watch-quick + .watch-quick { margin-left: 8px; }
+
+/* Kỳ vọng & R */
+.edge-bars { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 6px; max-width: 760px; }
+.edge-bar-row { display: grid; grid-template-columns: minmax(150px, 190px) 1fr 40px 72px; align-items: center; gap: 10px; font-size: 13px; }
+.edge-bar-label small { color: var(--text-dim); }
+.edge-bar-track { height: 14px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.edge-bar-fill { display: block; height: 100%; border-radius: 4px; }
+.edge-win { background: var(--win); } .edge-loss { background: var(--loss); } .edge-flat { background: var(--text-dim); }
+.edge-bar-n, .edge-bar-r { text-align: right; }
+.edge-few td { opacity: .55; }
+@media (max-width: 640px) { .edge-bar-row { grid-template-columns: 110px 1fr 30px 62px; gap: 6px; font-size: 12px; } }
+.row-click { cursor: pointer; } .row-click:hover td { background: var(--surface-2); }
