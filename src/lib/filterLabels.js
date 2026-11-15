@@ -58,6 +58,10 @@ export const VARIANT_FILTERS = [
   { id: "yes", label: "Chỉ lệnh biến thể setup" },
   { id: "no", label: "Bỏ lệnh biến thể setup" },
 ];
+export const HOMERUN_FILTERS = [
+  { id: "yes", label: "🚀 Chỉ lệnh home-run" },
+  { id: "no", label: "Bỏ lệnh home-run" },
+];
 export const LESSON_FILTERS = [
   { id: "yes", label: "Có bài học" },
   { id: "no", label: "Không có bài học" },
@@ -102,6 +106,7 @@ export function describeFilters(filters, resources, setupErrors, skills) {
   if (f.mistake) parts.push(`Lỗi: ${pick(MISTAKE_FILTERS, f.mistake)}`);
   if (f.checklist) parts.push(`Checklist ${pick(CHECKLIST_FILTERS, f.checklist)}`);
   if (f.variant) parts.push(pick(VARIANT_FILTERS, f.variant));
+  if (f.homeRun) parts.push(pick(HOMERUN_FILTERS, f.homeRun));
   if (f.hasLesson) parts.push(pick(LESSON_FILTERS, f.hasLesson));
   if (f.issue) parts.push(pick(ISSUE_FILTERS, f.issue));
   if (f.completion) parts.push(`Tiến độ ${pick(COMPLETION_FILTERS, f.completion)}`);

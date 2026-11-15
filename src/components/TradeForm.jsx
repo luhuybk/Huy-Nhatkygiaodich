@@ -1226,6 +1226,17 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
             </strong>
           </div>
         ) : null}
+        {/* Home-run: lệnh chạy mạnh — tick để sau lọc riêng và in "Sổ home-run" (Nhật ký → In) */}
+        <div className={`variant-row homerun-row ${t.homeRun ? "on" : ""}`}>
+          <label className="variant-check">
+            <input type="checkbox" checked={!!t.homeRun} onChange={(e) => set("homeRun")(e.target.checked)} />
+            🚀 Lệnh <b>home-run</b> (chạy mạnh)
+          </label>
+          {t.homeRun ? (
+            <input className="input" value={t.homeRunNote || ""} onChange={(e) => set("homeRunNote")(e.target.value)}
+              placeholder="Vì sao chạy được xa? Điểm gì đặc biệt lúc vào lệnh (tùy chọn)" />
+          ) : null}
+        </div>
         <Field label="Link / hình ảnh lúc thoát lệnh" incomplete={missing("exitVisual")}>
           <ImageOrLink link={t.exitLink} image={t.exitImage} onLinkChange={set("exitLink")} onImageChange={set("exitImage")} label="exit" />
         </Field>

@@ -43,6 +43,8 @@ export function emptyTrade() {
     setup: "", setupBonus: "", setupNote: "", entryReason: "",
     // Lệnh vào theo một biến thể lạ của setup — đánh dấu để sau lọc riêng ra xem lại.
     setupVariant: false, setupVariantNote: "", ratingKnowledge: 0, structureScore: "",
+    // Lệnh home-run: lệnh chạy mạnh, đáng giữ lại để in ra xem chung (Sổ home-run ở trang In).
+    homeRun: false, homeRunNote: "",
     partialExits: [],
     exitDate: "", exitTime: "", exitLink: "", exitImage: "", profit: "", fees: "",
     entrySkill: "", inTradeSkill: "", exitSkill: "", ratingSkill: 0, skillNote: "",
@@ -535,14 +537,14 @@ export const SKIP_MAX_IMAGES = 4;
 export function emptyMissed() {
   return {
     id: null, symbol: "", missDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
-    watch: false, watchDone: false, reviewDate: "", reviewDirection: "", reviewNote: "",
+    watch: false, watchDone: false, reviewDate: "", reviewDirection: "", reviewNote: "", homeRun: false,
   };
 }
 
 export function emptySkipped() {
   return {
     id: null, symbol: "", skipDate: "", timeframe: "", setup: "", link: "", image: "", images: [{ link: "", image: "" }], reason: "", note: "",
-    watch: false, watchDone: false, reviewDate: "", reviewDirection: "", reviewNote: "",
+    watch: false, watchDone: false, reviewDate: "", reviewDirection: "", reviewNote: "", homeRun: false,
   };
 }
 
@@ -3537,6 +3539,7 @@ const CSV_COLUMNS = [
   ["Đánh giá", (t) => (GRADE_OPTIONS.find((g) => g.id === t.tradeGrade) || {}).label || ""],
   ["Tiến độ %", (t) => tradeCompletion(t).percent],
   ["Biến thể setup", (t) => (t.setupVariant ? t.setupVariantNote || "Có" : "")],
+  ["Home-run", (t) => (t.homeRun ? t.homeRunNote || "Có" : "")],
   ["Có bài học", (t) => (t.hasLesson ? "Có" : "")],
   ["Bài học", (t) => t.lessonNote],
   ["Lý do vào lệnh", (t) => t.entryReason],
@@ -3793,6 +3796,8 @@ export function applyFilters(trades, filters, resources) {
       if (filters.issue === "any" && !all) return false;
       if (filters.issue === "done" && !(all && !open)) return false;
     }
+    if (filters.homeRun === "yes" && !t.homeRun) return false;
+    if (filters.homeRun === "no" && t.homeRun) return false;
     if (filters.variant === "yes" && !t.setupVariant) return false;
     if (filters.variant === "no" && t.setupVariant) return false;
     if (filters.hasLesson === "yes" && !t.hasLesson) return false;
@@ -4040,6 +4045,7 @@ export function applyMissSkipFilters(items, filters, dateField) {
     if (filters.timeframe && n.timeframe !== filters.timeframe) return false;
     if (filters.setup && n.setup !== filters.setup) return false;
     if (filters.reason && n.reason !== filters.reason) return false;
+    if (filters.homeRun && !n.homeRun) return false;
     if (filters.watch) {
       const st = watchState(n);
       if (filters.watch === "any" ? st === "none" : st !== filters.watch) return false;

@@ -35,6 +35,7 @@ function Sheet({ item, kind, shot, shotCount, index, total, onImage }) {
           <span className="print-symbol">{item.symbol || "—"}</span>
           <span className="print-dir is-sell">{meta.badge}</span>
           {shotCount > 1 ? <span className="print-kind">ẢNH {shot + 1}/{shotCount}</span> : null}
+          {item.homeRun ? <span className="print-pin">🚀 home-run</span> : null}
           {item.watch ? <span className="print-pin">{item.watchDone ? "👁 đã theo dõi" : "👁 cần theo dõi"}</span> : null}
           <span className="print-count">Setup {index + 1}/{total}</span>
         </div>

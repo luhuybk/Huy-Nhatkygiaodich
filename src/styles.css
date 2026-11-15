@@ -2786,3 +2786,11 @@ button.nt-check:hover { filter: brightness(1.25); }
 .block-fold-btn svg { color: var(--text-dim); }
 .block-fold-btn:hover, .block-fold-btn:hover svg { color: var(--accent); }
 .block-fold-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+/* Home-run: lệnh / setup chạy mạnh */
+.homerun-row.on .variant-check, .homerun-check.on { color: var(--text); border-style: solid; border-color: rgba(234, 140, 30, 0.7); background: rgba(234, 140, 30, 0.10); }
+.homerun-check { margin: 4px 8px 8px 0; }
+.homerun-tag { margin-left: 5px; font-size: 12px; }
+.homerun-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  color: #b45309; background: rgba(234, 140, 30, 0.14); border: 1px solid rgba(234, 140, 30, 0.45); }
+.watch-quick + .watch-quick { margin-left: 8px; }

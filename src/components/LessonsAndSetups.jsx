@@ -19,16 +19,23 @@ export function MissSkipFilterPanel({ filters, setFilters, resources, reasonOpti
   // bao nhiêu việc chưa xem, nó phải đứng yên khi bạn nghịch các bộ lọc khác.
   const pending = countPendingWatch(items);
   const onlyPending = filters.watch === "pending";
+  const homeRuns = (items || []).filter((n) => n && n.homeRun).length;
   return (
     <FilterShell filters={filters} onClear={clear}
-      before={showWatch ? (
+      before={showWatch ? (<>
         <button type="button" className={`watch-quick ${onlyPending ? "watch-quick-on" : ""} ${pending ? "" : "watch-quick-empty"}`}
           title="Lọc nhanh những cái bạn đã đánh dấu theo dõi mà chưa review — dành cho buổi xem lại cuối tuần"
           onClick={() => setFilters((p) => ({ ...p, watch: onlyPending ? "" : "pending" }))}>
           <Eye size={14} /> Cần theo dõi
           <span className="watch-quick-count">{pending}</span>
         </button>
-      ) : null}
+        <button type="button" className={`watch-quick ${filters.homeRun ? "watch-quick-on" : ""} ${homeRuns ? "" : "watch-quick-empty"}`}
+          title="Chỉ hiện các setup đã đánh dấu home-run (chạy mạnh) — bấm In / PDF để in riêng chúng"
+          onClick={() => setFilters((p) => ({ ...p, homeRun: p.homeRun ? "" : "yes" }))}>
+          🚀 Home-run
+          <span className="watch-quick-count">{homeRuns}</span>
+        </button>
+      </>) : null}
       search={<input className="input filter-q" placeholder="Tìm theo symbol..." value={filters.q || ""} onChange={(e) => set("q")(e.target.value)} />}>
       <ResourceSelect value={filters.timeframe || ""} onChange={set("timeframe")} options={resources.timeframes} placeholder="Khung thời gian" />
       <ResourceSelect value={filters.setup || ""} onChange={set("setup")} options={resources.setups} groups={resources.setupGroups} placeholder="Setup" />
@@ -129,8 +136,9 @@ function MissSkipCards({ groups, dateField, mode, onView, onEdit, onRemove }) {
                     </span>
                   </div>
                   {n.setup ? <span className="ms-card-setup">{n.setup}</span> : null}
-                  {n.watch || dir ? (
+                  {n.watch || dir || n.homeRun ? (
                     <div className="ms-card-flags">
+                      {n.homeRun ? <span className="homerun-badge">🚀 Home-run</span> : null}
                       {n.watch ? (
                         <span className={`watch-badge ${n.watchDone ? "watch-badge-done" : ""}`}>
                           <Eye size={12} /> {n.watchDone ? "Đã theo dõi" : "Cần theo dõi"}
@@ -180,6 +188,7 @@ function MissSkipDetail({ item: n, dateField, kindLabel, onEdit, onRemove, onClo
         <span className="note-type">{kindLabel}</span>
         {n.setup ? <span className="ms-card-setup">{n.setup}</span> : null}
         {n.reason ? <span className="note-type">Lý do: {n.reason}</span> : null}
+        {n.homeRun ? <span className="homerun-badge">🚀 Home-run</span> : null}
         {n.watch ? (
           <span className={`watch-badge ${n.watchDone ? "watch-badge-done" : ""}`}>
             <Eye size={12} /> {n.watchDone ? "Đã theo dõi" : "Cần theo dõi"}
@@ -285,6 +294,10 @@ export function MissedSetupsSection({ items, resources, onChange }) {
           <Field label="Bonus — ghi chú thêm">
             <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
           </Field>
+          <label className={`variant-check homerun-check ${form.homeRun ? "on" : ""}`}>
+            <input type="checkbox" checked={!!form.homeRun} onChange={(e) => setF("homeRun")(e.target.checked)} />
+            🚀 Setup <b>home-run</b> — giá chạy rất mạnh sau đó
+          </label>
           <button
             type="button"
             className={`lesson-toggle-btn ${form.watch ? "lesson-toggle-active lesson-toggle-glow" : ""}`}
@@ -408,6 +421,10 @@ export function SkippedSetupsSection({ items, resources, onChange }) {
           <Field label="Ghi chú thêm">
             <textarea className="input textarea" value={form.note} onChange={(e) => setF("note")(e.target.value)} placeholder="Điền tay nội dung khác (tùy chọn)..." />
           </Field>
+          <label className={`variant-check homerun-check ${form.homeRun ? "on" : ""}`}>
+            <input type="checkbox" checked={!!form.homeRun} onChange={(e) => setF("homeRun")(e.target.checked)} />
+            🚀 Setup <b>home-run</b> — giá chạy rất mạnh sau đó
+          </label>
           <button
             type="button"
             className={`lesson-toggle-btn ${form.watch ? "lesson-toggle-active lesson-toggle-glow" : ""}`}

@@ -65,6 +65,18 @@ export function hasAnyError(t) {
   return !!(t && (t.hasMistake || (t.setupErrors || []).length));
 }
 
+// Sổ home-run: lệnh đã tick 🚀 (chạy mạnh) — gom lại để lật xem chúng có điểm gì chung lúc vào lệnh.
+export function homeRunTradesToPrint(trades, from, to, all = false) {
+  return (trades || [])
+    .filter((t) => {
+      if (!t || !t.homeRun) return false;
+      if (all) return true;
+      const d = dateKey(t);
+      return d && d >= from && d <= to;
+    })
+    .sort((a, b) => `${dateKey(a)} ${a.exitTime || a.entryTime || ""}`.localeCompare(`${dateKey(b)} ${b.exitTime || b.entryTime || ""}`));
+}
+
 export function errorTradesToPrint(trades, from, to, all = false) {
   return (trades || [])
     .filter((t) => {

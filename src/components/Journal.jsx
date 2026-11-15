@@ -11,7 +11,7 @@ import { DnseImport } from "./DnseImport.jsx";
 import { FilterCompare } from "./FilterCompare.jsx";
 import { assetGroupInfo, assetGroupOf, assetGroupOptions } from "../lib/assetGroups.js";
 import { GRADE_OPTIONS, RESULT_FILTERS } from "../lib/constants.js";
-import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, VARIANT_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
+import { CHECKLIST_FILTERS, COMPLETION_FILTERS, describeFilters, ERROR_FILTERS, GRADE_FILTERS, ISSUE_FILTERS, HOMERUN_FILTERS, LESSON_FILTERS, MISTAKE_FILTERS, VARIANT_FILTERS, REVIEW_FILTERS, SCORE_FILTERS, SKILL_FILTERS } from "../lib/filterLabels.js";
 import { applyFilters, accountOptions, awaitingJournal, avgPillarScore, brokerPending, openTradeIssues, tradeIssues, issueStatusLabel, cleanFilters, sortedByOrder, countActiveFilters, filterFingerprint, fmtR, saveFilterPreset, tradeSetSummary, computeResult, computeRiskAlerts, dateKey, reviewState, fmt, fmtHold, fmtMoney, heatColor, holdHours, missingCompletionFields, normalizeSort, partialExitR, partialExitShareR, partialExitsOf, partialExitStats, sortTrades, tradeCompletion, skillLabel, tradeCurrency, tradeErrorState, tradeImageShots, tradeProfitUSD, tradesToCsv, yearKey } from "../lib/helpers.js";
 
 // Bốn khoảng RR hay phải soi lại: thua quá mức đã định, thua trong mức, cắt non, và lệnh ăn đậm.
@@ -194,6 +194,10 @@ export function JournalFilters({ trades, resources, setupErrors, skills, filters
           <option value="">Vấn đề</option>
           {ISSUE_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
+        <select className="input" value={filters.homeRun || ""} onChange={(e) => set("homeRun")(e.target.value)}>
+          <option value="">Home-run</option>
+          {HOMERUN_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
         <select className="input" value={filters.variant || ""} onChange={(e) => set("variant")(e.target.value)}>
           <option value="">Biến thể setup</option>
           {VARIANT_FILTERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -306,6 +310,7 @@ export function TradeDetailModal({ trade, resources, journeyLog, onOpenLog, setu
               <DetailRow label="Giờ entry" value={t.entryTime} />
               <DetailRow label="Tài khoản" value={t.account ? <AccountTag name={t.account} accounts={resources && resources.accounts} /> : ""} />
               <DetailRow label="Symbol" value={t.symbol} />
+              {t.homeRun ? <DetailRow prose label="🚀 Home-run" value={t.homeRunNote || "Có — chưa ghi vì sao chạy mạnh"} /> : null}
               {t.ticket ? <DetailRow label="Ticket MT5" value={<span className="mono">#{t.ticket}</span>} /> : null}
               <DetailRow label="Hướng lệnh" value={t.direction === "buy" ? "Buy" : "Sell"} />
               <DetailRow label="Khung thời gian" value={t.timeframe} />
@@ -711,7 +716,7 @@ export function JournalTable({ trades, resources, onEdit, onEditForm, onDelete, 
             const cells = {
               entryDate: td(C.entryDate, t.entryDate || EMPTY, { className: "mono" }),
               account: td(C.account, t.account ? <AccountTag name={t.account} accounts={res.accounts} /> : EMPTY),
-              symbol: td(C.symbol, t.symbol, { style: { fontWeight: 600 } }),
+              symbol: td(C.symbol, <>{t.symbol}{t.homeRun ? <span className="homerun-tag" title={t.homeRunNote || "Lệnh home-run"}>🚀</span> : null}</>, { style: { fontWeight: 600 } }),
               asset: td(C.asset, (() => {
                 const g = assetGroupInfo(assetGroupOf(t, res));
                 return <span className="asset-tag" style={{ "--ag": g.color }}>{g.label}</span>;

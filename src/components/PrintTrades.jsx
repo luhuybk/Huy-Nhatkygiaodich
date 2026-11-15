@@ -5,7 +5,7 @@ import { accountRTotals, avgPillarScore, closedOfUSD, computeResult, fmtHold, fm
 import { GRADE_OPTIONS } from "../lib/constants.js";
 import { marketRegimesOf, regimeGroupsOf, riskBandText, riskFit, stateName, stateRiskBand, tradeRegime, tradeState } from "../lib/marketRegime.js";
 import { fxDetailText } from "./FxStrength.jsx";
-import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
+import { errorFrequency, errorTradesToPrint, fmtDateVN, hasAnyError, homeRunTradesToPrint, printableImage, reviewTradesToPrint, setupErrorNames, tradesToPrint, weekdayVN } from "../lib/printTrades.js";
 import { entriesInRange, logRangeLabel, moodMeta, normalizeJourneyLog } from "../lib/journeyLog.js";
 import { ASSET_GROUPS, assetGroupOf } from "../lib/assetGroups.js";
 import { NoteText } from "./ui.jsx";
@@ -76,6 +76,7 @@ function Sheet({ trade, kind, shot, index, total, resources, onImage, book, erro
           <span className="print-kind">{mis ? `ẢNH LỖI ${shot + 1}/${mistakeImages(trade).length}` : entry ? "VÀO LỆNH" : "THOÁT LỆNH"}</span>
           {trade.needsReview && book !== "review" ? <span className="print-pin">📌 cần nhìn lại</span> : null}
           {hasAnyError(trade) && book !== "errors" ? <span className="print-pin">⚠ có lỗi</span> : null}
+          {trade.homeRun && book !== "homerun" ? <span className="print-pin">🚀 home-run</span> : null}
           <span className="print-count">Lệnh {index + 1}/{total}</span>
         </div>
         <div className="print-head-meta">
@@ -101,6 +102,9 @@ function Sheet({ trade, kind, shot, index, total, resources, onImage, book, erro
       </div>
       {book === "review" && !mis ? <ReviewStrip trade={trade} kind={kind} /> : null}
       {book === "errors" && !mis ? <ErrorStrip trade={trade} kind={kind} errors={errors} /> : null}
+      {book === "homerun" && !mis ? (
+        <div className="print-review"><b>🚀 Vì sao chạy mạnh:</b> {String(trade.homeRunNote || "").trim() || <i>chưa ghi — viết tay vào đây.</i>}</div>
+      ) : null}
     </section>
   );
 }
@@ -179,6 +183,7 @@ function DetailSheet({ trade: t, index, total, resources, book, errors, skills }
           <span className="print-kind">CHI TIẾT LỆNH</span>
           {t.needsReview && book !== "review" ? <span className="print-pin">📌 cần nhìn lại</span> : null}
           {hasAnyError(t) && book !== "errors" ? <span className="print-pin">⚠ có lỗi</span> : null}
+          {t.homeRun && book !== "homerun" ? <span className="print-pin">🚀 home-run</span> : null}
           <span className="print-count">Lệnh {index + 1}/{total}</span>
         </div>
       </header>
@@ -337,6 +342,29 @@ function ErrorSummary({ list, errors }) {
 // "Hàng hóa" → "_Hang-hoa" cho tên file PDF.
 const assetFileTag = (label) => (label ? `_${label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : "");
 
+// Trang đầu Sổ home-run: các lệnh này đóng góp bao nhiêu R, và chúng hay rơi vào setup / khung / mã nào
+function HomeRunSummary({ list }) {
+  const rs = list.map((t) => computeResult(t).rr).filter((v) => v !== null && Number.isFinite(v));
+  const sum = rs.reduce((a, b) => a + b, 0);
+  const top = (key) => {
+    const m = new Map();
+    list.forEach((t) => { const k = t[key] || "—"; m.set(k, (m.get(k) || 0) + 1); });
+    return [...m].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${k} (${n})`).join(" · ");
+  };
+  return (
+    <>
+      <div className="print-cover-kpis">
+        <div><span>Lệnh home-run</span><b>{list.length}</b></div>
+        <div><span>Tổng R</span><b>{rs.length ? fmtR(sum) : "—"}</b></div>
+        <div><span>R trung bình</span><b>{rs.length ? fmtR(sum / rs.length) : "—"}</b></div>
+        <div><span>R lớn nhất</span><b>{rs.length ? fmtR(Math.max(...rs)) : "—"}</b></div>
+      </div>
+      <p className="print-small"><b>Setup:</b> {top("setup")}</p>
+      <p className="print-small"><b>Khung:</b> {top("timeframe")} · <b>Mã:</b> {top("symbol")}</p>
+    </>
+  );
+}
+
 function Cover({ title, from, to, list, trades, resources, journeyLog, book, allMarked, errors }) {
   const review = book !== "closed";
   const rep = useMemo(() => periodAccountReport(trades, resources, from, to), [trades, resources, from, to]);
@@ -352,7 +380,7 @@ function Cover({ title, from, to, list, trades, resources, journeyLog, book, all
         <div className="print-cover-title">{title}</div>
         <div className="print-cover-range">
           {review && allMarked
-            ? `${book === "errors" ? "Tất cả lệnh có lỗi" : "Tất cả lệnh đã đánh dấu 📌"} · ${list.length} lệnh`
+            ? `${book === "errors" ? "Tất cả lệnh có lỗi" : book === "homerun" ? "Tất cả lệnh home-run 🚀" : "Tất cả lệnh đã đánh dấu 📌"} · ${list.length} lệnh`
             : `${weekdayVN(from)} ${fmtDateVN(from)} → ${weekdayVN(to)} ${fmtDateVN(to)}`}
         </div>
       </header>
@@ -397,12 +425,13 @@ function Cover({ title, from, to, list, trades, resources, journeyLog, book, all
       ) : null}
 
       {book === "errors" ? <ErrorSummary list={list} errors={errors} /> : null}
+      {book === "homerun" ? <HomeRunSummary list={list} /> : null}
 
-      <h3 className="print-cover-h">{book === "review" ? "Các lệnh cần nhìn lại" : book === "errors" ? "Các lệnh có lỗi" : "Các lệnh trong tập này"}</h3>
+      <h3 className="print-cover-h">{book === "review" ? "Các lệnh cần nhìn lại" : book === "errors" ? "Các lệnh có lỗi" : book === "homerun" ? "Các lệnh home-run" : "Các lệnh trong tập này"}</h3>
       {list.length ? (
         <table className="print-table">
           <thead>
-            <tr><th>#</th><th>Mã</th><th>Tài khoản</th><th>Vào</th><th>Đóng</th><th>Setup</th><th>Khung</th><th>RR</th><th>{book === "review" ? "Vì sao cần nhìn lại" : book === "errors" ? "Lỗi" : ""}</th></tr>
+            <tr><th>#</th><th>Mã</th><th>Tài khoản</th><th>Vào</th><th>Đóng</th><th>Setup</th><th>Khung</th><th>RR</th><th>{book === "review" ? "Vì sao cần nhìn lại" : book === "errors" ? "Lỗi" : book === "homerun" ? "Vì sao chạy mạnh" : ""}</th></tr>
           </thead>
           <tbody>
             {list.map((x, i) => (
@@ -418,7 +447,8 @@ function Cover({ title, from, to, list, trades, resources, journeyLog, book, all
                 <td className="print-small">
                   {book === "review" ? x.reviewReason || ""
                     : book === "errors" ? [...setupErrorNames(x, errors), x.hasMistake ? `thực thi${x.mistakeNote ? `: ${String(x.mistakeNote).trim().slice(0, 80)}` : ""}` : ""].filter(Boolean).join(" · ")
-                    : [x.needsReview ? "📌" : "", hasAnyError(x) ? "⚠" : ""].join(" ")}
+                    : book === "homerun" ? x.homeRunNote || ""
+                    : [x.needsReview ? "📌" : "", hasAnyError(x) ? "⚠" : "", x.homeRun ? "🚀" : ""].join(" ")}
                 </td>
               </tr>
             ))}
@@ -442,6 +472,7 @@ export function PrintTrades({ trades, assetLabel, resources, ledger, journeyLog,
   const all = useMemo(() => {
     if (book === "review") return reviewTradesToPrint(trades, from, to, allMarked);
     if (book === "errors") return errorTradesToPrint(trades, from, to, allMarked);
+    if (book === "homerun") return homeRunTradesToPrint(trades, from, to, allMarked);
     return tradesToPrint(trades, from, to);
   }, [book, trades, from, to, allMarked]);
   const [skip, setSkip] = useState(() => new Set());
@@ -468,10 +499,10 @@ export function PrintTrades({ trades, assetLabel, resources, ledger, journeyLog,
   const noun = mode === "month" ? "THÁNG" : "TUẦN";
   // Đang lọc một nhóm tài sản thì bản in phải ghi rõ, để sau này xem lại không tưởng là số cả tài khoản.
   const only = assetLabel ? ` · CHỈ ${assetLabel.toUpperCase()}` : "";
-  const title = (book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : `TỔNG KẾT ${noun}`) + only;
+  const title = (book === "review" ? "SỔ NHÌN LẠI" : book === "errors" ? "SỔ LỖI" : book === "homerun" ? "SỔ HOME-RUN" : `TỔNG KẾT ${noun}`) + only;
   const equityOn = book === "closed" && withEquity;
   const pages = list.reduce((n, t) => n + 2 + (withDetail ? 1 : 0) + mistakeShots(t).length, 0) + (withCover ? 1 : 0) + (equityOn ? 1 : 0);
-  const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
+  const filePrefix = book === "review" ? "So-nhin-lai" : book === "errors" ? "So-loi" : book === "homerun" ? "So-home-run" : mode === "month" ? "Tong-ket-thang" : "Tong-ket-tuan";
   const fileName = `${filePrefix}_${book !== "closed" && allMarked ? "tat-ca" : `${from}_${to}`}${assetFileTag(assetLabel)}.pdf`;
   const download = async () => {
     const nodes = pagesRef.current ? [...pagesRef.current.querySelectorAll(".print-cover, .print-sheet")] : [];
@@ -491,13 +522,14 @@ export function PrintTrades({ trades, assetLabel, resources, ledger, journeyLog,
     <div className="print-root">
       <div className="print-toolbar">
         <div className="print-toolbar-row">
-          <div className="seg" style={{ maxWidth: 480 }}>
+          <div className="seg" style={{ maxWidth: 600 }}>
             <button type="button" className={`seg-btn ${book === "closed" ? "seg-active" : ""}`} onClick={() => setBook("closed")}>Lệnh đóng · {label}</button>
             <button type="button" className={`seg-btn ${book === "review" ? "seg-active" : ""}`} onClick={() => setBook("review")}>📌 Sổ nhìn lại</button>
             <button type="button" className={`seg-btn ${book === "errors" ? "seg-active" : ""}`} onClick={() => setBook("errors")}>⚠ Sổ lỗi</button>
+            <button type="button" className={`seg-btn ${book === "homerun" ? "seg-active" : ""}`} onClick={() => setBook("homerun")}>🚀 Sổ home-run</button>
           </div>
           {book !== "closed" ? (
-            <label className="print-opt"><input type="checkbox" checked={allMarked} onChange={(e) => setAllMarked(e.target.checked)} /> {book === "errors" ? "Mọi lệnh có lỗi" : "Mọi lệnh đã đánh dấu"} (không chỉ {label})</label>
+            <label className="print-opt"><input type="checkbox" checked={allMarked} onChange={(e) => setAllMarked(e.target.checked)} /> {book === "errors" ? "Mọi lệnh có lỗi" : book === "homerun" ? "Mọi lệnh home-run" : "Mọi lệnh đã đánh dấu"} (không chỉ {label})</label>
           ) : null}
           {book === "errors" ? (
             <label className="print-opt"><input type="checkbox" checked={withMistakeShots} onChange={(e) => setWithMistakeShots(e.target.checked)} /> Kèm ảnh lỗi</label>
@@ -564,6 +596,7 @@ export function PrintTrades({ trades, assetLabel, resources, ledger, journeyLog,
           <p className="empty-note" style={{ padding: 24 }}>
             {book === "review" ? `Không có lệnh nào đánh dấu 📌 ${allMarked ? "" : `trong ${label}`}.`
               : book === "errors" ? `Không có lệnh nào có lỗi ${allMarked ? "" : `trong ${label}`}.`
+              : book === "homerun" ? `Không có lệnh home-run 🚀 nào ${allMarked ? "" : `trong ${label}`} — tick ở mục Đóng lệnh của lệnh.`
               : `Không có lệnh nào đóng trong ${label}.`}
           </p>
         )}
