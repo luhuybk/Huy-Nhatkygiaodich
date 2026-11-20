@@ -17,7 +17,7 @@ const GROUPS = [
 ];
 const MODES = [
   { id: "book", label: "Sổ tay gọn", hint: "Nhiều bài một tờ, hai cột — đọc lướt một lượt" },
-  { id: "sheet", label: "Mỗi bài một tờ", hint: "Ảnh to, chừa chỗ ghi tay" },
+  { id: "sheet", label: "Mỗi bài một tờ", hint: "Tờ chữ + chỗ ghi tay, chart in riêng từng tờ cho to" },
 ];
 
 const shotsOf = (n) => lessonAttachments(n).filter((a) => a && (a.image || a.link));
@@ -219,10 +219,12 @@ function Book({ groups, tradeById, thumbs, onImage }) {
   );
 }
 
+// Tờ chữ: nội dung bên trái, nửa phải kẻ dòng để ghi tay. Chart không nhét chung (nhỏ, khó nhìn)
+// mà mỗi ảnh in riêng một tờ, chiếm gần trọn khổ A4 ngang.
 function LessonSheet({ n, no, total, tradeById, firstOnly, onImage }) {
-  const shots = shotsOf(n);
+  const all = shotsOf(n);
+  const shots = firstOnly ? all.slice(0, 1) : all;
   const { title, body } = splitLesson(n);
-  const extra = firstOnly ? [] : shots.slice(1);
   const head = (sub) => (
     <header className="print-head">
       <div className="print-head-main">
@@ -237,19 +239,16 @@ function LessonSheet({ n, no, total, tradeById, firstOnly, onImage }) {
   return (
     <>
       <section className="print-sheet print-detail print-lsn-sheet">
-        {head(shots.length > 1 && !firstOnly ? `ẢNH 1/${shots.length}` : "")}
-        <div className={`print-lsn-sheet-body ${shots.length ? "" : "is-text"}`}>
-          <div className="print-detail-notes">
-            {body ? <div className="print-note-text print-lsn-sheet-text"><NoteText text={body} /></div> : null}
-            <div className="print-handwrite"><span>Lần sau gặp lại tình huống này, mình sẽ…</span></div>
-          </div>
-          {shots.length ? <div className="print-img"><Shot a={shots[0]} imageKey={`${n.id}-0`} onImage={onImage} /></div> : null}
+        {head(shots.length ? `+ ${shots.length} tờ chart` : "")}
+        <div className={`print-lsn-sheet-body ${body ? "" : "is-text"}`}>
+          {body ? <div className="print-note-text print-lsn-sheet-text"><NoteText text={body} /></div> : null}
+          <div className="print-handwrite"><span>Lần sau gặp lại tình huống này, mình sẽ…</span></div>
         </div>
       </section>
-      {extra.map((a, i) => (
-        <section key={i} className="print-sheet">
-          {head(`ẢNH ${i + 2}/${shots.length}`)}
-          <div className="print-img"><Shot a={a} imageKey={`${n.id}-${i + 1}`} onImage={onImage} /></div>
+      {shots.map((a, i) => (
+        <section key={i} className="print-sheet print-lsn-chart">
+          {head(`CHART ${i + 1}/${shots.length}`)}
+          <div className="print-img"><Shot a={a} imageKey={`${n.id}-${i}`} onImage={onImage} /></div>
         </section>
       ))}
     </>
@@ -295,7 +294,7 @@ export function PrintLessons({ items, trades, label, onClose }) {
   const toggle = (id) => setSkip((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
   const dates = list.map((n) => n.date).filter(Boolean).sort();
   const fileName = `So-bai-hoc_${dates.length ? `${dates[0]}_${dates[dates.length - 1]}` : "tat-ca"}.pdf`;
-  const sheetCount = mode === "sheet" ? ordered.reduce((s, n) => s + (firstOnly ? 1 : Math.max(1, shotsOf(n).length)), 0) : 0;
+  const sheetCount = mode === "sheet" ? ordered.reduce((s, n) => s + 1 + (firstOnly ? Math.min(1, shotsOf(n).length) : shotsOf(n).length), 0) : 0;
   const download = async () => {
     const nodes = pagesRef.current ? [...pagesRef.current.querySelectorAll(".print-cover, .print-sheet")] : [];
     if (!nodes.length) return;
@@ -331,7 +330,7 @@ export function PrintLessons({ items, trades, label, onClose }) {
               <input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Kèm ảnh nhỏ
             </label>
           ) : (
-            <label className="print-opt" title="Bài có nhiều ảnh thì chỉ in ảnh đầu tiên — mỗi bài đúng một tờ">
+            <label className="print-opt" title="Bài có nhiều ảnh thì chỉ in chart đầu tiên — mỗi bài tối đa hai tờ">
               <input type="checkbox" checked={firstOnly} onChange={(e) => setFirstOnly(e.target.checked)} /> Chỉ ảnh đầu tiên
             </label>
           )}

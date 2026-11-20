@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Search, Tags, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Link2, List, Pencil, Plus, Printer, Search, Tags, X } from "lucide-react";
 import { ConfirmButton, Field, useStickyTab, NoteText, editOnDouble, useAutoFocus } from "./ui.jsx";
 import { dateKey, emptyLesson, symbolSearchKey, todayStr, uid, weekStart } from "../lib/helpers.js";
 import {
   applyLogFilters, emptyLogEntry, entriesInRange, finalizeLogEntry, firstLine, fmtDayVN, fmtRShortVN, LOG_MOODS, LOG_TAG_COLORS,
   logRange, logRangeLabel, logStats, monthRange, moodMeta, tradesInRange,
 } from "../lib/journeyLog.js";
+
+// Trang in nặng (thư viện PDF) nên chỉ tải khi bấm In.
+const PrintJourneyLog = lazy(() => import("./PrintJourneyLog.jsx").then((m) => ({ default: m.PrintJourneyLog })));
 
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -317,6 +320,7 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
   const [composerOpen, setComposerOpen] = useState(false);
   const [filters, setFilters] = useState({ q: "", tag: "", mood: 0 });
   const [showTags, setShowTags] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState("");
   const boxRef = useRef(null);
@@ -377,7 +381,15 @@ export function JourneyLogSection({ data, onChange, trades, onOpenTrade, lessons
           <button type="button" className={view === "calendar" ? "jl-seg-on" : ""} onClick={() => setView("calendar")}><CalendarDays size={13} /> Lịch tháng</button>
         </div>
         <button type="button" className={`btn btn-ghost jl-tagman-btn ${showTags ? "jl-seg-on" : ""}`} onClick={() => setShowTags(!showTags)}><Tags size={13} /> Tag</button>
+        <button type="button" className="btn btn-ghost" disabled={!filtered.length} onClick={() => setPrinting(true)}
+          title="In / tải PDF log theo bộ lọc đang chọn (chọn tháng ở trang in)"><Printer size={13} /> In / PDF</button>
       </div>
+      {printing ? (
+        <Suspense fallback={null}>
+          <PrintJourneyLog entries={filtered} tags={tags} trades={trades} onClose={() => setPrinting(false)}
+            label={[filters.tag && tagById[filters.tag] ? tagById[filters.tag].name : "", filters.mood ? (LOG_MOODS.find((m) => m.v === filters.mood) || {}).icon : "", filters.q ? `"${filters.q}"` : ""].filter(Boolean).join(" · ")} />
+        </Suspense>
+      ) : null}
       {composerOpen ? <Composer draft={draft} setDraft={setDraft} tags={tags} trades={trades} editing={!!editingId} onSave={save} onCancel={cancel} boxRef={boxRef} /> : null}
       {showTags ? <TagManager tags={tags} entries={entries} onChange={(next) => onChange({ ...data, tags: next })} onClose={() => setShowTags(false)} /> : null}
 
