@@ -1,5 +1,5 @@
-// Xuất các tờ đang hiện ở trang xem trước bản in thành file PDF A4 ngang. Dùng chung cho In lệnh
-// và In setup miss / skip.
+// Xuất các tờ đang hiện ở trang xem trước bản in thành file PDF A4 ngang. Dùng chung cho In lệnh,
+// In setup miss / skip và Sổ bài học.
 // Ảnh trắng 1×1 thay cho ảnh nào không tải được — một ảnh lỗi không được làm hỏng cả file.
 const BLANK_PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
 const PAGE_RATIO = 210 / 297;
@@ -21,8 +21,19 @@ export async function exportPdf(nodes, fileName, onProgress) {
   for (let i = 0; i < nodes.length; i += 1) {
     onProgress(i + 1, nodes.length);
     const node = nodes[i];
+    const ratio = EXPORT_WIDTH / Math.max(1, node.offsetWidth);
+    // Khối đánh dấu data-pdf-keep (VD một bài học trong Sổ bài học) không bị cắt ngang giữa hai
+    // trang: đo vị trí trước khi chụp, lúc cắt tờ thì lùi đường cắt lên ngay trên khối đó.
+    const top0 = node.getBoundingClientRect().top;
+    // data-pdf-keep="with-next": tiêu đề dính với hàng đầu tiên của khối ngay sau nó.
+    const keeps = [...node.querySelectorAll("[data-pdf-keep]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      const next = el.dataset.pdfKeep === "with-next" && el.nextElementSibling;
+      const bottom = next ? (next.firstElementChild || next).getBoundingClientRect().bottom : r.bottom;
+      return [(r.top - top0) * ratio, (Math.max(r.bottom, bottom) - top0) * ratio];
+    });
     const canvas = await toCanvas(node, {
-      pixelRatio: EXPORT_WIDTH / Math.max(1, node.offsetWidth),
+      pixelRatio: ratio,
       backgroundColor: "#ffffff",
       imagePlaceholder: BLANK_PX,
       cacheBust: false,
@@ -33,15 +44,25 @@ export async function exportPdf(nodes, fileName, onProgress) {
     const pageH = Math.round(canvas.width * PAGE_RATIO);
     if (canvas.height <= pageH + 4) { addPage(canvas); continue; }
     // Dải cuối mỏng hơn ~2% tờ chỉ là lề thừa, cắt ra thành một trang gần trắng thì bỏ.
-    for (let y = 0; y < canvas.height && canvas.height - y > pageH * 0.02; y += pageH) {
+    for (let y = 0; y < canvas.height && canvas.height - y > pageH * 0.02;) {
+      let end = Math.min(canvas.height, y + pageH);
+      // Chỉ lùi khi khối bắt đầu sau 30% tờ — khối cao hơn cả tờ thì đành cắt như thường.
+      for (let moved = true; moved && end < canvas.height;) {
+        moved = false;
+        for (const [a, b] of keeps) {
+          const cut = Math.floor(a - 6 * ratio);
+          if (a < end && b > end && cut > y + pageH * 0.3 && cut < end) { end = cut; moved = true; }
+        }
+      }
       const slice = document.createElement("canvas");
       slice.width = canvas.width;
-      slice.height = Math.min(pageH, canvas.height - y);
+      slice.height = end - y;
       const ctx = slice.getContext("2d");
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, slice.width, slice.height);
       ctx.drawImage(canvas, 0, -y);
       addPage(slice);
+      y = end;
     }
   }
   const blob = pdf.output("blob");

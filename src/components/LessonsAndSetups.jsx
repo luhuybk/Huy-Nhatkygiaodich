@@ -9,6 +9,7 @@ const ProcessImprovementSection = lazy(() => import("./ProcessImprovement.jsx").
 const SkillsPage = lazy(() => import("./Skills.jsx").then((m) => ({ default: m.SkillsPage })));
 const TradingPlanSection = lazy(() => import("./TradingPlans.jsx").then((m) => ({ default: m.TradingPlanSection })));
 const PrintMissSkip = lazy(() => import("./PrintMissSkip.jsx").then((m) => ({ default: m.PrintMissSkip })));
+const PrintLessons = lazy(() => import("./PrintLessons.jsx").then((m) => ({ default: m.PrintLessons })));
 
 // `showWatch` chỉ bật ở Bị miss / Bị skip. Biến thể không có khái niệm theo dõi, hiện ô lọc
 // đó ở đấy chỉ tổ khiến người dùng tưởng mình quên đánh dấu.
@@ -767,8 +768,17 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
     setForm(emptyLesson());
   };
   const remove = (id) => { onChange(items.filter((n) => n.id !== id)); if (form.id === id) closeModal(); };
-  const groups = useMemo(() => groupByLevel(applyLessonFilters(items, filters)), [items, filters]);
-  const shown = groups.reduce((n, g) => n + g.list.length, 0);
+  const filtered = useMemo(() => applyLessonFilters(items, filters), [items, filters]);
+  const groups = useMemo(() => groupByLevel(filtered), [filtered]);
+  const shown = filtered.length;
+  const [printing, setPrinting] = useState(false);
+  // Nhãn đầu sổ in: nói rõ đang in phần nào (một danh mục, một cấp, một khoảng ngày).
+  const printLabel = [
+    filters.category || "",
+    filters.level === "none" ? "Chưa phân cấp" : filters.level ? `Cấp ${filters.level}` : "",
+    filters.from || filters.to ? `${filters.from || "…"} → ${filters.to || "…"}` : "",
+    filters.q ? `"${filters.q}"` : "",
+  ].filter(Boolean).join(" · ");
   const counts = useMemo(() => countByLevel(items), [items]);
   // Phân cấp ngay trên thẻ: cả đống bài học cũ chưa đánh dấu, mở form từng cái thì không ai làm.
   const setLevel = (id, level) => onChange(items.map((n) => (n.id === id ? { ...n, level } : n)));
@@ -777,8 +787,17 @@ export function LessonsSection({ items, resources, trades, onChange, onOpenTrade
     <div>
       <div className="section-head">
         <p className="field-hint" style={{ margin: 0 }}>Ghi lại từng bài học rút ra từ giao dịch, phân loại theo danh mục (quản lý ở Tài nguyên → Danh mục bài học), kèm ảnh/link TradingView minh họa — để xem lại những điều cần chú ý.</p>
-        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm bài học</button>
+        <span className="section-head-actions">
+          <button type="button" className="btn btn-ghost" disabled={!shown} onClick={() => setPrinting(true)}
+            title="In / tải PDF những bài học đang hiện (theo bộ lọc)"><Printer size={15} /> In / PDF</button>
+          <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={15} /> Thêm bài học</button>
+        </span>
       </div>
+      {printing ? (
+        <Suspense fallback={null}>
+          <PrintLessons items={filtered} trades={trades} label={printLabel} onClose={() => setPrinting(false)} />
+        </Suspense>
+      ) : null}
       {modalOpen ? (
         <FormModal title={form.id ? "Sửa bài học" : "Thêm bài học"} onClose={closeModal}
           linkOwner={[`lesson:${form.id || "new"}`, form.tradeId ? `trade:${form.tradeId}` : ""]}>
