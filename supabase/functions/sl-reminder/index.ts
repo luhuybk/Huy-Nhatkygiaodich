@@ -466,14 +466,17 @@ function capLadder(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[
         return { date: String(t.exitDate || t.entryDate || ""), k: 1, v: usd, c: Number(t.createdAt) || 0 };
       }),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k || ((a as { c?: number }).c || 0) - ((b as { c?: number }).c || 0));
-  let equity = Number(l.capital), base = equity, floor = equity;
+  // Nạp chỉ cộng vào vốn — vốn tính rủi ro nằm trên các mốc vốn gốc × 1,2ⁿ, chỉ đổi khi đổi bậc.
+  let equity = Number(l.capital), base = equity;
+  const floor = equity;
   const upCheck = () => { while (equity >= base * up - 0.005) base = Math.round(base * up * 100) / 100; };
   const downCheck = () => { while (base > floor + 0.005 && equity < (base / up) * cut) base = Math.max(floor, Math.round((base / up) * 100) / 100); };
   let week = capWeekStart(from);
   for (const e of events) {
     const wk = capWeekStart(e.date);
     if (wk > week) { upCheck(); week = wk; }
-    if (e.k === 0) { equity += e.v; base = Math.max(0, base + e.v); floor = Math.max(0, floor + e.v); } else { equity += e.v; downCheck(); }
+    equity += e.v;
+    downCheck();
   }
   if (capWeekStart(today) > week) upCheck();
   return { base, equity, next: Math.round(base * up * 100) / 100, rate };

@@ -538,8 +538,10 @@ export function marketDrawdown(plan, m, trades, resources) {
 //   • Lên bậc: chỉ xét lúc CHỐT TUẦN — vốn cuối tuần ≥ vốn tính rủi ro × (1 + bước) thì từ thứ 2
 //     tuần sau vốn tính rủi ro nhân thêm một bước (lãi đột biến thì lên nhiều bậc một lúc).
 //   • Hạ bậc: xét NGAY sau mỗi lệnh — vốn thủng mốc của bậc dưới thêm `downPct`% thì về bậc dưới.
-//     Không hạ dưới sàn (vốn gốc + tiền nạp): lỗ sâu hơn đã có mức cầm chừng / luật sụt vốn lo.
-//   • Nạp thêm: cộng vào vốn, vào vốn tính rủi ro và vào sàn cùng lúc.
+//     Không hạ dưới vốn gốc: lỗ sâu hơn đã có mức cầm chừng / luật sụt vốn lo.
+//   • Nạp thêm: CHỈ cộng vào vốn thật. Vốn tính rủi ro vẫn nằm trên các mốc cố định vốn gốc × 1,2ⁿ,
+//     chốt tuần vượt mốc mới đổi (nạp lớn thì lên vài bậc một lúc) — tiền rủi ro chỉ đổi khi đổi bậc.
+//     Rút ra làm thủng mốc thì hạ bậc ngay như lỗ.
 // Không lưu trạng thái: cùng dữ liệu lệnh thì luôn ra cùng một bậc, máy nào mở cũng như nhau.
 export function ladderState(plan, m, trades, resources, today = todayStr()) {
   if (!ladderOn(m)) return null;
@@ -555,7 +557,7 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
   ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k);
   let equity = lad.capital;
   let base = lad.capital;
-  let floor = lad.capital;
+  const floor = lad.capital;
   let peakBase = base;
   const history = [];
   const upCheck = (date) => {
@@ -578,8 +580,9 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
     const wk = weekStart(e.date);
     if (wk > week) { upCheck(wk); week = wk; }
     if (e.k === 0) {
-      history.push({ date: e.date, kind: "deposit", from: base, to: Math.max(0, base + e.v), equity: equity + e.v, amount: e.v });
-      equity += e.v; base = Math.max(0, base + e.v); floor = Math.max(0, floor + e.v);
+      history.push({ date: e.date, kind: "deposit", from: base, to: base, equity: equity + e.v, amount: e.v });
+      equity += e.v;
+      downCheck(e.date);
     } else {
       equity += e.v;
       downCheck(e.date);
@@ -603,7 +606,6 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
     tradesPerWeek: days >= 7 ? withR.length / (days / 7) : null,
     rPerMonth: days >= 28 && withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / (days / 30.44) : null,
     base, equity, floor, next, downAt, history, tradeCount: closed.length, rate,
-    // Bậc thứ mấy tính từ sàn — sàn đổi khi nạp thêm nên đây chỉ là con số để nhìn.
     level: base > 0 && floor > 0 ? Math.max(0, Math.round(Math.log(base / floor) / Math.log(up))) : 0,
     // Vốn đã đủ mốc nhưng tuần chưa chốt: sẽ lên bậc từ thứ 2 tuần sau.
     pendingUp: equity >= next - 0.005,
@@ -629,8 +631,8 @@ export function syncLadderBases(plan, trades, resources, today = todayStr()) {
 
 // ——— Lộ trình vốn ———
 // Mô phỏng theo tháng từ tháng sau tháng `fromYm`: đầu tháng nạp (nếu kế hoạch có), trong tháng ra
-// đều `monthlyR` R (R tính trên vốn tính rủi ro hiện tại × `pct`%), cuối tháng xét lên bậc. Nạp cộng
-// vào cả vốn lẫn vốn tính rủi ro — đúng luật bậc thật. Dừng khi 1 lệnh đạt `targetRisk`.
+// đều `monthlyR` R (R tính trên vốn tính rủi ro hiện tại × `pct`%), cuối tháng xét lên bậc. Nạp chỉ
+// cộng vào vốn — đúng luật bậc thật. Dừng khi 1 lệnh đạt `targetRisk`.
 export const ymAdd = (ym, n) => {
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(y, m - 1 + n, 1);
@@ -656,7 +658,7 @@ export function simulateRoadmap({ equity, base, stepPct, pct, monthlyR, plan, ta
   for (let i = 1; i <= maxMonths; i++) {
     const ym = ymAdd(fromYm, i);
     const dep = depositIn(plan, ym);
-    if (dep) { E += dep; B += dep; events.push({ i, ym, kind: "deposit", amount: dep, base: B, equity: E }); }
+    if (dep) { E += dep; events.push({ i, ym, kind: "deposit", amount: dep, base: B, equity: E }); }
     E += num(monthlyR, 0) * p * B;
     while (E >= B * up - 0.005) { B *= up; events.push({ i, ym, kind: "step", base: B, equity: E }); }
     path.push({ i, ym, equity: E, base: B });
