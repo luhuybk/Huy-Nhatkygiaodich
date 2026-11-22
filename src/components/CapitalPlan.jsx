@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, CornerDownRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, TrendingUp, Wallet, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput, useAutoFocus, useStickyTab } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
-import { emptyCapitalPickReminder, fmtMoney, todayStr, uid, WEEKDAY_CODES } from "../lib/helpers.js";
+import { emptyCapitalPickReminder, fmtMoney, formatVN, todayStr, uid, WEEKDAY_CODES } from "../lib/helpers.js";
 import { ASSET_GROUPS } from "../lib/assetGroups.js";
 import {
   capitalScale, claimedAssetGroups, emptyCapitalMarket, marketDisplayOrder, marketFamilies, splitMarketByAssets, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
@@ -23,6 +23,47 @@ const weekLabel = (start) => {
 };
 const groupLabels = (keys) => ASSET_GROUPS.filter((g) => keys.includes(g.key)).map((g) => g.label).join(", ");
 const numOr = (v, d) => { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : d; };
+
+// Đọc số tiền gõ tay theo thói quen Việt: dấu chấm / phẩy ngay trước đúng 3 chữ số là ngăn hàng
+// nghìn ("2.400", "12,500", "1.250.000" → 2400, 12500, 1250000); trước 1–2 chữ số là phần lẻ
+// ("2,5", "1.250,75"). Ô tiền chung (MoneyInput) coi "2.400" là 2,4 — nạp 2.400$ thành 2,4$.
+function parseAmount(text) {
+  let t = String(text ?? "").trim().replace(/[\s$₫]/g, "");
+  if (!t) return null;
+  const neg = t.startsWith("-");
+  if (neg) t = t.slice(1);
+  if (!/^[\d.,]+$/.test(t)) return null;
+  const m = t.match(/[.,](\d+)$/);
+  if (m) {
+    if (m[1].length === 3) t = t.replace(/[.,]/g, "");
+    else t = `${t.slice(0, t.length - m[0].length).replace(/[.,]/g, "")}.${m[1]}`;
+  }
+  const n = Number(t);
+  return Number.isFinite(n) ? (neg ? -n : n) : null;
+}
+
+// Ô tiền cho Bậc vốn / Lộ trình: gõ "2.400" ra đúng 2.400; rời ô thì hiện lại kiểu 2.400.
+// `commitOnBlur` = chỉ báo số mới lúc rời ô (ô lưu thẳng lên máy chủ).
+function AmountInput({ value, onChange, placeholder, commitOnBlur, onEnter }) {
+  const [text, setText] = useState(null);
+  const empty = value === "" || value === null || value === undefined;
+  const shown = text !== null ? text : empty ? "" : formatVN(Number(value));
+  return (
+    <input type="text" inputMode="decimal" className="input mono" placeholder={placeholder} value={shown}
+      onFocus={() => setText(empty ? "" : String(value))}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (!commitOnBlur) { const n = parseAmount(e.target.value); onChange(n === null ? "" : n); }
+      }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.currentTarget.blur(); if (onEnter) onEnter(); } }}
+      onBlur={(e) => {
+        const n = parseAmount(e.target.value);
+        setText(null);
+        if (!commitOnBlur) onChange(n === null ? "" : n);
+        else if (n !== null && n !== Number(value)) onChange(n);
+      }} />
+  );
+}
 
 // Ô số chỉ ghi khi rời ô — gõ "50000" không thành 5 lần lưu lên máy chủ.
 function BlurNumber({ value, onCommit, className = "input mono", step = "any", min }) {
@@ -104,7 +145,7 @@ function LadderEditor({ m, setM, startDate }) {
         <>
           <div className="grid-2">
             <Field label="Vốn gốc (USD)" hint="Vốn thật của mảng ở ngày bắt đầu bên cạnh">
-              <MoneyInput value={lad.capital} onChange={(v) => setLad({ capital: v })} />
+              <AmountInput value={lad.capital} onChange={(v) => setLad({ capital: v })} placeholder="12.500" />
             </Field>
             <Field label="Tính từ ngày" hint="Lệnh đóng từ ngày này trở đi mới cộng vào vốn">
               <input type="date" className="input" value={lad.from || ""} onChange={(e) => setLad({ from: e.target.value })} />
@@ -121,7 +162,7 @@ function LadderEditor({ m, setM, startDate }) {
               {deps.map((d) => (
                 <div key={d.id} className="cap-ladder-dep">
                   <input type="date" className="input" value={d.date} onChange={(e) => setDep(d.id, { date: e.target.value })} />
-                  <MoneyInput value={d.amount} onChange={(v) => setDep(d.id, { amount: v })} placeholder="12500" />
+                  <AmountInput value={d.amount} onChange={(v) => setDep(d.id, { amount: v })} placeholder="12.500" />
                   <button type="button" className="row-btn" onClick={() => setLad({ deposits: deps.filter((x) => x.id !== d.id) })} title="Xoá dòng"><X size={13} /></button>
                 </div>
               ))}
@@ -417,13 +458,13 @@ function LadderRoadmap({ market, st, today, onSave }) {
   return (
     <section className="cap-road" id={`roadmap-${market.id}`}>
       <div className="cap-road-in">
-        <label>1 lệnh đạt ($)<BlurNumber value={target} min="0" onCommit={(n) => save({ targetRisk: Math.max(0, n) })} /></label>
+        <label>1 lệnh đạt ($)<AmountInput value={target} commitOnBlur onChange={(n) => save({ targetRisk: Math.max(0, n) })} /></label>
         <label>Ở mức
           <select className="input" value={pct} onChange={(e) => save({ pct: Number(e.target.value) })}>
             {[...new Set([...tiers, pct])].sort((a, b) => a - b).map((x) => <option key={x} value={x}>{fmtPctVN(x)}</option>)}
           </select>
         </label>
-        <label>Kế hoạch nạp ($)<BlurNumber value={rp.depAmount || 0} min="0" onCommit={(n) => save({ depAmount: Math.max(0, n) })} /></label>
+        <label>Kế hoạch nạp ($)<AmountInput value={rp.depAmount || 0} commitOnBlur onChange={(n) => save({ depAmount: Math.max(0, n) })} /></label>
         <label>Nạp
           <span className="cap-road-pair">
             <select className="input" value={rp.depEvery || "year"} onChange={(e) => save({ depEvery: e.target.value })}>
@@ -587,14 +628,14 @@ function RoadmapTab({ plan, ladders, accounts, today, focusId, setFocusId, onSav
   );
 }
 
-const LADDER_KIND = { up: "▲ Lên bậc", down: "▼ Hạ bậc", deposit: "＋ Nạp" };
+const LADDER_KIND = { up: "▲ Lên bậc", down: "▼ Hạ bậc", deposit: "＋ Nạp", withdraw: "− Rút" };
 
 // Nạp / rút ngay trên thẻ — khỏi mở ô Sửa mảng. Ghi vào danh sách nạp của bậc vốn.
 function QuickDeposit({ market, today, onSave, onDone }) {
   const [kind, setKind] = useState("in");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today);
-  const n = numOr(amount, 0);
+  const n = Number(amount) || 0;
   const ok = n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date || "");
   const submit = () => {
     if (!ok) return;
@@ -609,9 +650,9 @@ function QuickDeposit({ market, today, onSave, onDone }) {
         <button type="button" className={kind === "in" ? "jl-seg-on" : ""} onClick={() => setKind("in")}>Nạp</button>
         <button type="button" className={kind === "out" ? "jl-seg-on" : ""} onClick={() => setKind("out")}>Rút</button>
       </span>
-      <MoneyInput value={amount} onChange={setAmount} placeholder="Số tiền ($)" />
+      <AmountInput value={amount} onChange={setAmount} placeholder="Số tiền, VD 2.400" onEnter={submit} />
       <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
-      <button type="button" className="btn btn-primary" disabled={!ok} onClick={submit}><Check size={13} /> Ghi</button>
+      <button type="button" className="btn btn-primary" disabled={!ok} onClick={submit}><Check size={13} /> {ok ? `Ghi ${kind === "in" ? "+" : "−"}${fmtUsd(n)}` : "Ghi"}</button>
     </div>
   );
 }
@@ -664,9 +705,12 @@ function LadderBox({ market, st, today, onOpenRoadmap, onSave }) {
               {[...st.history].reverse().map((h, i) => (
                 <tr key={i} className={`is-${h.kind}`}>
                   <td className="mono">{ddmm(h.date)}/{h.date.slice(2, 4)}</td>
-                  <td>{LADDER_KIND[h.kind]}{h.kind === "deposit" ? ` ${fmtUsd(h.amount)}` : ""}</td>
-                  <td className="mono">{fmtUsd(h.from)} → {fmtUsd(h.to)}</td>
+                  <td>{h.kind === "deposit" ? `${LADDER_KIND[h.amount < 0 ? "withdraw" : "deposit"]} ${fmtUsd(Math.abs(h.amount))}` : LADDER_KIND[h.kind]}</td>
+                  <td className="mono">{h.kind === "deposit" ? "" : `${fmtUsd(h.from)} → ${fmtUsd(h.to)}`}</td>
                   <td className="mono field-hint">vốn {fmtUsd(h.equity)}</td>
+                  <td>{h.kind === "deposit" && h.depositId ? (
+                    <ConfirmButton onConfirm={() => onSave({ ...market, ladder: { ...lad, deposits: (lad.deposits || []).filter((d) => d.id !== h.depositId) } })} />
+                  ) : null}</td>
                 </tr>
               ))}
             </tbody>

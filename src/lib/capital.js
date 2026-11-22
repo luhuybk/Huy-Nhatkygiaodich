@@ -553,7 +553,7 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
   // Lần nạp ghi trước cho ngày sau này thì chưa tính.
   const closed = marketClosedPnl(plan, m, trades, resources, lad.from).filter((x) => x.date <= today);
   const events = [
-    ...lad.deposits.filter((d) => d.date >= lad.from && d.date <= today).map((d) => ({ date: d.date, k: 0, v: d.amount })),
+    ...lad.deposits.filter((d) => d.date >= lad.from && d.date <= today).map((d) => ({ date: d.date, k: 0, v: d.amount, id: d.id })),
     ...closed.map((x) => ({ date: x.date, k: 1, v: x.pnl / rate })),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k);
   let equity = lad.capital;
@@ -581,7 +581,7 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
     const wk = weekStart(e.date);
     if (wk > week) { upCheck(wk); week = wk; }
     if (e.k === 0) {
-      history.push({ date: e.date, kind: "deposit", from: base, to: base, equity: equity + e.v, amount: e.v });
+      history.push({ date: e.date, kind: "deposit", from: base, to: base, equity: equity + e.v, amount: e.v, depositId: e.id });
       equity += e.v;
       if (e.v > 0) upCheck(e.date); else downCheck(e.date);
     } else {
