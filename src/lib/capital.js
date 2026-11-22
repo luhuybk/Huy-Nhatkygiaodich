@@ -132,10 +132,36 @@ export function normalizeLadder(raw) {
       ? raw.deposits.filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d.date || "") && num(d.amount, 0) !== 0)
         .map((d) => ({ id: d.id || uid(), date: d.date, amount: num(d.amount, 0) })).sort((a, b) => a.date.localeCompare(b.date))
       : [],
-    // Chỉ để dự phóng thời gian tới mục tiêu.
-    yearlyDeposit: Math.max(0, num(raw.yearlyDeposit, 0)),
-    monthlyR: num(raw.monthlyR, 0),
-    targetRisk: Math.max(0, num(raw.targetRisk, 0)),
+    // Lộ trình tới mục tiêu — chỉ để dự phóng / theo dõi, không đụng tới cách tính bậc.
+    plan: normalizeRoadmap(raw.plan, raw),
+  };
+}
+
+// Lộ trình: mục tiêu (1 lệnh ở mức `pct`% đạt `targetRisk`), kế hoạch nạp (mỗi tháng hoặc mỗi năm
+// vào tháng `depMonth`), R/tháng dự tính, hạn muốn đạt (YYYY-MM). `snapshot` = lộ trình đã chốt để so
+// tiến độ thật với kế hoạch. Dữ liệu cũ (yearlyDeposit / monthlyR / targetRisk) tự chuyển sang.
+export function normalizeRoadmap(raw, legacy = {}) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const ym = (v) => (typeof v === "string" && /^\d{4}-\d{2}$/.test(v) ? v : "");
+  const snap = r.snapshot && typeof r.snapshot === "object" && /^\d{4}-\d{2}-\d{2}$/.test(r.snapshot.date || "") ? {
+    date: r.snapshot.date,
+    equity: num(r.snapshot.equity, 0), base: num(r.snapshot.base, 0),
+    monthlyR: num(r.snapshot.monthlyR, 0), pct: num(r.snapshot.pct, 0),
+    depAmount: Math.max(0, num(r.snapshot.depAmount, 0)), depEvery: r.snapshot.depEvery === "month" ? "month" : "year",
+    depMonth: Math.min(12, Math.max(1, Math.round(num(r.snapshot.depMonth, 1)))),
+    targetRisk: Math.max(0, num(r.snapshot.targetRisk, 0)), deadline: ym(r.snapshot.deadline),
+    reachYm: ym(r.snapshot.reachYm),
+  } : null;
+  const legacyDep = Math.max(0, num(legacy.yearlyDeposit, 0));
+  return {
+    targetRisk: Math.max(0, num(r.targetRisk, num(legacy.targetRisk, 0))),
+    pct: Math.max(0, num(r.pct, 0)),
+    monthlyR: num(r.monthlyR, num(legacy.monthlyR, 0)),
+    depAmount: Math.max(0, num(r.depAmount, legacyDep)),
+    depEvery: r.depEvery === "month" ? "month" : "year",
+    depMonth: Math.min(12, Math.max(1, Math.round(num(r.depMonth, 1)))),
+    deadline: ym(r.deadline),
+    snapshot: snap,
   };
 }
 
@@ -566,7 +592,15 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
   // R thực tế mỗi tháng kể từ ngày của bậc — gợi ý sẵn cho ô dự phóng.
   const withR = closed.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
   const days = (new Date(`${today}T00:00:00`) - new Date(`${lad.from}T00:00:00`)) / 86400000;
+  // R theo từng tuần (ngày đóng) — để so với mục tiêu R/tuần của lộ trình.
+  const weekR = {};
+  withR.forEach((x) => { const k = weekStart(x.date); const w = weekR[k] || (weekR[k] = { r: 0, n: 0 }); w.r += x.r.rr; w.n += 1; });
   return {
+    weekR,
+    // Kỳ vọng mỗi lệnh và số lệnh/tuần thực tế từ ngày của bậc — quy R/tuần cần ra số lệnh cần đánh.
+    perTrade: withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / withR.length : null,
+    rTrades: withR.length,
+    tradesPerWeek: days >= 7 ? withR.length / (days / 7) : null,
     rPerMonth: days >= 28 && withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / (days / 30.44) : null,
     base, equity, floor, next, downAt, history, tradeCount: closed.length, rate,
     // Bậc thứ mấy tính từ sàn — sàn đổi khi nạp thêm nên đây chỉ là con số để nhìn.
@@ -593,24 +627,76 @@ export function syncLadderBases(plan, trades, resources, today = todayStr()) {
   return changed ? { ...plan, markets } : null;
 }
 
-// Dự phóng: bao nhiêu tháng nữa thì tiền rủi ro mỗi lệnh (mức `pct`%) đạt `targetRisk`, nếu mỗi
-// tháng ra đều `monthlyR` R và nạp đều `yearlyDeposit`/năm. Cùng luật bậc (lên bậc theo tháng
-// cho gọn). Không tới trong 50 năm thì null.
-export function ladderProjection({ equity, base, stepPct, pct, monthlyR, yearlyDeposit, targetRisk }) {
+// ——— Lộ trình vốn ———
+// Mô phỏng theo tháng từ tháng sau tháng `fromYm`: đầu tháng nạp (nếu kế hoạch có), trong tháng ra
+// đều `monthlyR` R (R tính trên vốn tính rủi ro hiện tại × `pct`%), cuối tháng xét lên bậc. Nạp cộng
+// vào cả vốn lẫn vốn tính rủi ro — đúng luật bậc thật. Dừng khi 1 lệnh đạt `targetRisk`.
+export const ymAdd = (ym, n) => {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+export const ymDiff = (a, b) => { const [ya, ma] = a.split("-").map(Number); const [yb, mb] = b.split("-").map(Number); return (yb - ya) * 12 + (mb - ma); };
+export const depositIn = (plan, ym) => {
+  if (!plan || !(plan.depAmount > 0)) return 0;
+  return plan.depEvery === "month" || Number(ym.slice(5, 7)) === Number(plan.depMonth) ? plan.depAmount : 0;
+};
+
+export function simulateRoadmap({ equity, base, stepPct, pct, monthlyR, plan, targetRisk, fromYm, maxMonths = 600, full = false }) {
   const up = 1 + num(stepPct, LADDER_STEP_DEFAULT) / 100;
   const p = num(pct, 0) / 100;
-  if (!(p > 0) || !(targetRisk > 0)) return null;
   let E = num(equity, 0);
   let B = num(base, 0);
-  if (B * p >= targetRisk) return { months: 0, base: B, equity: E };
-  for (let mth = 1; mth <= 600; mth++) {
-    E += num(monthlyR, 0) * p * B + num(yearlyDeposit, 0) / 12;
-    B += num(yearlyDeposit, 0) / 12;
-    while (E >= B * up) B *= up;
-    if (E <= 0) return null;
-    if (B * p >= targetRisk) return { months: mth, base: B, equity: E };
+  const path = [{ i: 0, ym: fromYm, equity: E, base: B }];
+  const events = [];
+  if (!(p > 0)) return { months: null, path, events };
+  const reached = () => targetRisk > 0 && B * p >= targetRisk - 0.005;
+  if (reached() && !full) return { months: 0, path, events, base: B, equity: E };
+  let months = reached() ? 0 : null;
+  for (let i = 1; i <= maxMonths; i++) {
+    const ym = ymAdd(fromYm, i);
+    const dep = depositIn(plan, ym);
+    if (dep) { E += dep; B += dep; events.push({ i, ym, kind: "deposit", amount: dep, base: B, equity: E }); }
+    E += num(monthlyR, 0) * p * B;
+    while (E >= B * up - 0.005) { B *= up; events.push({ i, ym, kind: "step", base: B, equity: E }); }
+    path.push({ i, ym, equity: E, base: B });
+    if (E <= 0) break;
+    if (months === null && reached()) { months = i; if (!full) break; }
+    if (full && months !== null && i >= months + 1) break;
   }
-  return null;
+  return { months, path, events, base: B, equity: E };
+}
+
+// R/tháng tối thiểu để kịp hạn (tìm nhị phân). Chỉ nạp thôi đã kịp thì 0; 30R/tháng vẫn không kịp thì null.
+export function requiredMonthlyR(opts, monthsLimit) {
+  if (!(monthsLimit > 0)) return null;
+  const ok = (r) => { const x = simulateRoadmap({ ...opts, monthlyR: r, maxMonths: monthsLimit }); return x.months !== null && x.months <= monthsLimit; };
+  if (ok(0)) return 0;
+  if (!ok(30)) return null;
+  let lo = 0, hi = 30;
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (ok(mid)) hi = mid; else lo = mid; }
+  return hi;
+}
+
+// Vốn đáng lẽ phải có ở ngày `dateStr` theo lộ trình đã chốt — nội suy giữa hai mốc tháng.
+export function snapshotEquityAt(snap, stepPct, dateStr) {
+  if (!snap) return null;
+  const fromYm = snap.date.slice(0, 7);
+  const months = Math.max(0, ymDiff(fromYm, dateStr.slice(0, 7)));
+  const sim = simulateRoadmap({ equity: snap.equity, base: snap.base, stepPct, pct: snap.pct, monthlyR: snap.monthlyR, plan: snap, targetRisk: 0, fromYm, maxMonths: months + 1, full: true });
+  // Ngày chốt nằm giữa tháng: tháng đầu chỉ tính phần còn lại; các tháng sau tính theo ngày đã qua.
+  const dim = (ym) => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+  const day = Number(dateStr.slice(8, 10));
+  if (months === 0) {
+    const startDay = Number(snap.date.slice(8, 10));
+    const span = dim(fromYm) - startDay + 1;
+    const f = span > 0 ? Math.max(0, Math.min(1, (day - startDay) / span)) : 0;
+    const a = sim.path[0]; const b = sim.path[1] || a;
+    return a.equity + (b.equity - a.equity) * f;
+  }
+  const a = sim.path[months] || sim.path[sim.path.length - 1];
+  const b = sim.path[months + 1] || a;
+  return a.equity + (b.equity - a.equity) * (day / dim(dateStr.slice(0, 7)));
 }
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
