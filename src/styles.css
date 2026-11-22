@@ -1441,10 +1441,16 @@
 .cap-ladder-proj-in .input { padding: 4px 7px; font-size: 12.5px; }
 .cap-ladder-proj-out { margin: 0; font-size: 12.5px; }
 .cap-ladder-proj-alt { margin: 0; font-size: 11.5px; }
-.cap-ladder-hist { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-.cap-ladder-hist td { padding: 3px 4px; border-top: 1px solid var(--border); white-space: nowrap; }
-.cap-ladder-hist .is-up td:nth-child(2) { color: var(--win); font-weight: 600; }
-.cap-ladder-hist .is-down td:nth-child(2) { color: var(--loss); font-weight: 600; }
+.cap-ladder-hist { display: flex; flex-direction: column; font-size: 11.5px; min-width: 0; }
+.cap-ladder-hrow { display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 1px; padding: 4px 2px; border-top: 1px solid var(--border); min-width: 0; }
+.cap-ladder-hdate { flex: 0 0 auto; color: var(--text-dim); }
+.cap-ladder-hmain { flex: 1 1 auto; display: flex; flex-wrap: wrap; column-gap: 8px; min-width: 0; }
+.cap-ladder-hkind { white-space: nowrap; }
+.cap-ladder-hmain .mono { white-space: nowrap; }
+.cap-ladder-heq { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+.cap-ladder-hdel { flex: 0 0 auto; }
+.cap-ladder-hrow.is-up .cap-ladder-hkind { color: var(--win); font-weight: 600; }
+.cap-ladder-hrow.is-down .cap-ladder-hkind { color: var(--loss); font-weight: 600; }
 .cap-ladder-goal { margin: 0; font-size: 12px; }
 .cap-ladder-goal .is-good, .cap-road-prog .is-good b { color: var(--win); }
 .cap-ladder-goal .is-bad, .cap-road-prog .is-bad b { color: var(--loss); }

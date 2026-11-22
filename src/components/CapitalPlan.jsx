@@ -700,21 +700,23 @@ function LadderBox({ market, st, today, onOpenRoadmap, onSave }) {
       {open === "dep" ? <QuickDeposit market={market} today={today} onSave={onSave} onDone={() => setOpen("hist")} /> : null}
       {open === "hist" ? (
         st.history.length ? (
-          <table className="cap-ladder-hist">
-            <tbody>
-              {[...st.history].reverse().map((h, i) => (
-                <tr key={i} className={`is-${h.kind}`}>
-                  <td className="mono">{ddmm(h.date)}/{h.date.slice(2, 4)}</td>
-                  <td>{h.kind === "deposit" ? `${LADDER_KIND[h.amount < 0 ? "withdraw" : "deposit"]} ${fmtUsd(Math.abs(h.amount))}` : LADDER_KIND[h.kind]}</td>
-                  <td className="mono">{h.kind === "deposit" ? "" : `${fmtUsd(h.from)} → ${fmtUsd(h.to)}`}</td>
-                  <td className="mono field-hint">vốn {fmtUsd(h.equity)}</td>
-                  <td>{h.kind === "deposit" && h.depositId ? (
+          <div className="cap-ladder-hist">
+            {[...st.history].reverse().map((h, i) => (
+              <div key={i} className={`cap-ladder-hrow is-${h.kind}`}>
+                <span className="cap-ladder-hdate mono">{ddmm(h.date)}/{h.date.slice(2, 4)}</span>
+                <span className="cap-ladder-hmain">
+                  <span className="cap-ladder-hkind">{h.kind === "deposit" ? `${LADDER_KIND[h.amount < 0 ? "withdraw" : "deposit"]} ${fmtUsd(Math.abs(h.amount))}` : LADDER_KIND[h.kind]}</span>
+                  {h.kind === "deposit" ? null : <span className="mono">{fmtUsd(h.from)} → {fmtUsd(h.to)}</span>}
+                </span>
+                <span className="cap-ladder-heq mono field-hint">vốn {fmtUsd(h.equity)}</span>
+                {h.kind === "deposit" && h.depositId ? (
+                  <span className="cap-ladder-hdel">
                     <ConfirmButton onConfirm={() => onSave({ ...market, ladder: { ...lad, deposits: (lad.deposits || []).filter((d) => d.id !== h.depositId) } })} />
-                  ) : null}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : <p className="field-hint" style={{ margin: "6px 0 0" }}>Chưa lên / hạ bậc lần nào kể từ {ddmm(lad.from)}.</p>
       ) : null}
     </div>
