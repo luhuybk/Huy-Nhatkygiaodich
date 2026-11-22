@@ -345,6 +345,7 @@ type CapMarket = {
   id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
   tiers?: number[]; defaultTier?: number; accountIds?: string[]; holdTier?: number | null; side?: boolean;
   rRule?: Partial<Record<CapRuleKey, number>>; assetGroups?: string[];
+  ladder?: { on?: boolean; capital?: number; from?: string; stepPct?: number; downPct?: number; deposits?: { date?: string; amount?: number }[] } | null;
 };
 type CapRuleKey = "downW1" | "downW2" | "holdM" | "upW1" | "upM" | "minUp";
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
@@ -427,11 +428,66 @@ function capOwns(plan: CapPlan, m: CapMarket, accounts: CapAccount[]) {
   };
 }
 
-function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>) {
+// Bậc vốn tự tăng — bản chép của ladderOn / ladderState trong src/lib/capital.js.
+function capLadderOn(m: CapMarket) {
+  const l = m.ladder;
+  return !!(l && l.on && Number(l.capital) > 0 && l.from);
+}
+function capDeposits(m: CapMarket, today: string) {
+  const l = m.ladder || {};
+  return (l.deposits || [])
+    .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")) && Number(d.amount) && String(d.date) >= String(l.from || "") && String(d.date) <= today)
+    .map((d) => ({ date: String(d.date), amount: Number(d.amount) }));
+}
+function capWeekStart(d: string) {
+  const dow = (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7;
+  return shiftDateStr(d, -dow);
+}
+function capLadder(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>, today: string) {
+  if (!capLadderOn(m)) return null;
+  const l = m.ladder!;
+  const rate = m.currency && m.currency !== "USD" ? Number(m.rate) || 1 : 1;
+  const step = Number(l.stepPct) > 0 ? Number(l.stepPct) : 20;
+  const up = 1 + step / 100;
+  const cut = 1 - Math.max(0, Number(l.downPct ?? 5)) / 100;
+  const from = String(l.from);
+  const owns = capOwns(plan, m, accounts);
+  const mCur = m.currency || "USD";
+  const events = [
+    ...capDeposits(m, today).map((d) => ({ date: d.date, k: 0, v: d.amount })),
+    ...trades
+      .filter((t) => owns(t) && String(t.exitDate || t.entryDate || "") >= from && String(t.exitDate || t.entryDate || "") <= today)
+      .filter((t) => t.profit !== "" && t.profit !== null && t.profit !== undefined && !Number.isNaN(Number(t.profit)))
+      .map((t) => {
+        const profit = Number(t.profit) + partialProfitOf(t) + feesOf(t);
+        const cur = accounts.find((a) => a.name === t.account)?.currency || "USD";
+        const r = cur === "USD" ? 1 : Number(fxRates[cur]) || 0;
+        const usd = cur === mCur ? profit / rate : (r > 0 ? profit / r : profit);
+        return { date: String(t.exitDate || t.entryDate || ""), k: 1, v: usd, c: Number(t.createdAt) || 0 };
+      }),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k || ((a as { c?: number }).c || 0) - ((b as { c?: number }).c || 0));
+  let equity = Number(l.capital), base = equity, floor = equity;
+  const upCheck = () => { while (equity >= base * up - 0.005) base = Math.round(base * up * 100) / 100; };
+  const downCheck = () => { while (base > floor + 0.005 && equity < (base / up) * cut) base = Math.max(floor, Math.round((base / up) * 100) / 100); };
+  let week = capWeekStart(from);
+  for (const e of events) {
+    const wk = capWeekStart(e.date);
+    if (wk > week) { upCheck(); week = wk; }
+    if (e.k === 0) { equity += e.v; base = Math.max(0, base + e.v); floor = Math.max(0, floor + e.v); } else { equity += e.v; downCheck(); }
+  }
+  if (capWeekStart(today) > week) upCheck();
+  return { base, equity, next: Math.round(base * up * 100) / 100, rate };
+}
+
+function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>, today = "9999-12-31") {
   const names = capFamily(accounts, m);
   const owns = capOwns(plan, m, accounts);
-  const from = plan.startDate || "";
-  const base = capUnitBase(m);
+  // Bật bậc vốn thì "vốn phân chia" đã nâng theo lãi — tính trên vốn gốc của bậc + tiền nạp.
+  const lad = capLadderOn(m) ? m.ladder! : null;
+  const from = lad ? String(lad.from) : plan.startDate || "";
+  const ladRate = m.currency && m.currency !== "USD" ? Number(m.rate) || 1 : 1;
+  const base = lad ? Number(lad.capital) * ladRate : capUnitBase(m);
+  const deposits = lad ? capDeposits(m, today) : [];
   const mCur = m.currency || "USD";
   const closed = trades
     .filter((t) => owns(t) && (!from || String(t.exitDate || t.entryDate || "") >= from))
@@ -447,7 +503,11 @@ function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown
   };
   const curve = (list: Record<string, unknown>[]) => {
     let eq = base, peak = base;
-    for (const t of list) { eq += pnl(t); if (eq > peak) peak = eq; }
+    const ev = [
+      ...deposits.map((d) => ({ date: d.date, k: 0, v: d.amount * ladRate })),
+      ...list.map((t) => ({ date: String(t.exitDate || t.entryDate || ""), k: 1, v: pnl(t) })),
+    ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k);
+    for (const e of ev) { eq += e.v; if (eq > peak) peak = eq; }
     return peak > 0 ? Math.max(0, ((peak - eq) / peak) * 100) : 0;
   };
   const cut = Number(plan.ddCutPct) || 12, warn = Number(plan.ddWarnPct) || 8;
@@ -1044,12 +1104,14 @@ Deno.serve(async () => {
           const rows = markets.map((m) => ({
             m, label: m.name || "?",
             now: capPicked(plan, m, weekNow), next: capPicked(plan, m, weekNext),
-            dd: capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates),
+            dd: capDrawdown(plan, m, trades, accounts as CapAccount[], fxRates, today),
             st: capRStats(plan, m, trades, accounts as CapAccount[], weekNow),
+            lad: capLadder(plan, m, trades, accounts as CapAccount[], fxRates, today),
+            ladNext: capLadder(plan, m, trades, accounts as CapAccount[], fxRates, weekNext),
           }));
           const missing = rows.filter((r) => !r.next.explicit);
           if (missing.length) {
-            const lines = rows.map(({ m, label, now, next, dd, st }) => {
+            const lines = rows.map(({ m, label, now, next, dd, st, lad, ladNext }) => {
               const money = now.pct === null ? "" : ` (${capMoney((capUnitBase(m) * now.pct) / 100, m.currency)})`;
               const ddText = !dd.linked ? "chưa gắn tài khoản"
                 : `sụt ${pctVN(dd.pct, 1)}${dd.level === "cut" ? " 🔴 nên giảm risk hẳn" : dd.level === "warn" ? " 🟡 cảnh báo" : " ✅"}${dd.lossStreak >= 2 ? ` · thua ${dd.lossStreak} liên tiếp` : ""}`;
@@ -1058,7 +1120,12 @@ Deno.serve(async () => {
               const sug = capSuggest(plan, m, st, dd, weekNow);
               const rText = st.linked ? `\n   R: 1T ${st.w1.n ? rVN(st.w1.r) : "—"} · 2T ${st.w2.n ? rVN(st.w2.r) : "—"} · 4T ${st.w4.n ? rVN(st.w4.r) : "—"}` : "";
               const sugText = !sug ? "" : ` → gợi ý ${sug.action === "up" ? "▲" : sug.action === "down" ? "▼" : "="} ${pctVN(sug.pct)}${Number(m.holdTier) === sug.pct ? " cầm chừng" : ""}`;
-              return `• ${label}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}${rText}${sugText}`;
+              // Bậc vốn: tuần sau có lên / hạ bậc không, tiền rủi ro mức chuẩn đổi ra sao.
+              const stdPct = capNum(m.defaultTier, now.pct ?? 0);
+              const ladText = !lad || !ladNext ? "" : ladNext.base > lad.base + 0.005
+                ? `\n   📶 ▲ Tuần sau lên bậc: vốn tính risk ${capMoney(Math.round(lad.base))} → ${capMoney(Math.round(ladNext.base))} (${pctVN(stdPct)} = ${capMoney(Math.round(ladNext.base * stdPct) / 100)})`
+                : `\n   📶 Bậc vốn ${capMoney(Math.round(lad.base))} · vốn ${capMoney(Math.round(lad.equity))} · mốc kế ${capMoney(Math.round(lad.next))} (còn +${pctVN(Math.max(0, (lad.next / lad.equity - 1) * 100), 1)})`;
+              return `• ${label}: tuần này ${pctVN(now.pct)}${holdText}${money} · ${ddText} · ${nextText}${rText}${sugText}${ladText}`;
             });
             const text = buildMessage(
               "💰", "CHỌN MỨC ĐI VỐN", "⭐", `Tuần ${ddmm(weekNext)} – ${ddmm(shiftDateStr(weekNext, 6))}`, undefined,

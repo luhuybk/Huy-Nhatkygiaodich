@@ -24,7 +24,7 @@ import { countInlineImages, replaceInlineImages, uploadInlineImage } from "./lib
 import { normalizeJourneyLog } from "./lib/journeyLog.js";
 import { applyMt5Inbox, MT5_INBOX_KEY, MT5_SEEN_KEY } from "./lib/mt5Inbox.js";
 import { createTradeSync, mergeTrades } from "./lib/tradeSync.js";
-import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets } from "./lib/capital.js";
+import { defaultCapitalPlan, normalizeCapitalPlan, splitMultiAccountMarkets, syncLadderBases } from "./lib/capital.js";
 
 const Dashboard = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.Dashboard })));
 const DimensionPerformance = lazy(() => import("./components/Dashboard.jsx").then((m) => ({ default: m.DimensionPerformance })));
@@ -397,6 +397,15 @@ function AppShell({ onSignOut, userEmail }) {
   const persistJourneyLog = useCallback(async (next) => { setJourneyLog(next); noteSave("journeyLog", next, await safeSet("journeyLog", next)); }, []);
   const persistTradingPlans = useCallback(async (next) => { setTradingPlans(next); noteSave("tradingPlans", next, await safeSet("tradingPlans", next)); }, []);
   const persistCapitalPlan = useCallback(async (next) => { setCapitalPlan(next); noteSave("capitalPlan", next, await safeSet("capitalPlan", next)); }, []);
+  // Bậc vốn tự tăng (Phân bổ vốn): lệnh đóng / nạp thêm / sang tuần mới làm vốn chạm mốc thì đặt lại
+  // "Vốn phân chia" của mảng — form vào lệnh, tin MT5 và bot Telegram đều đọc ô đó. Chỉ chạy khi đã
+  // tải xong lệnh, không thì đường vốn rỗng và bậc tụt về vốn gốc.
+  const ladderDay = todayStr();
+  useEffect(() => {
+    if (loading || !capitalPlanSaved) return;
+    const next = syncLadderBases(capitalPlanSaved, trades, resources, ladderDay);
+    if (next) persistCapitalPlan(next);
+  }, [loading, capitalPlanSaved, trades, resources, ladderDay, persistCapitalPlan]);
   const persistSkills = useCallback(async (next) => { setSkills(next); noteSave("skills", next, await safeSet("skills", next)); }, []);
   const persistFilterPresets = useCallback(async (next) => { setFilterPresets(next); noteSave("journalFilterPresets", next, await safeSet("journalFilterPresets", next)); }, []);
   const persistPrinciples = useCallback(async (next) => { setPrinciples(next); noteSave("principles", next, await safeSet("principles", next)); }, []);

@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, CornerDownRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, Wallet, X } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronLeft, ChevronRight, CornerDownRight, Gauge, Pencil, Plus, Scale, Send, Settings2, Shield, Split, TrendingUp, Wallet, X } from "lucide-react";
 import { ConfirmButton, Field, MoneyInput, useAutoFocus } from "./ui.jsx";
 import { CURRENCIES } from "../lib/constants.js";
-import { emptyCapitalPickReminder, fmtMoney, todayStr, WEEKDAY_CODES } from "../lib/helpers.js";
+import { emptyCapitalPickReminder, fmtMoney, todayStr, uid, WEEKDAY_CODES } from "../lib/helpers.js";
 import { ASSET_GROUPS } from "../lib/assetGroups.js";
 import {
   capitalScale, claimedAssetGroups, emptyCapitalMarket, marketDisplayOrder, marketFamilies, splitMarketByAssets, fmtPctVN, fmtRVN, isWeekend, MARKET_COLORS, marketColor, marketColorStyle, marketDrawdown, marketRStats, marketsMissingNextPick,
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
+  ladderOn, ladderProjection, ladderState, LADDER_DOWN_DEFAULT, LADDER_STEP_DEFAULT,
 } from "../lib/capital.js";
 
 const DD_LABEL = { ok: "Ổn", warn: "Cảnh báo", cut: "Giảm risk" };
@@ -72,13 +73,67 @@ function DrawdownBar({ plan, dd, market }) {
       {!dd.linked ? (
         <p className="field-hint cap-dd-note">Chưa gắn tài khoản — bấm Sửa để chọn tài khoản thuộc mảng này.</p>
       ) : (
-        <p className="field-hint cap-dd-note">{dd.tradeCount} lệnh đã đóng từ {ddmm(plan.startDate) || "đầu"} · vốn hiện {fmtMoney(Math.round(dd.current), market.currency)}</p>
+        <p className="field-hint cap-dd-note">{dd.tradeCount} lệnh đã đóng từ {ddmm(ladderOn(market) ? market.ladder.from : plan.startDate) || "đầu"} · vốn hiện {fmtMoney(Math.round(dd.current), market.currency)}</p>
       )}
     </div>
   );
 }
 
-function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
+function emptyLadder(m, startDate) {
+  return {
+    on: true, capital: Number(m.allocated) || 0, from: startDate || todayStr(), stepPct: LADDER_STEP_DEFAULT, downPct: LADDER_DOWN_DEFAULT,
+    deposits: [], yearlyDeposit: 0, monthlyR: 0, targetRisk: 0,
+  };
+}
+
+// Bật / chỉnh bậc vốn trong ô Sửa mảng.
+function LadderEditor({ m, setM, startDate }) {
+  const lad = m.ladder;
+  const on = !!(lad && lad.on);
+  const setLad = (patch) => setM((prev) => ({ ...prev, ladder: { ...(prev.ladder || emptyLadder(prev, startDate)), ...patch } }));
+  const deps = (lad && lad.deposits) || [];
+  const setDep = (id, patch) => setLad({ deposits: deps.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+  return (
+    <div className={`cap-ladder-edit ${on ? "is-on" : ""}`}>
+      <label className="mc-check">
+        <input type="checkbox" checked={on} onChange={(e) => setLad({ on: e.target.checked })} />
+        <span><b>Bậc vốn tự tăng</b> — vốn thật lên mỗi +{(lad && lad.stepPct) || LADDER_STEP_DEFAULT}% thì vốn tính rủi ro tự lên một bậc, khỏi phải tự quyết</span>
+      </label>
+      {on ? (
+        <>
+          <div className="grid-2">
+            <Field label="Vốn gốc (USD)" hint="Vốn thật của mảng ở ngày bắt đầu bên cạnh">
+              <MoneyInput value={lad.capital} onChange={(v) => setLad({ capital: v })} />
+            </Field>
+            <Field label="Tính từ ngày" hint="Lệnh đóng từ ngày này trở đi mới cộng vào vốn">
+              <input type="date" className="input" value={lad.from || ""} onChange={(e) => setLad({ from: e.target.value })} />
+            </Field>
+            <Field label="Mỗi bậc (+%)" hint="Vốn cuối tuần vượt mốc này thì tuần sau lên bậc">
+              <input type="number" step="any" min="1" className="input mono" value={lad.stepPct} onChange={(e) => setLad({ stepPct: e.target.value })} />
+            </Field>
+            <Field label="Hạ bậc khi thủng mốc dưới thêm (%)" hint="VD 5: đang bậc 18.000 mà vốn về dưới 14.250 thì quay lại bậc 15.000">
+              <input type="number" step="any" min="0" className="input mono" value={lad.downPct} onChange={(e) => setLad({ downPct: e.target.value })} />
+            </Field>
+          </div>
+          <Field label="Nạp thêm / rút ra (USD)" hint="Nạp thì cộng thẳng vào vốn tính rủi ro (VD 18.000 + nạp 12.500 = 30.500); rút ra thì ghi số âm">
+            <div className="cap-ladder-deps">
+              {deps.map((d) => (
+                <div key={d.id} className="cap-ladder-dep">
+                  <input type="date" className="input" value={d.date} onChange={(e) => setDep(d.id, { date: e.target.value })} />
+                  <MoneyInput value={d.amount} onChange={(v) => setDep(d.id, { amount: v })} placeholder="12500" />
+                  <button type="button" className="row-btn" onClick={() => setLad({ deposits: deps.filter((x) => x.id !== d.id) })} title="Xoá dòng"><X size={13} /></button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-ghost" onClick={() => setLad({ deposits: [...deps, { id: uid(), date: todayStr(), amount: "" }] })}><Plus size={13} /> Thêm lần nạp</button>
+            </div>
+          </Field>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function MarketEditor({ market, accounts, startDate, onSave, onCancel, onDelete }) {
   const [m, setM] = useState(market);
   // Mảng vừa bấm Thêm: tên còn trống nên con trỏ nằm sẵn ở ô Tên mảng.
   const boxRef = useRef(null);
@@ -98,6 +153,12 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
       rate: m.currency === "USD" ? 1 : numOr(m.rate, 1) || 1,
       allocated: numOr(m.allocated, 0), deposited: numOr(m.deposited, 0),
       accountCount: 1,
+      ladder: m.ladder ? {
+        ...m.ladder,
+        capital: numOr(m.ladder.capital, 0), stepPct: numOr(m.ladder.stepPct, LADDER_STEP_DEFAULT) > 0 ? numOr(m.ladder.stepPct, LADDER_STEP_DEFAULT) : LADDER_STEP_DEFAULT,
+        downPct: Math.max(0, numOr(m.ladder.downPct, LADDER_DOWN_DEFAULT)),
+        deposits: (m.ladder.deposits || []).map((d) => ({ ...d, amount: numOr(d.amount, 0) })).filter((d) => d.date && d.amount),
+      } : null,
     });
   };
   return (
@@ -109,7 +170,13 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
-        <Field label={m.side ? "Vốn ước lượng (USD)" : "Vốn phân chia (USD)"}><MoneyInput value={m.allocated} onChange={set("allocated")} /></Field>
+        {m.ladder && m.ladder.on ? (
+          <Field label="Vốn phân chia (USD)" hint="Bậc vốn đang bật — app tự đặt theo bậc, sửa ở phần Bậc vốn bên dưới">
+            <input className="input mono" value={fmtMoney(Number(m.allocated) || 0, "USD")} disabled />
+          </Field>
+        ) : (
+          <Field label={m.side ? "Vốn ước lượng (USD)" : "Vốn phân chia (USD)"}><MoneyInput value={m.allocated} onChange={set("allocated")} /></Field>
+        )}
         {m.currency !== "USD" ? (
           <Field label={`Tỷ giá cố định (${m.currency} / 1 USD)`} hint="Chỉ dùng cho bảng này, không đổi tỷ giá ở tab Tài khoản">
             <MoneyInput value={m.rate} onChange={set("rate")} />
@@ -127,6 +194,7 @@ function MarketEditor({ market, accounts, onSave, onCancel, onDelete }) {
           <input className="input mono" value={holdText} onChange={(e) => setHoldText(e.target.value)} placeholder="VD: 0,3" />
         </Field>
       </div>
+      {!m.side ? <LadderEditor m={m} setM={setM} startDate={startDate} /> : null}
       <Field label="Màu nhận diện" hint={`Tô viền trái thẻ và chấm cạnh tên. "Theo tài khoản" = dùng màu của tài khoản gắn với mảng (đặt ở tab Tài khoản) — cùng màu với Nhật ký, Báo cáo tuần`}>
         <div className="cap-colors">
           <button type="button" className={`cap-color-auto ${!m.color ? "is-on" : ""}`} onClick={() => set("color")("")}
@@ -214,7 +282,100 @@ function SplitPicker({ plan, market, accounts, onSplit, onClose }) {
   );
 }
 
-function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelete, onMove, onSplit, startEditing, scope }) {
+const fmtMonths = (n) => { const y = Math.floor(n / 12); const mo = n % 12; return [y ? `${y} năm` : "", mo ? `${mo} tháng` : ""].filter(Boolean).join(" ") || "ngay bây giờ"; };
+const monthsFromNow = (n) => { const d = new Date(); d.setMonth(d.getMonth() + n); return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; };
+const fmtUsd = (v) => fmtMoney(Math.round(v), "USD");
+const pctText = (v) => `${(v * 100).toFixed(1).replace(".", ",")}%`;
+
+// Ô dự phóng: bao lâu nữa thì 1 lệnh ở mức chuẩn đạt số tiền mục tiêu.
+function LadderProjection({ market, st, pct, onSave }) {
+  const lad = market.ladder;
+  const yearly = lad.yearlyDeposit || 0;
+  const monthlyR = lad.monthlyR || (st.rPerMonth && st.rPerMonth > 0 ? Math.round(st.rPerMonth * 10) / 10 : 5);
+  const target = lad.targetRisk || 1500;
+  const save = (patch) => onSave({ ...market, ladder: { ...lad, ...patch } });
+  const run = (r) => ladderProjection({ equity: st.equity, base: st.base, stepPct: lad.stepPct, pct, monthlyR: r, yearlyDeposit: yearly, targetRisk: target });
+  const main = run(monthlyR);
+  const alts = [3, 4, 5, 6, 8].filter((r) => r !== monthlyR);
+  return (
+    <div className="cap-ladder-proj">
+      <div className="cap-ladder-proj-in">
+        <label>Nạp / năm <BlurNumber value={yearly} min="0" onCommit={(n) => save({ yearlyDeposit: Math.max(0, n) })} /></label>
+        <label>R / tháng <BlurNumber value={monthlyR} step="0.5" onCommit={(n) => save({ monthlyR: n })} /></label>
+        <label>1 lệnh đạt ($) <BlurNumber value={target} min="0" onCommit={(n) => save({ targetRisk: Math.max(0, n) })} /></label>
+      </div>
+      <p className="cap-ladder-proj-out">
+        {main ? <>Ở mức {fmtPctVN(pct)}: <b>{fmtMonths(main.months)}</b>{main.months ? ` (≈ ${monthsFromNow(main.months)})` : ""} — vốn tính rủi ro khi đó {fmtUsd(main.base)}</> : <>Với {monthlyR}R/tháng thì không tới được mục tiêu.</>}
+      </p>
+      <p className="field-hint cap-ladder-proj-alt">
+        {alts.map((r) => { const x = run(r); return `${r}R/tháng: ${x ? fmtMonths(x.months) : "—"}`; }).join(" · ")}
+      </p>
+      <p className="field-hint" style={{ margin: 0 }}>
+        {st.rPerMonth !== null ? `Thực tế từ ${ddmm(lad.from)}: ${fmtRVN(st.rPerMonth)}/tháng. ` : ""}
+        Giả định tháng nào cũng đều — thực tế có tháng âm, nên coi đây là mốc tham khảo.
+      </p>
+    </div>
+  );
+}
+
+const LADDER_KIND = { up: "▲ Lên bậc", down: "▼ Hạ bậc", deposit: "＋ Nạp" };
+
+function LadderBox({ market, st, onSave }) {
+  const [open, setOpen] = useState("");
+  const lad = market.ladder;
+  const pct = Number(market.defaultTier) || (market.tiers || [])[0] || 1;
+  const lo = st.downAt ?? st.floor;
+  const pos = st.next > lo ? Math.max(0, Math.min(100, ((st.equity - lo) / (st.next - lo)) * 100)) : 100;
+  const toggle = (k) => setOpen((v) => (v === k ? "" : k));
+  return (
+    <div className={`cap-ladder ${st.pendingUp ? "is-up" : ""}`}>
+      <div className="cap-ladder-head">
+        <TrendingUp size={14} /> <b>Bậc vốn</b>
+        <span className="cap-ladder-lv">bậc {st.level}</span>
+        <span className="field-hint" style={{ margin: 0 }}>+{lad.stepPct}% mỗi bậc</span>
+      </div>
+      <div className="cap-ladder-kpis">
+        <div><span>Vốn tính rủi ro</span><b className="mono">{fmtUsd(st.base)}</b><small>{fmtPctVN(pct)} = {fmtUsd((st.base * pct) / 100)}</small></div>
+        <div><span>Vốn hiện tại</span><b className="mono">{fmtUsd(st.equity)}</b><small>{st.tradeCount} lệnh từ {ddmm(lad.from)}</small></div>
+        <div><span>Mốc kế tiếp</span><b className="mono">{fmtUsd(st.next)}</b><small>{st.pendingUp ? "đã đủ" : st.toNext !== null ? `còn +${pctText(st.toNext)}` : ""}</small></div>
+      </div>
+      <div className="cap-ladder-track" title={`${fmtUsd(lo)} → ${fmtUsd(st.next)}`}>
+        <span className="cap-ladder-fill" style={{ width: `${pos}%` }} />
+      </div>
+      {st.pendingUp ? (
+        <p className="cap-ladder-note is-up">▲ Đã vượt mốc — từ thứ 2 tuần sau rủi ro {fmtPctVN(pct)} = {fmtUsd((st.next * pct) / 100)} (chốt theo vốn cuối tuần).</p>
+      ) : null}
+      <p className="field-hint cap-ladder-note">
+        {st.downAt !== null
+          ? `Vốn về dưới ${fmtUsd(st.downAt)} thì tự hạ về bậc ${fmtUsd(Math.max(st.floor, st.base / (1 + lad.stepPct / 100)))}.`
+          : `Đang ở sàn (vốn gốc + tiền nạp ${fmtUsd(st.floor)}) — không hạ thêm; lỗ sâu hơn thì dùng mức cầm chừng.`}
+      </p>
+      <div className="cap-ladder-tabs">
+        <button type="button" className={`btn btn-ghost ${open === "proj" ? "is-on" : ""}`} onClick={() => toggle("proj")}>Dự phóng</button>
+        <button type="button" className={`btn btn-ghost ${open === "hist" ? "is-on" : ""}`} onClick={() => toggle("hist")}>Lịch sử bậc ({st.history.length})</button>
+      </div>
+      {open === "proj" ? <LadderProjection market={market} st={st} pct={pct} onSave={onSave} /> : null}
+      {open === "hist" ? (
+        st.history.length ? (
+          <table className="cap-ladder-hist">
+            <tbody>
+              {[...st.history].reverse().map((h, i) => (
+                <tr key={i} className={`is-${h.kind}`}>
+                  <td className="mono">{ddmm(h.date)}/{h.date.slice(2, 4)}</td>
+                  <td>{LADDER_KIND[h.kind]}{h.kind === "deposit" ? ` ${fmtUsd(h.amount)}` : ""}</td>
+                  <td className="mono">{fmtUsd(h.from)} → {fmtUsd(h.to)}</td>
+                  <td className="mono field-hint">vốn {fmtUsd(h.equity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="field-hint" style={{ margin: "6px 0 0" }}>Chưa lên / hạ bậc lần nào kể từ {ddmm(lad.from)}.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function MarketCard({ plan, market, dd, ladder, weeks, accounts, onPick, onSave, onDelete, onMove, onSplit, startEditing, scope }) {
   const [editing, setEditing] = useState(!!startEditing);
   const [splitting, setSplitting] = useState(false);
   // Chỉ mảng chung (không chọn nhóm) mới tách được — mảng đã giới hạn nhóm thì sửa thẳng ở ô Sửa.
@@ -228,7 +389,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
   if (editing) {
     return (
       <div className="cap-card">
-        <MarketEditor market={market} accounts={accounts} onCancel={() => (startEditing ? onDelete() : setEditing(false))}
+        <MarketEditor market={market} accounts={accounts} startDate={plan.startDate} onCancel={() => (startEditing ? onDelete() : setEditing(false))}
           onSave={(m) => { onSave(m); setEditing(false); }} onDelete={startEditing ? null : onDelete} />
       </div>
     );
@@ -238,7 +399,7 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
       <div className="cap-card-head">
         <b className="cap-card-name">{mk ? <span className="cap-mk-dot" /> : null}{market.name}</b>
         <span className="cap-card-sub mono">
-          {market.side ? "ước lượng " : ""}{fmtMoney(market.allocated, "USD")}
+          {market.side ? "ước lượng " : ""}{ladder ? <TrendingUp size={11} style={{ verticalAlign: -1, marginRight: 3 }} /> : null}{fmtMoney(market.allocated, "USD")}
           {market.currency !== "USD" ? ` ≈ ${fmtMoney(market.allocated * market.rate, market.currency)}` : ""}
         </span>
         {onMove ? (
@@ -258,6 +419,8 @@ function MarketCard({ plan, market, dd, weeks, accounts, onPick, onSave, onDelet
         <SplitPicker plan={plan} market={market} accounts={accounts} onClose={() => setSplitting(false)}
           onSplit={(groups, side) => { setSplitting(false); onSplit(groups, side); }} />
       ) : null}
+
+      {ladder ? <LadderBox market={market} st={ladder} onSave={onSave} /> : null}
 
       <table className="cap-tiers">
         <thead><tr><th>Rủi ro</th><th>Tiền / lệnh</th><th>Quy ra vốn tổng</th></tr></thead>
@@ -485,6 +648,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
   const weeks = { now: thisWeekKey(today), next: nextWeekKey(today), nudge: isWeekend(today) };
   const scale = capitalScale(plan);
   const dds = useMemo(() => Object.fromEntries(plan.markets.map((m) => [m.id, marketDrawdown(plan, m, trades, resources)])), [plan, trades, resources]);
+  const ladders = useMemo(() => Object.fromEntries(plan.markets.filter(ladderOn).map((m) => [m.id, ladderState(plan, m, trades, resources, today)])), [plan, trades, resources, today]);
   const missing = weeks.nudge ? marketsMissingNextPick(plan, today) : [];
 
   const patch = (p) => onChange({ ...plan, ...p });
@@ -519,7 +683,7 @@ export function CapitalPlanPage({ plan, onChange, trades, resources, slReminderS
       onMove.canRight = i < group.length - 1;
     }
     return (
-      <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
+      <MarketCard key={m.id} plan={plan} market={m} dd={dds[m.id]} ladder={ladders[m.id] || null} weeks={weeks} accounts={accounts} startEditing={m.id === newId}
         onPick={(week, pct) => onChange(setPick(plan, week, m.id, pct))} scope={scope}
         onSave={saveMarket} onDelete={() => deleteMarket(m.id)} onMove={onMove} onSplit={(groups, side) => splitMarket(m.id, groups, side)} />
     );

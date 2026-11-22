@@ -42,6 +42,9 @@ export function emptyCapitalMarket() {
     // Hàng hóa đánh chung tài khoản FX cùng khung mà đi vốn nhỏ hơn: một mảng "Hàng hóa" gắn cả
     // ba tài khoản, chỉ nhận nhóm Hàng hóa / Crypto; mảng FX của từng tài khoản tự nhả các lệnh đó.
     assetGroups: [],
+    // Bậc vốn tự tăng (null = tắt): vốn tính rủi ro lên một bậc mỗi khi vốn thật vượt +20%, hạ
+    // bậc khi thủng mốc dưới. Bật thì "Vốn phân chia" do app tự đặt — xem ladderState.
+    ladder: null,
   };
 }
 
@@ -113,6 +116,31 @@ export function sortTiers(list) {
   return [...new Set((list || []).map((x) => num(x, null)).filter((x) => x !== null && x > 0))].sort((a, b) => a - b);
 }
 
+export const LADDER_STEP_DEFAULT = 20;
+export const LADDER_DOWN_DEFAULT = 5;
+
+export function normalizeLadder(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    on: !!raw.on,
+    capital: Math.max(0, num(raw.capital, 0)),
+    from: typeof raw.from === "string" ? raw.from : "",
+    stepPct: num(raw.stepPct, LADDER_STEP_DEFAULT) > 0 ? num(raw.stepPct, LADDER_STEP_DEFAULT) : LADDER_STEP_DEFAULT,
+    downPct: Math.max(0, num(raw.downPct, LADDER_DOWN_DEFAULT)),
+    // Nạp thêm (số âm = rút ra): cộng thẳng vào vốn, vào vốn tính rủi ro và vào sàn của bậc.
+    deposits: Array.isArray(raw.deposits)
+      ? raw.deposits.filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d.date || "") && num(d.amount, 0) !== 0)
+        .map((d) => ({ id: d.id || uid(), date: d.date, amount: num(d.amount, 0) })).sort((a, b) => a.date.localeCompare(b.date))
+      : [],
+    // Chỉ để dự phóng thời gian tới mục tiêu.
+    yearlyDeposit: Math.max(0, num(raw.yearlyDeposit, 0)),
+    monthlyR: num(raw.monthlyR, 0),
+    targetRisk: Math.max(0, num(raw.targetRisk, 0)),
+  };
+}
+
+export const ladderOn = (m) => !!(m && m.ladder && m.ladder.on && m.ladder.capital > 0 && m.ladder.from);
+
 export function normalizeCapitalPlan(raw) {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.markets)) return null;
   return {
@@ -135,6 +163,7 @@ export function normalizeCapitalPlan(raw) {
       rRule: normalizeRRule(m.rRule),
       color: HEX_COLOR.test(m.color || "") ? m.color : "",
       assetGroups: Array.isArray(m.assetGroups) ? m.assetGroups.filter((g) => ASSET_GROUP_KEYS.has(g)) : [],
+      ladder: normalizeLadder(m.ladder),
     })),
     picks: raw.picks && typeof raw.picks === "object" && !Array.isArray(raw.picks) ? raw.picks : {},
   };
@@ -439,31 +468,149 @@ export function drawdownLevel(plan, pct) {
   return "ok";
 }
 
-// Sụt vốn từ đỉnh, tính trên VỐN PHÂN CHIA (không phải tiền đã nạp) cộng lãi/lỗ các lệnh đã đóng
-// kể từ ngày bắt đầu. Gắn nhiều tài khoản vào một mảng (VD hai sàn chứng khoán) thì chúng dùng
-// chung vốn nên chung một đường.
-export function marketDrawdown(plan, m, trades, resources) {
+// Lệnh đã đóng của mảng từ ngày `from`, lãi/lỗ quy về tiền của mảng, cũ trước mới sau.
+function marketClosedPnl(plan, m, trades, resources, from) {
   const accounts = (resources && resources.accounts) || [];
   const fxRates = (resources && resources.fxRates) || {};
-  const names = marketAccountNames(m, accounts);
   const owns = marketTradeFilter(plan, m, accounts);
-  const from = plan.startDate || "";
-  const base = marketUnitBase(m);
-  const closed = (trades || [])
+  const currencyOf = (name) => { const a = accounts.find((x) => x.name === name); return a ? a.currency : "USD"; };
+  return (trades || [])
     .filter((t) => t && owns(t) && (!from || (dateKey(t) || "") >= from))
     .map((t) => ({ t, r: computeResult(t) }))
     .filter((x) => x.r.status === "closed" && x.r.profit !== null)
-    .sort((a, b) => (dateKey(a.t) || "").localeCompare(dateKey(b.t) || "") || (a.t.createdAt || 0) - (b.t.createdAt || 0));
-  const currencyOf = (name) => { const a = accounts.find((x) => x.name === name); return a ? a.currency : "USD"; };
-  const pnl = (x) => toMarketCurrency(x.r.profit, currencyOf(x.t.account), m, fxRates);
+    .sort((a, b) => (dateKey(a.t) || "").localeCompare(dateKey(b.t) || "") || (a.t.createdAt || 0) - (b.t.createdAt || 0))
+    .map((x) => ({ ...x, date: dateKey(x.t) || "", pnl: toMarketCurrency(x.r.profit, currencyOf(x.t.account), m, fxRates) }));
+}
 
-  const c = curveDrawdown(closed.map(pnl), base);
+// Sụt vốn từ đỉnh, tính trên VỐN PHÂN CHIA (không phải tiền đã nạp) cộng lãi/lỗ các lệnh đã đóng
+// kể từ ngày bắt đầu. Gắn nhiều tài khoản vào một mảng (VD hai sàn chứng khoán) thì chúng dùng
+// chung vốn nên chung một đường. Mảng bật bậc vốn thì "vốn phân chia" đã được nâng theo lãi, cộng
+// lãi thêm lần nữa là đếm hai lần — nên tính trên vốn gốc của bậc + tiền nạp + lãi/lỗ từ ngày của bậc.
+export function marketDrawdown(plan, m, trades, resources) {
+  const accounts = (resources && resources.accounts) || [];
+  const names = marketAccountNames(m, accounts);
+  const lad = ladderOn(m) ? m.ladder : null;
+  const rate = m.currency === "USD" ? 1 : num(m.rate, 1);
+  const closed = marketClosedPnl(plan, m, trades, resources, lad ? lad.from : plan.startDate || "");
+  const base = lad ? lad.capital * rate : marketUnitBase(m);
+  const events = lad
+    ? [...lad.deposits.filter((d) => d.date >= lad.from && d.date <= todayStr()).map((d) => ({ date: d.date, k: 0, v: d.amount * rate })), ...closed.map((x) => ({ date: x.date, k: 1, v: x.pnl }))]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k).map((e) => e.v)
+    : closed.map((x) => x.pnl);
+  const c = curveDrawdown(events, base);
   return {
     pct: c.pct, level: drawdownLevel(plan, c.pct), current: c.current, peak: c.peak,
     tradeCount: closed.length, linked: names.size > 0,
     // Chuỗi thua đang chạy — lý do thứ hai để về mốc cầm chừng, bên cạnh sụt vốn.
     lossStreak: lossStreakOf(closed),
   };
+}
+
+// ——— Bậc vốn tự tăng ———
+// Vốn tính rủi ro = mốc gần nhất đã vượt, không phải số dư từng ngày: tiền rủi ro chỉ đổi khi
+// chạm mốc. Đi lại đường vốn từ ngày của bậc (mọi thứ tính bằng USD):
+//   • Lên bậc: chỉ xét lúc CHỐT TUẦN — vốn cuối tuần ≥ vốn tính rủi ro × (1 + bước) thì từ thứ 2
+//     tuần sau vốn tính rủi ro nhân thêm một bước (lãi đột biến thì lên nhiều bậc một lúc).
+//   • Hạ bậc: xét NGAY sau mỗi lệnh — vốn thủng mốc của bậc dưới thêm `downPct`% thì về bậc dưới.
+//     Không hạ dưới sàn (vốn gốc + tiền nạp): lỗ sâu hơn đã có mức cầm chừng / luật sụt vốn lo.
+//   • Nạp thêm: cộng vào vốn, vào vốn tính rủi ro và vào sàn cùng lúc.
+// Không lưu trạng thái: cùng dữ liệu lệnh thì luôn ra cùng một bậc, máy nào mở cũng như nhau.
+export function ladderState(plan, m, trades, resources, today = todayStr()) {
+  if (!ladderOn(m)) return null;
+  const lad = m.ladder;
+  const rate = m.currency === "USD" ? 1 : num(m.rate, 1) || 1;
+  const up = 1 + lad.stepPct / 100;
+  const cut = 1 - lad.downPct / 100;
+  // Lần nạp ghi trước cho ngày sau này thì chưa tính.
+  const closed = marketClosedPnl(plan, m, trades, resources, lad.from).filter((x) => x.date <= today);
+  const events = [
+    ...lad.deposits.filter((d) => d.date >= lad.from && d.date <= today).map((d) => ({ date: d.date, k: 0, v: d.amount })),
+    ...closed.map((x) => ({ date: x.date, k: 1, v: x.pnl / rate })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k);
+  let equity = lad.capital;
+  let base = lad.capital;
+  let floor = lad.capital;
+  let peakBase = base;
+  const history = [];
+  const upCheck = (date) => {
+    while (equity >= base * up - 0.005) {
+      const to = Math.round(base * up * 100) / 100;
+      history.push({ date, kind: "up", from: base, to, equity });
+      base = to;
+    }
+    peakBase = Math.max(peakBase, base);
+  };
+  const downCheck = (date) => {
+    while (base > floor + 0.005 && equity < (base / up) * cut) {
+      const to = Math.max(floor, Math.round((base / up) * 100) / 100);
+      history.push({ date, kind: "down", from: base, to, equity });
+      base = to;
+    }
+  };
+  let week = weekStart(lad.from);
+  events.forEach((e) => {
+    const wk = weekStart(e.date);
+    if (wk > week) { upCheck(wk); week = wk; }
+    if (e.k === 0) {
+      history.push({ date: e.date, kind: "deposit", from: base, to: Math.max(0, base + e.v), equity: equity + e.v, amount: e.v });
+      equity += e.v; base = Math.max(0, base + e.v); floor = Math.max(0, floor + e.v);
+    } else {
+      equity += e.v;
+      downCheck(e.date);
+    }
+  });
+  const thisWeek = weekStart(today);
+  if (thisWeek > week) upCheck(thisWeek);
+  const next = Math.round(base * up * 100) / 100;
+  const downAt = base > floor + 0.005 ? (base / up) * cut : null;
+  // R thực tế mỗi tháng kể từ ngày của bậc — gợi ý sẵn cho ô dự phóng.
+  const withR = closed.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
+  const days = (new Date(`${today}T00:00:00`) - new Date(`${lad.from}T00:00:00`)) / 86400000;
+  return {
+    rPerMonth: days >= 28 && withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / (days / 30.44) : null,
+    base, equity, floor, next, downAt, history, tradeCount: closed.length, rate,
+    // Bậc thứ mấy tính từ sàn — sàn đổi khi nạp thêm nên đây chỉ là con số để nhìn.
+    level: base > 0 && floor > 0 ? Math.max(0, Math.round(Math.log(base / floor) / Math.log(up))) : 0,
+    // Vốn đã đủ mốc nhưng tuần chưa chốt: sẽ lên bậc từ thứ 2 tuần sau.
+    pendingUp: equity >= next - 0.005,
+    toNext: equity > 0 ? next / equity - 1 : null,
+  };
+}
+
+// Vốn tính rủi ro mà mỗi mảng bật bậc nên có ngay lúc này — App dùng để tự đặt lại "Vốn phân
+// chia" (form vào lệnh, tin MT5, bot Telegram đều đọc ô đó). Trả về null khi không có gì đổi.
+export function syncLadderBases(plan, trades, resources, today = todayStr()) {
+  if (!plan || !(plan.markets || []).some(ladderOn)) return null;
+  let changed = false;
+  const markets = plan.markets.map((m) => {
+    const st = ladderState(plan, m, trades, resources, today);
+    if (!st) return m;
+    const target = Math.round(st.base * 100) / 100;
+    if (Math.abs(num(m.allocated, 0) - target) < 0.01) return m;
+    changed = true;
+    return { ...m, allocated: target };
+  });
+  return changed ? { ...plan, markets } : null;
+}
+
+// Dự phóng: bao nhiêu tháng nữa thì tiền rủi ro mỗi lệnh (mức `pct`%) đạt `targetRisk`, nếu mỗi
+// tháng ra đều `monthlyR` R và nạp đều `yearlyDeposit`/năm. Cùng luật bậc (lên bậc theo tháng
+// cho gọn). Không tới trong 50 năm thì null.
+export function ladderProjection({ equity, base, stepPct, pct, monthlyR, yearlyDeposit, targetRisk }) {
+  const up = 1 + num(stepPct, LADDER_STEP_DEFAULT) / 100;
+  const p = num(pct, 0) / 100;
+  if (!(p > 0) || !(targetRisk > 0)) return null;
+  let E = num(equity, 0);
+  let B = num(base, 0);
+  if (B * p >= targetRisk) return { months: 0, base: B, equity: E };
+  for (let mth = 1; mth <= 600; mth++) {
+    E += num(monthlyR, 0) * p * B + num(yearlyDeposit, 0) / 12;
+    B += num(yearlyDeposit, 0) / 12;
+    while (E >= B * up) B *= up;
+    if (E <= 0) return null;
+    if (B * p >= targetRisk) return { months: mth, base: B, equity: E };
+  }
+  return null;
 }
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
