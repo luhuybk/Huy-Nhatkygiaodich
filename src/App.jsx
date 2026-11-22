@@ -57,6 +57,7 @@ const ResourceManager = lazy(() => import("./components/Resources.jsx").then((m)
 const NotesSection = lazy(() => import("./components/Notes.jsx").then((m) => ({ default: m.NotesSection })));
 const SettingsSection = lazy(() => import("./components/Settings.jsx").then((m) => ({ default: m.SettingsSection })));
 const HealthCheckPage = lazy(() => import("./components/HealthCheck.jsx").then((m) => ({ default: m.HealthCheckPage })));
+import { PageHelp } from "./components/PageHelp.jsx";
 
 const NAV_GROUPS = [
   {
@@ -980,6 +981,7 @@ function AppShell({ onSignOut, userEmail }) {
             </button>
           </div>
           <div className="body">
+            {loading ? null : <PageHelp view={view} />}
             {loading ? <p className="empty-note">Đang tải dữ liệu...</p> : (
             <Suspense fallback={<LazyFallback />}>
               {view === "dashboard" ? <Dashboard trades={trades} resources={resources} ledger={ledger} account={activeAccount} onAccountChange={setActiveAccount} onViewTrade={startEdit} lessons={lessons} onGoToLessons={() => { writeLocalUi("journeyTab", "lessons"); goTo("lessons"); }}
