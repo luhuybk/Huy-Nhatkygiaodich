@@ -476,7 +476,8 @@ function capLadder(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[
     const wk = capWeekStart(e.date);
     if (wk > week) { upCheck(); week = wk; }
     equity += e.v;
-    downCheck();
+    // Nạp làm vốn vượt mốc thì lên bậc ngay (không chờ chốt tuần) — như bản app.
+    if (e.k === 0 && e.v > 0) upCheck(); else downCheck();
   }
   if (capWeekStart(today) > week) upCheck();
   return { base, equity, next: Math.round(base * up * 100) / 100, rate };

@@ -1513,6 +1513,11 @@
 @media (max-width: 560px) { .cap-road { padding: 12px; } .cap-road-weeks td, .cap-road-table td { padding: 4px 4px; font-size: 11.5px; } .cap-road-table th:last-child, .cap-road-table td:last-child, .cap-road-table th:nth-child(4), .cap-road-table td:nth-child(4) { display: none; }
   .cap-road-table small { display: block; } .cap-road-weeks td:last-child, .cap-road-weeks th:last-child { white-space: normal; } .cap-road-weeks td:first-child { white-space: normal; } }
 .cap-road-steps, .cap-road-track { overflow-x: auto; }
+.cap-ladder-quick { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 130px) auto; gap: 6px; align-items: center; }
+.cap-ladder-quick .input { padding: 4px 7px; font-size: 12.5px; min-width: 0; }
+.cap-ladder-quick .btn { padding: 4px 10px; font-size: 12px; }
+.cap-ladder-quick .jl-seg button { padding: 4px 9px; font-size: 12px; }
+@media (max-width: 560px) { .cap-ladder-quick { grid-template-columns: auto minmax(0, 1fr); } }
 .cap-ladder-edit { display: flex; flex-direction: column; gap: 8px; padding: 9px 10px; border-radius: 9px; border: 1px dashed var(--border); }
 .cap-ladder-edit.is-on { border-style: solid; border-color: rgba(var(--accent-rgb), .4); }
 .cap-ladder-deps { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }

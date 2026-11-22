@@ -116,7 +116,7 @@ function LadderEditor({ m, setM, startDate }) {
               <input type="number" step="any" min="0" className="input mono" value={lad.downPct} onChange={(e) => setLad({ downPct: e.target.value })} />
             </Field>
           </div>
-          <Field label="Nạp thêm / rút ra (USD)" hint="Nạp chỉ cộng vào số dư; vốn tính rủi ro vẫn đi theo các mốc vốn gốc × 1,2ⁿ, chốt tuần vượt mốc mới đổi (nạp lớn thì lên vài bậc một lúc). Rút ra thì ghi số âm">
+          <Field label="Nạp thêm / rút ra (USD)" hint="Nạp chỉ cộng vào số dư; vốn tính rủi ro vẫn đi theo các mốc vốn gốc × 1,2ⁿ. Nạp làm số dư vượt mốc thì lên bậc ngay (lãi từ lệnh thì chờ chốt tuần). Rút ra thì ghi số âm — thủng mốc dưới thì hạ bậc ngay">
             <div className="cap-ladder-deps">
               {deps.map((d) => (
                 <div key={d.id} className="cap-ladder-dep">
@@ -589,7 +589,34 @@ function RoadmapTab({ plan, ladders, accounts, today, focusId, setFocusId, onSav
 
 const LADDER_KIND = { up: "▲ Lên bậc", down: "▼ Hạ bậc", deposit: "＋ Nạp" };
 
-function LadderBox({ market, st, today, onOpenRoadmap }) {
+// Nạp / rút ngay trên thẻ — khỏi mở ô Sửa mảng. Ghi vào danh sách nạp của bậc vốn.
+function QuickDeposit({ market, today, onSave, onDone }) {
+  const [kind, setKind] = useState("in");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(today);
+  const n = numOr(amount, 0);
+  const ok = n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date || "");
+  const submit = () => {
+    if (!ok) return;
+    const lad = market.ladder;
+    onSave({ ...market, ladder: { ...lad, deposits: [...(lad.deposits || []), { id: uid(), date, amount: kind === "in" ? n : -n }].sort((a, b) => a.date.localeCompare(b.date)) } });
+    setAmount("");
+    onDone();
+  };
+  return (
+    <div className="cap-ladder-quick">
+      <span className="jl-seg">
+        <button type="button" className={kind === "in" ? "jl-seg-on" : ""} onClick={() => setKind("in")}>Nạp</button>
+        <button type="button" className={kind === "out" ? "jl-seg-on" : ""} onClick={() => setKind("out")}>Rút</button>
+      </span>
+      <MoneyInput value={amount} onChange={setAmount} placeholder="Số tiền ($)" />
+      <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
+      <button type="button" className="btn btn-primary" disabled={!ok} onClick={submit}><Check size={13} /> Ghi</button>
+    </div>
+  );
+}
+
+function LadderBox({ market, st, today, onOpenRoadmap, onSave }) {
   const [open, setOpen] = useState("");
   const road = roadmapCalc(market, st, today);
   const lad = market.ladder;
@@ -613,7 +640,7 @@ function LadderBox({ market, st, today, onOpenRoadmap }) {
         <span className="cap-ladder-fill" style={{ width: `${pos}%` }} />
       </div>
       {st.pendingUp ? (
-        <p className="cap-ladder-note is-up">▲ Đã vượt mốc — từ thứ 2 tuần sau rủi ro {fmtPctVN(pct)} = {fmtUsd((st.next * pct) / 100)} (chốt theo vốn cuối tuần).</p>
+        <p className="cap-ladder-note is-up">▲ Lãi đã vượt mốc — từ thứ 2 tuần sau rủi ro {fmtPctVN(pct)} = {fmtUsd((st.next * pct) / 100)} (lãi từ lệnh chốt theo vốn cuối tuần; tiền nạp thì lên bậc ngay).</p>
       ) : null}
       <p className="field-hint cap-ladder-note">
         {st.downAt !== null
@@ -626,8 +653,10 @@ function LadderBox({ market, st, today, onOpenRoadmap }) {
       </p>
       <div className="cap-ladder-tabs">
         <button type="button" className="btn btn-ghost" onClick={onOpenRoadmap}>Xem lộ trình →</button>
+        <button type="button" className={`btn btn-ghost ${open === "dep" ? "is-on" : ""}`} onClick={() => toggle("dep")}>Nạp / rút</button>
         <button type="button" className={`btn btn-ghost ${open === "hist" ? "is-on" : ""}`} onClick={() => toggle("hist")}>Lịch sử bậc ({st.history.length})</button>
       </div>
+      {open === "dep" ? <QuickDeposit market={market} today={today} onSave={onSave} onDone={() => setOpen("hist")} /> : null}
       {open === "hist" ? (
         st.history.length ? (
           <table className="cap-ladder-hist">
@@ -693,7 +722,7 @@ function MarketCard({ plan, market, dd, ladder, weeks, accounts, onPick, onSave,
           onSplit={(groups, side) => { setSplitting(false); onSplit(groups, side); }} />
       ) : null}
 
-      {ladder ? <LadderBox market={market} st={ladder} today={weeks.today} onOpenRoadmap={() => weeks.openRoadmap(market.id)} /> : null}
+      {ladder ? <LadderBox market={market} st={ladder} today={weeks.today} onSave={onSave} onOpenRoadmap={() => weeks.openRoadmap(market.id)} /> : null}
 
       <table className="cap-tiers">
         <thead><tr><th>Rủi ro</th><th>Tiền / lệnh</th><th>Quy ra vốn tổng</th></tr></thead>

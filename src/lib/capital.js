@@ -539,8 +539,9 @@ export function marketDrawdown(plan, m, trades, resources) {
 //     tuần sau vốn tính rủi ro nhân thêm một bước (lãi đột biến thì lên nhiều bậc một lúc).
 //   • Hạ bậc: xét NGAY sau mỗi lệnh — vốn thủng mốc của bậc dưới thêm `downPct`% thì về bậc dưới.
 //     Không hạ dưới vốn gốc: lỗ sâu hơn đã có mức cầm chừng / luật sụt vốn lo.
-//   • Nạp thêm: CHỈ cộng vào vốn thật. Vốn tính rủi ro vẫn nằm trên các mốc cố định vốn gốc × 1,2ⁿ,
-//     chốt tuần vượt mốc mới đổi (nạp lớn thì lên vài bậc một lúc) — tiền rủi ro chỉ đổi khi đổi bậc.
+//   • Nạp thêm: CHỈ cộng vào vốn thật. Vốn tính rủi ro vẫn nằm trên các mốc cố định vốn gốc × 1,2ⁿ —
+//     tiền rủi ro chỉ đổi khi đổi bậc. Nạp làm vốn vượt mốc thì lên bậc NGAY, không chờ chốt tuần:
+//     chờ tuần là để lãi một lệnh ăn đậm không kéo rủi ro lên, còn tiền nạp là tiền chắc chắn.
 //     Rút ra làm thủng mốc thì hạ bậc ngay như lỗ.
 // Không lưu trạng thái: cùng dữ liệu lệnh thì luôn ra cùng một bậc, máy nào mở cũng như nhau.
 export function ladderState(plan, m, trades, resources, today = todayStr()) {
@@ -582,7 +583,7 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
     if (e.k === 0) {
       history.push({ date: e.date, kind: "deposit", from: base, to: base, equity: equity + e.v, amount: e.v });
       equity += e.v;
-      downCheck(e.date);
+      if (e.v > 0) upCheck(e.date); else downCheck(e.date);
     } else {
       equity += e.v;
       downCheck(e.date);
