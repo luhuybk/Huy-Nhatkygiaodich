@@ -345,7 +345,7 @@ type CapMarket = {
   id: string; name?: string; currency?: string; rate?: number; allocated?: number; accountCount?: number;
   tiers?: number[]; defaultTier?: number; accountIds?: string[]; holdTier?: number | null; side?: boolean;
   rRule?: Partial<Record<CapRuleKey, number>>; assetGroups?: string[];
-  ladder?: { on?: boolean; capital?: number; from?: string; stepPct?: number; downPct?: number; deposits?: { date?: string; amount?: number }[] } | null;
+  ladder?: { on?: boolean; alert?: boolean; capital?: number; from?: string; stepPct?: number; downPct?: number; deposits?: { date?: string; amount?: number }[]; plan?: { pct?: number } } | null;
 };
 type CapRuleKey = "downW1" | "downW2" | "holdM" | "upW1" | "upM" | "minUp";
 type CapPlan = { startDate?: string; ddWarnPct?: number; ddCutPct?: number; markets?: CapMarket[]; picks?: Record<string, Record<string, number>> };
@@ -439,6 +439,11 @@ function capDeposits(m: CapMarket, today: string) {
     .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")) && Number(d.amount) && String(d.date) >= String(l.from || "") && String(d.date) <= today)
     .map((d) => ({ date: String(d.date), amount: Number(d.amount) }));
 }
+// Mức rủi ro chuẩn của mảng bật bậc — bản chép ladderStdPct: mức chọn ở Lộ trình → mức mặc định → mức giữa.
+function capStdPct(m: CapMarket) {
+  const tiers = (m.tiers || []).filter((x) => Number(x) > 0);
+  return Number(m.ladder?.plan?.pct) || Number(m.defaultTier) || tiers[Math.floor((tiers.length - 1) / 2)] || 1;
+}
 function capWeekStart(d: string) {
   const dow = (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7;
   return shiftDateStr(d, -dow);
@@ -469,18 +474,24 @@ function capLadder(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[
   // Nạp chỉ cộng vào vốn — vốn tính rủi ro nằm trên các mốc vốn gốc × 1,2ⁿ, chỉ đổi khi đổi bậc.
   let equity = Number(l.capital), base = equity;
   const floor = equity;
-  const upCheck = () => { while (equity >= base * up - 0.005) base = Math.round(base * up * 100) / 100; };
-  const downCheck = () => { while (base > floor + 0.005 && equity < (base / up) * cut) base = Math.max(floor, Math.round((base / up) * 100) / 100); };
+  const history: { date: string; kind: "up" | "down"; from: number; to: number; equity: number }[] = [];
+  const upCheck = (date: string) => {
+    while (equity >= base * up - 0.005) { const to = Math.round(base * up * 100) / 100; history.push({ date, kind: "up", from: base, to, equity }); base = to; }
+  };
+  const downCheck = (date: string) => {
+    while (base > floor + 0.005 && equity < (base / up) * cut) { const to = Math.max(floor, Math.round((base / up) * 100) / 100); history.push({ date, kind: "down", from: base, to, equity }); base = to; }
+  };
   let week = capWeekStart(from);
   for (const e of events) {
     const wk = capWeekStart(e.date);
-    if (wk > week) { upCheck(); week = wk; }
+    if (wk > week) { upCheck(wk); week = wk; }
     equity += e.v;
     // Nạp làm vốn vượt mốc thì lên bậc ngay (không chờ chốt tuần) — như bản app.
-    if (e.k === 0 && e.v > 0) upCheck(); else downCheck();
+    if (e.k === 0 && e.v > 0) upCheck(e.date); else downCheck(e.date);
   }
-  if (capWeekStart(today) > week) upCheck();
-  return { base, equity, next: Math.round(base * up * 100) / 100, rate };
+  if (capWeekStart(today) > week) upCheck(capWeekStart(today));
+  const next = Math.round(base * up * 100) / 100;
+  return { base, equity, next, rate, history, pendingUp: equity >= next - 0.005, floor };
 }
 
 function capDrawdown(plan: CapPlan, m: CapMarket, trades: Record<string, unknown>[], accounts: CapAccount[], fxRates: Record<string, number>, today = "9999-12-31") {
@@ -1125,7 +1136,7 @@ Deno.serve(async () => {
               const rText = st.linked ? `\n   R: 1T ${st.w1.n ? rVN(st.w1.r) : "—"} · 2T ${st.w2.n ? rVN(st.w2.r) : "—"} · 4T ${st.w4.n ? rVN(st.w4.r) : "—"}` : "";
               const sugText = !sug ? "" : ` → gợi ý ${sug.action === "up" ? "▲" : sug.action === "down" ? "▼" : "="} ${pctVN(sug.pct)}${Number(m.holdTier) === sug.pct ? " cầm chừng" : ""}`;
               // Bậc vốn: tuần sau có lên / hạ bậc không, tiền rủi ro mức chuẩn đổi ra sao.
-              const stdPct = capNum(m.defaultTier, now.pct ?? 0);
+              const stdPct = capStdPct(m);
               const ladText = !lad || !ladNext ? "" : ladNext.base > lad.base + 0.005
                 ? `\n   📶 ▲ Tuần sau lên bậc: vốn tính risk ${capMoney(Math.round(lad.base))} → ${capMoney(Math.round(ladNext.base))} (${pctVN(stdPct)} = ${capMoney(Math.round(ladNext.base * stdPct) / 100)})`
                 : `\n   📶 Bậc vốn ${capMoney(Math.round(lad.base))} · vốn ${capMoney(Math.round(lad.equity))} · mốc kế ${capMoney(Math.round(lad.next))} (còn +${pctVN(Math.max(0, (lad.next / lad.equity - 1) * 100), 1)})`;
@@ -1143,6 +1154,61 @@ Deno.serve(async () => {
           } else {
             log[logKey] = true;
             logChanged = true;
+          }
+        }
+      }
+    }
+
+    // Bậc vốn tự tăng: báo khi số dư chạm mốc bậc kế (lên bậc từ thứ 2 tuần sau), và khi bậc thật sự
+    // đổi (lên do chốt tuần / nạp, hạ do thủng mốc dưới). Mỗi mốc / mỗi lần đổi bậc báo một lần; chỉ gửi
+    // 07:00–22:00 giờ VN — đổi bậc lúc 0h thứ 2 thì sáng ra mới báo.
+    if (settings.telegramBotToken && settings.telegramChatId && currentHHMM >= "07:00" && currentHHMM <= "22:00") {
+      const { data: ladPlanRow } = await supabase.from("app_data").select("value").eq("user_id", row.user_id).eq("key", "capitalPlan").maybeSingle();
+      const ladPlan = (ladPlanRow?.value || null) as CapPlan | null;
+      const ladMarkets = ladPlan && Array.isArray(ladPlan.markets) ? ladPlan.markets.filter((m) => m && m.id && capLadderOn(m) && m.ladder!.alert !== false) : [];
+      if (ladPlan && ladMarkets.length) {
+        const fxRates = (resourcesRow?.value?.fxRates || {}) as Record<string, number>;
+        const yesterday = shiftDateStr(today, -1);
+        const weekNow = shiftDateStr(today, -((todayWeekdayNum + 6) % 7));
+        for (const m of ladMarkets) {
+          const lad = capLadder(ladPlan, m, trades, accounts as CapAccount[], fxRates, today);
+          if (!lad) continue;
+          const pct = capStdPct(m);
+          const one = (b: number) => capMoney(Math.round((b * pct) / 100 * 100) / 100);
+          const name = m.name || "?";
+          const msgs: { key: string; text: string }[] = [];
+          // Đổi bậc hôm nay / hôm qua (bot nghỉ đêm thì sáng báo bù) — không lôi lịch sử cũ ra báo lại.
+          for (const h of lad.history.filter((x) => x.date >= yesterday)) {
+            const isUp = h.kind === "up";
+            msgs.push({
+              key: `ladstep_${h.date}_${m.id}_${Math.round(h.to)}`,
+              text: buildMessage(
+                isUp ? "📶" : "📉", isUp ? "ĐÃ LÊN BẬC VỐN" : "ĐÃ HẠ BẬC VỐN", isUp ? "🟢" : "🔴", name, undefined,
+                `Vốn tính rủi ro ${capMoney(Math.round(h.from))} → ${capMoney(Math.round(h.to))} (số dư ${capMoney(Math.round(h.equity))}).\n`
+                + `Từ giờ 1 lệnh ${pctVN(pct)} = ${one(h.to)} (trước ${one(h.from)}).`
+                + (isUp ? "" : "\nVốn thủng mốc dưới — đi nhỏ lại cho tới khi lấy lại mốc."),
+              ),
+            });
+          }
+          if (lad.pendingUp) {
+            const nextUp = Math.round(lad.next * (1 + (Number(m.ladder!.stepPct) > 0 ? Number(m.ladder!.stepPct) : 20) / 100) * 100) / 100;
+            msgs.push({
+              key: `ladhit_${weekNow}_${m.id}_${Math.round(lad.next)}`,
+              text: buildMessage(
+                "🎯", "CHẠM MỐC BẬC VỐN", "🟢", name, undefined,
+                `Số dư ${capMoney(Math.round(lad.equity))} đã vượt mốc ${capMoney(Math.round(lad.next))} (+${pctVN(Number(m.ladder!.stepPct) || 20)} so với bậc ${capMoney(Math.round(lad.base))}).\n`
+                + `Từ thứ 2 tuần sau (${ddmm(shiftDateStr(weekNow, 7))}) 1 lệnh ${pctVN(pct)} = ${one(lad.next)} (đang ${one(lad.base)}) — giữ được số dư tới hết tuần là lên.\n`
+                + `Mốc tiếp theo: ${capMoney(Math.round(nextUp))}.`,
+              ),
+            });
+          }
+          for (const x of msgs) {
+            if (log[x.key]) continue;
+            if (await sendTelegram(settings.telegramBotToken!, settings.telegramChatId!, x.text, settings.capitalPickReminder?.threadId)) {
+              log[x.key] = true;
+              logChanged = true;
+              sent++;
+            }
           }
         }
       }

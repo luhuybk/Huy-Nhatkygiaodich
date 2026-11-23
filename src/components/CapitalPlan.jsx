@@ -157,6 +157,10 @@ function LadderEditor({ m, setM, startDate }) {
               <input type="number" step="any" min="0" className="input mono" value={lad.downPct} onChange={(e) => setLad({ downPct: e.target.value })} />
             </Field>
           </div>
+          <label className="mc-check">
+            <input type="checkbox" checked={lad.alert !== false} onChange={(e) => setLad({ alert: e.target.checked })} />
+            <span><b>Báo Telegram</b> khi số dư chạm mốc bậc kế, và khi lên / hạ bậc (gửi vào chỗ nhận tin "Chọn mức đi vốn")</span>
+          </label>
           <Field label="Nạp thêm / rút ra (USD)" hint="Nạp chỉ cộng vào số dư; vốn tính rủi ro vẫn đi theo các mốc vốn gốc × 1,2ⁿ. Nạp làm số dư vượt mốc thì lên bậc ngay (lãi từ lệnh thì chờ chốt tuần). Rút ra thì ghi số âm — thủng mốc dưới thì hạ bậc ngay">
             <div className="cap-ladder-deps">
               {deps.map((d) => (
@@ -338,8 +342,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 function roadmapCalc(market, st, today) {
   const lad = market.ladder;
   const rp = lad.plan || {};
-  const tiers = (market.tiers || []).filter((x) => x > 0);
-  const pct = rp.pct || Number(market.defaultTier) || tiers[Math.floor((tiers.length - 1) / 2)] || 1;
+  const pct = st.stdPct || 1;
   const target = rp.targetRisk || 1500;
   const actualR = st.rPerMonth && st.rPerMonth > 0 ? Math.round(st.rPerMonth * 10) / 10 : null;
   const monthlyR = rp.monthlyR || actualR || 5;
@@ -425,6 +428,91 @@ function RoadmapChart({ c }) {
   );
 }
 
+// Bảng R từng tuần — tính bằng R CHUẨN (1R = vốn bậc × mức chuẩn), lệnh đi nhỏ hơn chỉ góp phần tương ứng.
+// Tuần có lệnh đi nhỏ thì ghi thêm tổng R của lệnh để thấy chênh. `goalWeek` null = không có mục tiêu.
+function LadderWeekTable({ st, weekKeys, today, goalWeek }) {
+  if (!weekKeys.length) return null;
+  const pct = st.stdPct || 1;
+  const hasGoal = goalWeek !== null && goalWeek !== undefined;
+  const anySmall = weekKeys.some((k) => (st.weekR[k] || {}).small);
+  return (
+    <>
+      <table className="cap-road-weeks">
+        <thead><tr><th>Tuần</th><th>Lệnh</th><th title={`1R chuẩn = vốn bậc × ${fmtPctVN(pct)}`}>R chuẩn</th>{hasGoal ? <th>Mục tiêu {fmtRVN(goalWeek)}</th> : null}</tr></thead>
+        <tbody>
+          {weekKeys.map((k) => {
+            const w = st.weekR[k] || { r: 0, n: 0, raw: 0, small: 0 };
+            const current = k === thisWeekKey(today);
+            const ok = hasGoal && w.r >= goalWeek - 0.005;
+            return (
+              <tr key={k} className={current ? "is-current" : !hasGoal ? "" : ok ? "is-ok" : "is-miss"}>
+                <td className="mono">{weekLabel(k)}{current ? " ·  nay" : ""}</td>
+                <td className="mono">{w.n}</td>
+                <td className="mono">{fmtRVN(w.r)}{w.small ? <small className="cap-road-raw" title={`${w.small} lệnh đi nhỏ hơn mức ${fmtPctVN(pct)}`}> · R lệnh {fmtRVN(w.raw)}</small> : null}</td>
+                {hasGoal ? <td>{current ? (ok ? "✓ đạt" : `còn ${r1(goalWeek - w.r)}R`) : ok ? "✓" : `✗ thiếu ${r1(goalWeek - w.r)}R`}</td> : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="field-hint" style={{ margin: 0 }}>
+        R chuẩn: 1R = vốn tính rủi ro × {fmtPctVN(pct)} (bây giờ {fmtUsd((st.base * pct) / 100)}). Lệnh đi nhỏ hơn chỉ góp phần tương ứng — VD đi {fmtPctVN(pct / 2)} thắng 3R = 1,5R chuẩn.
+        {anySmall ? " Dòng có \"R lệnh\" là tuần có lệnh đi nhỏ: R lệnh là số ghi ở từng lệnh, R chuẩn mới là phần thật sự đẩy vốn lên mốc." : ""}
+      </p>
+    </>
+  );
+}
+
+// Mảng chưa có kế hoạch nạp / R (VD US, VN stock): chỉ theo dõi mốc bậc kế và báo Telegram khi chạm.
+function LadderMilestone({ market, st, today, weekKeys, onSave }) {
+  const lad = market.ladder;
+  const pct = st.stdPct || 1;
+  const unit = (st.base * pct) / 100;
+  const gap = Math.max(0, st.next - st.equity);
+  const gapR = unit > 0 ? gap / unit : null;
+  const actualR = st.rPerMonth && st.rPerMonth > 0 ? st.rPerMonth : null;
+  const weeksLeft = actualR && gapR !== null && !st.pendingUp ? gapR / perWeek(actualR) : null;
+  const lo = st.downAt ?? st.floor;
+  const pos = st.next > lo ? Math.max(0, Math.min(100, ((st.equity - lo) / (st.next - lo)) * 100)) : 100;
+  const alertOn = lad.alert !== false;
+  return (
+    <>
+      <div className="cap-road-kpis">
+        <div className="cap-road-kpi">
+          <span>1 lệnh {fmtPctVN(pct)} bây giờ</span>
+          <b>{fmtUsd(unit)}</b>
+          <small>vốn tính rủi ro {fmtUsd(st.base)} · bậc {st.level}</small>
+        </div>
+        <div className={`cap-road-kpi ${st.pendingUp ? "is-good" : ""}`}>
+          <span>Mốc kế {fmtUsd(st.next)} → 1 lệnh {fmtUsd((st.next * pct) / 100)}</span>
+          <b>{st.pendingUp ? "đã chạm ✓" : `còn ${fmtUsd(gap)}`}</b>
+          <small>{st.pendingUp ? "lên bậc từ thứ 2 tuần sau" : `+${pctText(st.toNext || 0)} số dư · ≈ ${r1(gapR)}R chuẩn`}</small>
+        </div>
+        <div className="cap-road-kpi">
+          <span>Tốc độ thực tế từ {ddmm(lad.from)}</span>
+          <b>{actualR ? `${r1(actualR)}R/tháng` : st.rPerMonth !== null ? `${r1(st.rPerMonth)}R/tháng` : <span className="cap-road-dim">{st.rTrades ? "chưa đủ 4 tuần" : "chưa có lệnh"}</span>}</b>
+          <small>{weeksLeft !== null ? `giữ nhịp này ≈ ${r1(weeksLeft)} tuần nữa chạm mốc (chưa tính nạp)` : st.pendingUp ? "" : actualR === null ? "" : "R/tháng đang âm"}</small>
+        </div>
+      </div>
+      <div className="cap-ladder-track cap-road-track-bar" title={`${fmtUsd(lo)} → ${fmtUsd(st.next)}`}>
+        <span className="cap-ladder-fill" style={{ width: `${pos}%` }} />
+      </div>
+      <div className={`cap-road-alert ${alertOn ? "is-on" : ""}`}>
+        <Bell size={14} />
+        <span>{alertOn
+          ? <>Bot Telegram sẽ nhắn khi số dư chạm <b>{fmtUsd(st.next)}</b>, và khi bậc đổi (lên hoặc hạ) — kèm số tiền 1 lệnh mới.</>
+          : "Đang tắt báo Telegram cho mảng này."}</span>
+        <button type="button" className="btn btn-ghost" onClick={() => onSave({ ...market, ladder: { ...lad, alert: !alertOn } })}>{alertOn ? "Tắt báo" : "Bật báo"}</button>
+      </div>
+      <div className="cap-road-track">
+        <b>R chuẩn từng tuần</b>
+        <LadderWeekTable st={st} weekKeys={weekKeys} today={today} goalWeek={null} />
+      </div>
+      <p className="field-hint" style={{ margin: 0 }}>Khi đã biết sẽ nạp bao nhiêu và mỗi tháng nhắm bao nhiêu R, chuyển sang "Có kế hoạch" ở trên để có lộ trình, hạn và R/tuần cần đạt.</p>
+    </>
+  );
+}
+
 // Tab Lộ trình: đặt mục tiêu + kế hoạch nạp → bao giờ tới, cần R/tháng · R/tuần · lệnh/tuần bao nhiêu
 // để kịp hạn, các bậc sẽ đi qua; chốt lộ trình để mỗi tuần so thực tế với kế hoạch.
 function LadderRoadmap({ market, st, today, onSave }) {
@@ -455,8 +543,27 @@ function LadderRoadmap({ market, st, today, onSave }) {
   const shown = steps.slice(0, hitIdx >= 0 ? hitIdx + 1 : 30);
   const okWeeks = weekKeys.filter((k) => k !== thisWeekKey(today) && (st.weekR[k] || { r: 0 }).r >= goalWeek - 0.005).length;
   const doneWeeks = weekKeys.filter((k) => k !== thisWeekKey(today)).length;
+  const mode = rp.mode === "milestone" ? "milestone" : "plan";
+  const modeBar = (
+    <div className="cap-road-mode">
+      <span className="jl-seg">
+        <button type="button" className={mode === "plan" ? "jl-seg-on" : ""} onClick={() => save({ mode: "plan" })}>Có kế hoạch</button>
+        <button type="button" className={mode === "milestone" ? "jl-seg-on" : ""} onClick={() => save({ mode: "milestone" })}>Chỉ báo khi chạm mốc</button>
+      </span>
+      <span className="field-hint" style={{ margin: 0 }}>{mode === "plan" ? "Đặt mục tiêu, kế hoạch nạp, R/tháng → app tính hạn và R/tuần cần." : "Chưa biết nạp bao nhiêu / bao nhiêu R một tháng — chỉ theo dõi mốc +" + lad.stepPct + "% và báo khi chạm."}</span>
+    </div>
+  );
+  if (mode === "milestone") {
+    return (
+      <section className="cap-road" id={`roadmap-${market.id}`}>
+        {modeBar}
+        <LadderMilestone market={market} st={st} today={today} weekKeys={weekKeys} onSave={onSave} />
+      </section>
+    );
+  }
   return (
     <section className="cap-road" id={`roadmap-${market.id}`}>
+      {modeBar}
       <div className="cap-road-in">
         <label>1 lệnh đạt ($)<AmountInput value={target} commitOnBlur onChange={(n) => save({ targetRisk: Math.max(0, n) })} /></label>
         <label>Ở mức
@@ -485,7 +592,7 @@ function LadderRoadmap({ market, st, today, onSave }) {
       </div>
       <p className="field-hint cap-road-hint">
         {(rp.depAmount || 0) > 0 ? `Nạp ${fmtUsd(rp.depAmount)} ${rp.depEvery === "month" ? "mỗi tháng" : `vào tháng ${rp.depMonth || 1} mỗi năm`} (≈ ${fmtUsd(rp.depEvery === "month" ? rp.depAmount * 12 : rp.depAmount)}/năm) — nạp chỉ cộng vào số dư, tiền rủi ro đổi khi số dư vượt mốc. ` : "Chưa có kế hoạch nạp. "}
-        Thực tế từ {ddmm(lad.from)}: {c.actualR !== null ? `${fmtRVN(c.actualR)}/tháng` : "chưa đủ 4 tuần"}{st.perTrade !== null ? ` · kỳ vọng ${fmtRVN(st.perTrade)}/lệnh · ${r1(st.tradesPerWeek)} lệnh/tuần` : ""}.
+        Thực tế từ {ddmm(lad.from)} (R chuẩn): {c.actualR !== null ? `${fmtRVN(c.actualR)}/tháng` : "chưa đủ 4 tuần"}{st.perTrade !== null ? ` · kỳ vọng ${fmtRVN(st.perTrade)}/lệnh · ${r1(st.tradesPerWeek)} lệnh/tuần` : ""}.
       </p>
 
       <div className="cap-road-kpis">
@@ -546,24 +653,7 @@ function LadderRoadmap({ market, st, today, onSave }) {
           ) : <p className="field-hint" style={{ margin: 0 }}>Bấm Chốt lộ trình để app lưu kế hoạch này làm mốc — từ đó mỗi tuần so thực tế với kế hoạch: đi trước hay chậm bao nhiêu R, cần bao nhiêu R/tuần để kịp.</p>}
           {weekKeys.length ? (
             <>
-              <table className="cap-road-weeks">
-                <thead><tr><th>Tuần</th><th>Lệnh</th><th>R</th><th>Mục tiêu {fmtRVN(goalWeek)}</th></tr></thead>
-                <tbody>
-                  {weekKeys.map((k) => {
-                    const w = st.weekR[k] || { r: 0, n: 0 };
-                    const current = k === thisWeekKey(today);
-                    const ok = w.r >= goalWeek - 0.005;
-                    return (
-                      <tr key={k} className={current ? "is-current" : ok ? "is-ok" : "is-miss"}>
-                        <td className="mono">{weekLabel(k)}{current ? " ·  nay" : ""}</td>
-                        <td className="mono">{w.n}</td>
-                        <td className="mono">{fmtRVN(w.r)}</td>
-                        <td>{current ? (ok ? "✓ đạt" : `còn ${r1(goalWeek - w.r)}R`) : ok ? "✓" : `✗ thiếu ${r1(goalWeek - w.r)}R`}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <LadderWeekTable st={st} weekKeys={weekKeys} today={today} goalWeek={goalWeek} />
               {doneWeeks ? <p className="field-hint" style={{ margin: 0 }}>Đạt mục tiêu {okWeeks}/{doneWeeks} tuần đã xong.</p> : null}
             </>
           ) : null}
@@ -661,7 +751,8 @@ function LadderBox({ market, st, today, onOpenRoadmap, onSave }) {
   const [open, setOpen] = useState("");
   const road = roadmapCalc(market, st, today);
   const lad = market.ladder;
-  const pct = Number(market.defaultTier) || (market.tiers || [])[0] || 1;
+  const pct = st.stdPct || 1;
+  const milestone = road.rp.mode === "milestone";
   const lo = st.downAt ?? st.floor;
   const pos = st.next > lo ? Math.max(0, Math.min(100, ((st.equity - lo) / (st.next - lo)) * 100)) : 100;
   const toggle = (k) => setOpen((v) => (v === k ? "" : k));
@@ -688,10 +779,16 @@ function LadderBox({ market, st, today, onOpenRoadmap, onSave }) {
           ? `Vốn về dưới ${fmtUsd(st.downAt)} thì tự hạ về bậc ${fmtUsd(Math.max(st.floor, st.base / (1 + lad.stepPct / 100)))}.`
           : `Đang ở bậc gốc ${fmtUsd(st.floor)} — không hạ thêm; lỗ sâu hơn thì dùng mức cầm chừng.`}
       </p>
+      {milestone ? (
+        <p className="cap-ladder-goal">
+          {lad.alert !== false ? "🔔" : "🔕"} Chỉ theo dõi mốc{st.pendingUp ? " — đã chạm" : ` — còn ${fmtUsd(Math.max(0, st.next - st.equity))} (≈ ${r1(road.toNextR)}R chuẩn)`}{lad.alert !== false ? " · báo Telegram khi chạm / đổi bậc" : " · đang tắt báo"}
+        </p>
+      ) : (
       <p className="cap-ladder-goal">
         🎯 {fmtUsd(road.target)}/lệnh: {road.reachYm ? <><b>≈ {ymLabel(road.reachYm)}</b> với {r1(road.monthlyR)}R/tháng</> : "chưa tới với R/tháng đang đặt"}
         {road.progress ? <span className={road.progress.diff >= 0 ? "is-good" : "is-bad"}> · {road.progress.diff >= 0 ? "đi trước" : "chậm"} {r1(Math.abs(road.progress.diffR || 0))}R</span> : null}
       </p>
+      )}
       <div className="cap-ladder-tabs">
         <button type="button" className="btn btn-ghost" onClick={onOpenRoadmap}>Xem lộ trình →</button>
         <button type="button" className={`btn btn-ghost ${open === "dep" ? "is-on" : ""}`} onClick={() => toggle("dep")}>Nạp / rút</button>

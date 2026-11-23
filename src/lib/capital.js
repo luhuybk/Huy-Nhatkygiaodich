@@ -123,6 +123,8 @@ export function normalizeLadder(raw) {
   if (!raw || typeof raw !== "object") return null;
   return {
     on: !!raw.on,
+    // Bot Telegram báo khi số dư chạm mốc bậc kế / khi lên / hạ bậc. Mặc định bật.
+    alert: raw.alert !== false,
     capital: Math.max(0, num(raw.capital, 0)),
     from: typeof raw.from === "string" ? raw.from : "",
     stepPct: num(raw.stepPct, LADDER_STEP_DEFAULT) > 0 ? num(raw.stepPct, LADDER_STEP_DEFAULT) : LADDER_STEP_DEFAULT,
@@ -154,6 +156,8 @@ export function normalizeRoadmap(raw, legacy = {}) {
   } : null;
   const legacyDep = Math.max(0, num(legacy.yearlyDeposit, 0));
   return {
+    // "milestone": chưa có kế hoạch nạp / R — chỉ theo dõi và báo khi chạm mốc. Mặc định là lộ trình đầy đủ.
+    mode: r.mode === "milestone" ? "milestone" : "plan",
     targetRisk: Math.max(0, num(r.targetRisk, num(legacy.targetRisk, 0))),
     pct: Math.max(0, num(r.pct, 0)),
     monthlyR: num(r.monthlyR, num(legacy.monthlyR, 0)),
@@ -163,6 +167,14 @@ export function normalizeRoadmap(raw, legacy = {}) {
     deadline: ym(r.deadline),
     snapshot: snap,
   };
+}
+
+// Mức rủi ro "chuẩn" của mảng bật bậc: mức chọn ở Lộ trình, không có thì mức mặc định, rồi mức giữa.
+// 1R chuẩn = vốn tính rủi ro của bậc lúc đó × mức này — lệnh đi nhỏ hơn (VD 0,6%) chỉ được phần tương ứng.
+export function ladderStdPct(m) {
+  const rp = (m && m.ladder && m.ladder.plan) || {};
+  const tiers = ((m && m.tiers) || []).filter((x) => x > 0);
+  return num(rp.pct, 0) || num(m && m.defaultTier, 0) || tiers[Math.floor((tiers.length - 1) / 2)] || 1;
 }
 
 export const ladderOn = (m) => !!(m && m.ladder && m.ladder.on && m.ladder.capital > 0 && m.ladder.from);
@@ -554,7 +566,7 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
   const closed = marketClosedPnl(plan, m, trades, resources, lad.from).filter((x) => x.date <= today);
   const events = [
     ...lad.deposits.filter((d) => d.date >= lad.from && d.date <= today).map((d) => ({ date: d.date, k: 0, v: d.amount, id: d.id })),
-    ...closed.map((x) => ({ date: x.date, k: 1, v: x.pnl / rate })),
+    ...closed.map((x) => ({ date: x.date, k: 1, v: x.pnl / rate, raw: x.r.rr !== null && Number.isFinite(x.r.rr) ? x.r.rr : null })),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.k - b.k);
   let equity = lad.capital;
   let base = lad.capital;
@@ -576,6 +588,10 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
       base = to;
     }
   };
+  const stdPct = ladderStdPct(m);
+  // R chuẩn của từng lệnh = lãi/lỗ ÷ (vốn tính rủi ro của bậc LÚC ĐÓ × mức chuẩn). Lệnh đi 0,6% thắng
+  // 3R (R của lệnh) chỉ là 1,5R chuẩn khi mức chuẩn 1,2% — đúng phần nó góp vào vốn và vào mốc bậc.
+  const stdR = [];
   let week = weekStart(lad.from);
   events.forEach((e) => {
     const wk = weekStart(e.date);
@@ -585,6 +601,8 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
       equity += e.v;
       if (e.v > 0) upCheck(e.date); else downCheck(e.date);
     } else {
+      const unit = (base * stdPct) / 100;
+      stdR.push({ date: e.date, r: unit > 0 ? e.v / unit : 0, raw: e.raw });
       equity += e.v;
       downCheck(e.date);
     }
@@ -593,19 +611,25 @@ export function ladderState(plan, m, trades, resources, today = todayStr()) {
   if (thisWeek > week) upCheck(thisWeek);
   const next = Math.round(base * up * 100) / 100;
   const downAt = base > floor + 0.005 ? (base / up) * cut : null;
-  // R thực tế mỗi tháng kể từ ngày của bậc — gợi ý sẵn cho ô dự phóng.
-  const withR = closed.filter((x) => x.r.rr !== null && Number.isFinite(x.r.rr));
+  // Mọi số R của bậc / lộ trình đều là R CHUẨN (xem trên) — lộ trình giả định mỗi R = vốn bậc × mức
+  // chuẩn, nên đếm R của lệnh (đi 0,6% vẫn ghi 3R) sẽ thổi phồng tiến độ. Lệnh chưa ghi rủi ro vẫn tính được.
   const days = (new Date(`${today}T00:00:00`) - new Date(`${lad.from}T00:00:00`)) / 86400000;
-  // R theo từng tuần (ngày đóng) — để so với mục tiêu R/tuần của lộ trình.
+  const sumStd = stdR.reduce((t, x) => t + x.r, 0);
+  // R theo từng tuần (ngày đóng): r = R chuẩn, raw = cộng R của lệnh (lệnh có ghi rủi ro), small = số lệnh đi nhỏ hơn 1R chuẩn.
   const weekR = {};
-  withR.forEach((x) => { const k = weekStart(x.date); const w = weekR[k] || (weekR[k] = { r: 0, n: 0 }); w.r += x.r.rr; w.n += 1; });
+  stdR.forEach((x) => {
+    const k = weekStart(x.date);
+    const w = weekR[k] || (weekR[k] = { r: 0, n: 0, raw: 0, small: 0 });
+    w.r += x.r; w.n += 1;
+    if (x.raw !== null) { w.raw += x.raw; if (Math.abs(x.raw) > 0.05 && Math.abs(x.r) < Math.abs(x.raw) * 0.85) w.small += 1; }
+  });
   return {
-    weekR,
+    weekR, stdPct,
     // Kỳ vọng mỗi lệnh và số lệnh/tuần thực tế từ ngày của bậc — quy R/tuần cần ra số lệnh cần đánh.
-    perTrade: withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / withR.length : null,
-    rTrades: withR.length,
-    tradesPerWeek: days >= 7 ? withR.length / (days / 7) : null,
-    rPerMonth: days >= 28 && withR.length ? withR.reduce((t, x) => t + x.r.rr, 0) / (days / 30.44) : null,
+    perTrade: stdR.length ? sumStd / stdR.length : null,
+    rTrades: stdR.length,
+    tradesPerWeek: days >= 7 ? stdR.length / (days / 7) : null,
+    rPerMonth: days >= 28 && stdR.length ? sumStd / (days / 30.44) : null,
     base, equity, floor, next, downAt, history, tradeCount: closed.length, rate,
     level: base > 0 && floor > 0 ? Math.max(0, Math.round(Math.log(base / floor) / Math.log(up))) : 0,
     // Vốn đã đủ mốc nhưng tuần chưa chốt: sẽ lên bậc từ thứ 2 tuần sau.

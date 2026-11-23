@@ -310,10 +310,11 @@ export const PAGE_HELP = {
     ],
     tabs: [
       ["Phân bổ", "Các mảng vốn và mức rủi ro từng tuần."],
-      ["Lộ trình", "Kế hoạch tăng vốn: nạp thêm bao nhiêu, mỗi tháng cần bao nhiêu R, bao giờ đạt số tiền mỗi lệnh mong muốn."],
+      ["Lộ trình", "Kế hoạch tăng vốn: nạp thêm bao nhiêu, mỗi tháng cần bao nhiêu R, bao giờ đạt số tiền mỗi lệnh mong muốn. Mảng chưa có kế hoạch (chưa biết nạp bao nhiêu) thì chọn \"Chỉ báo khi chạm mốc\" — bot Telegram nhắn khi số dư chạm mốc +20% và khi bậc đổi."],
     ],
     terms: [
       ["Bậc vốn tự tăng", "Mỗi khi vốn tăng đủ +20% (chốt cuối tuần, hoặc ngay sau khi nạp), số tiền tính rủi ro tự lên một bậc. Vốn tụt quá mốc thì tự hạ. Bạn không phải tự quyết lúc nào tăng rủi ro."],
+      ["R chuẩn", "R tính theo mức rủi ro chuẩn của mảng (VD 1,2%). Lệnh bạn đi nhỏ hơn, VD 0,6%, thắng 3R thì chỉ được tính 1,5R chuẩn — vì nó chỉ đẩy vốn đi được một nửa. Lộ trình và mục tiêu R/tuần đều đếm bằng R chuẩn."],
       "drawdown", "R",
     ],
     tips: ["Có nạp / rút cho mảng đang bật bậc vốn thì bấm \"Nạp / rút\" trong khung Bậc vốn để app tính lại bậc."],

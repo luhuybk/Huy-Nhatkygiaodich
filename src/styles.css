@@ -2991,3 +2991,12 @@ button.nt-check:hover { filter: brightness(1.25); }
 .page-help-dl dd { display: inline; margin: 0; color: var(--text-dim); }
 @media (max-width: 560px) { .page-help { padding: 10px 12px 12px; } .page-help-bar { margin-top: -4px; } }
 @media print { .page-help, .page-help-bar { display: none !important; } }
+.cap-road-mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cap-road-mode .jl-seg button { padding: 5px 12px; font-size: 12.5px; }
+.cap-road-raw { color: var(--text-dim); font-size: 11px; }
+.cap-road-kpi.is-good b { color: var(--win); }
+.cap-road-track-bar { height: 8px; }
+.cap-road-alert { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--border); font-size: 12.5px; color: var(--text-dim); }
+.cap-road-alert.is-on { border-style: solid; border-color: rgba(var(--accent-rgb), .4); color: var(--text); }
+.cap-road-alert span { flex: 1 1 220px; min-width: 0; }
+.cap-road-alert .btn { padding: 4px 10px; font-size: 12px; }
