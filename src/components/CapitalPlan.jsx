@@ -9,7 +9,7 @@ import {
   marketTierList, moveMarket, nextWeekKey, normalizeRRule, pickedTier, R_RULE_DEFAULT, R_WINDOWS, rWindowRanges, safestTier, setPick,
   sortTiers, suggestNextTier, thisWeekKey, tierMoney, tierShareOfTotal,
   ladderOn, ladderState, LADDER_DOWN_DEFAULT, LADDER_STEP_DEFAULT,
-  requiredMonthlyR, simulateRoadmap, snapshotEquityAt, ymAdd, ymDiff,
+  requiredMonthlyR, simulateRoadmap, snapshotPlanAt, ymAdd, ymDiff,
 } from "../lib/capital.js";
 
 const DD_LABEL = { ok: "Ổn", warn: "Cảnh báo", cut: "Giảm risk" };
@@ -358,11 +358,16 @@ function roadmapCalc(market, st, today) {
   const snap = rp.snapshot || null;
   let progress = null;
   if (snap) {
-    const planned = snapshotEquityAt(snap, lad.stepPct, today);
+    const plan = snapshotPlanAt(snap, lad.stepPct, today);
+    const planned = plan.equity;
+    // Đi trước / chậm chỉ so phần do GIAO DỊCH làm ra: trừ tiền nạp thật (sau ngày chốt) và tiền nạp
+    // theo kế hoạch ra hai bên — nạp sớm / muộn vài ngày không làm tiến độ R nhảy lung tung.
+    const depReal = (lad.deposits || []).filter((d) => d.date > snap.date && d.date <= today).reduce((t, d) => t + d.amount, 0);
+    const diff = (st.equity - depReal) - (planned - plan.deposits);
     const due = snap.deadline || snap.reachYm || "";
     const left = due ? ymDiff(fromYm, due) : null;
     progress = {
-      snap, planned, diff: st.equity - planned, diffR: riskNow > 0 ? (st.equity - planned) / riskNow : null, due,
+      snap, planned, depPlan: plan.deposits, depReal, diff, diffR: riskNow > 0 ? diff / riskNow : null, due,
       needNow: left !== null && left > 0 ? requiredMonthlyR({ ...opts, pct: snap.pct || pct, targetRisk: snap.targetRisk || target, plan: snap }, left) : null,
       left,
     };
@@ -636,12 +641,12 @@ function LadderRoadmap({ market, st, today, onSave }) {
             <>
               <p className="field-hint" style={{ margin: 0 }}>Đã chốt {ddmm(progress.snap.date)}/{progress.snap.date.slice(2, 4)} · {r1(progress.snap.monthlyR)}R/tháng · đích {ymLabel(progress.due)}</p>
               <div className="cap-road-prog">
-                <div><span>Kế hoạch hôm nay</span><b className="mono">{fmtUsd(progress.planned)}</b></div>
-                <div><span>Thực tế</span><b className="mono">{fmtUsd(st.equity)}</b></div>
+                <div><span>Kế hoạch hôm nay</span><b className="mono">{fmtUsd(progress.planned)}</b>{progress.depPlan ? <small>gồm nạp theo kế hoạch {fmtUsd(progress.depPlan)}</small> : null}</div>
+                <div><span>Thực tế</span><b className="mono">{fmtUsd(st.equity)}</b>{progress.depReal ? <small>gồm đã nạp {fmtUsd(progress.depReal)} từ ngày chốt</small> : null}</div>
                 <div className={progress.diff >= 0 ? "is-good" : "is-bad"}>
                   <span>{progress.diff >= 0 ? "Đi trước" : "Chậm hơn"}</span>
                   <b className="mono">{progress.diffR !== null ? `${progress.diff >= 0 ? "+" : "−"}${r1(Math.abs(progress.diffR))}R` : "—"}</b>
-                  <small>{progress.diff >= 0 ? "+" : "−"}{fmtUsd(Math.abs(progress.diff))}</small>
+                  <small>{progress.diff >= 0 ? "+" : "−"}{fmtUsd(Math.abs(progress.diff))} · chỉ phần do giao dịch</small>
                 </div>
                 <div>
                   <span>Từ giờ để kịp</span>

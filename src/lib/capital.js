@@ -705,25 +705,33 @@ export function requiredMonthlyR(opts, monthsLimit) {
   return hi;
 }
 
-// Vốn đáng lẽ phải có ở ngày `dateStr` theo lộ trình đã chốt — nội suy giữa hai mốc tháng.
-export function snapshotEquityAt(snap, stepPct, dateStr) {
+// Vốn đáng lẽ phải có ở ngày `dateStr` theo lộ trình đã chốt, kèm phần tiền NẠP theo kế hoạch tính tới
+// ngày đó (để so tiến độ giao dịch thì trừ nạp ra hai bên).
+// Mô phỏng bỏ qua phần còn lại của tháng chốt (R bắt đầu cộng từ tháng sau) và path[k] là CUỐI tháng
+// fromYm+k — nên trong tháng chốt kế hoạch đứng yên, còn tháng M = fromYm+k đi từ path[k-1] tới path[k].
+// (Bản cũ nội suy path[k] → path[k+1]: kế hoạch chạy trước thực tế cả tháng, và tháng chốt dồn cả tháng
+// R vào vài ngày còn lại — chốt xong hai hôm đã báo chậm.)
+export function snapshotPlanAt(snap, stepPct, dateStr) {
   if (!snap) return null;
   const fromYm = snap.date.slice(0, 7);
-  const months = Math.max(0, ymDiff(fromYm, dateStr.slice(0, 7)));
-  const sim = simulateRoadmap({ equity: snap.equity, base: snap.base, stepPct, pct: snap.pct, monthlyR: snap.monthlyR, plan: snap, targetRisk: 0, fromYm, maxMonths: months + 1, full: true });
-  // Ngày chốt nằm giữa tháng: tháng đầu chỉ tính phần còn lại; các tháng sau tính theo ngày đã qua.
-  const dim = (ym) => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
-  const day = Number(dateStr.slice(8, 10));
-  if (months === 0) {
-    const startDay = Number(snap.date.slice(8, 10));
-    const span = dim(fromYm) - startDay + 1;
-    const f = span > 0 ? Math.max(0, Math.min(1, (day - startDay) / span)) : 0;
-    const a = sim.path[0]; const b = sim.path[1] || a;
-    return a.equity + (b.equity - a.equity) * f;
-  }
-  const a = sim.path[months] || sim.path[sim.path.length - 1];
-  const b = sim.path[months + 1] || a;
-  return a.equity + (b.equity - a.equity) * (day / dim(dateStr.slice(0, 7)));
+  const ym = dateStr.slice(0, 7);
+  const months = Math.max(0, ymDiff(fromYm, ym));
+  if (months === 0 || dateStr <= snap.date) return { equity: snap.equity, deposits: 0 };
+  const sim = simulateRoadmap({ equity: snap.equity, base: snap.base, stepPct, pct: snap.pct, monthlyR: snap.monthlyR, plan: snap, targetRisk: 0, fromYm, maxMonths: months, full: true });
+  const last = sim.path[sim.path.length - 1];
+  const a = sim.path[months - 1] || last;
+  const b = sim.path[months] || last;
+  let deposits = 0;
+  for (let i = 1; i <= months; i++) deposits += depositIn(snap, ymAdd(fromYm, i));
+  // Nạp theo kế hoạch rơi vào đầu tháng; phần R thì rải đều theo ngày trong tháng.
+  const dep = depositIn(snap, ym);
+  const dim = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+  const f = Math.min(1, Number(dateStr.slice(8, 10)) / dim);
+  return { equity: a.equity + dep + (b.equity - a.equity - dep) * f, deposits };
+}
+export function snapshotEquityAt(snap, stepPct, dateStr) {
+  const x = snapshotPlanAt(snap, stepPct, dateStr);
+  return x ? x.equity : null;
 }
 
 // Gợi ý cho form nhập lệnh: tài khoản này thuộc mảng nào, tuần của lệnh đang ở mức nào, và tiền
