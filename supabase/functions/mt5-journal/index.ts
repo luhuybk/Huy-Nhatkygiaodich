@@ -6,6 +6,8 @@
 //   Lệnh đóng hẳn: thêm "event": "close", "volume": 0.5 (lot lúc vào), "fees": -1.2 (hoa hồng + qua đêm),
 //   "closes": [{"time": 1761800000, "lots": 0.2, "profit": 30.5}, ...] (mỗi lần đóng / chốt bớt một dòng).
 //   Lệnh có SL thì cả hai gói kèm "risk": 146.2 (tiền mất nếu chạm SL ban đầu), "currency": "USD".
+//   EA v2.94 vừa nới SL ban đầu thêm spread thì gói khớp kèm "slFrom": "87.435", "slTo": "87.445", "padSpread": "1.0"
+//   → tin 📥 thêm dòng "🛡 SL nới +1 spread: 87.435 → 87.445".
 //
 // Dùng chung khoá với alert-relay (EA lấy địa chỉ alert-relay trong KeoSL_telegram.txt rồi đổi tên
 // function), nên không phải dán thêm khoá nào lên VPS.
@@ -46,6 +48,7 @@ type Close = { time: number; lots: number; profit: number };
 type Item = {
   id: string; login: string; accountName: string; ticket: string; symbol: string; side: string; time: number; receivedAt: string;
   event?: "close"; volume?: number; fees?: number; closes?: Close[]; risk?: number; currency?: string;
+  slFrom?: string; slTo?: string; padSpread?: string; // EA v2.94: SL ban đầu đã được nới thêm spread
 };
 
 function json(body: unknown, status = 200) {
@@ -91,6 +94,13 @@ Deno.serve(async (req) => {
   if (Number.isFinite(risk) && risk > 0) {
     item.risk = Math.round(risk * 100) / 100;
     item.currency = clean(body.currency, 8).toUpperCase();
+  }
+  // EA v2.94 nới SL ban đầu thêm spread → gửi kèm SL gốc / SL mới (giữ nguyên chuỗi số để đúng số lẻ của mã)
+  const num = (v: unknown) => { const t = clean(v, 24); return /^\d+(\.\d+)?$/.test(t) ? t : ""; };
+  if (num(body.slFrom) && num(body.slTo)) {
+    item.slFrom = num(body.slFrom);
+    item.slTo = num(body.slTo);
+    item.padSpread = num(body.padSpread) || "1.0";
   }
   if (body.event === "close") {
     const closes = (Array.isArray(body.closes) ? body.closes : []).slice(0, 100).map((c: Record<string, unknown>) => ({
@@ -200,6 +210,10 @@ async function fillMessage(supabase: ReturnType<typeof createClient>, userId: st
     `${test ? "🧪 THỬ · " : ""}📥 ${shortSymbol(item.symbol)} ${side}`,
     meta.filter(Boolean).join(" · "),
   ];
+  if (item.slFrom && item.slTo) {
+    const k = Number(item.padSpread);
+    lines.push(`🛡 SL nới +${Number.isFinite(k) && k !== 1 ? `${k} ` : "1 "}spread: ${item.slFrom} → ${item.slTo}`);
+  }
   if (canRemind) lines.push(`🔁 Re-entry? Bấm → nhắc dời SL ${vnTime(plan!.at, now)}`);
   const payload: Record<string, unknown> = { chat_id: chatId, text: lines.join("\n") };
   if (canRemind) {
