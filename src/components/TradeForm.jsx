@@ -3,6 +3,7 @@ import { ArrowUpRight, ArrowDown, Hash, ArrowDownRight, FileSpreadsheet, Save, S
 import { ChipSelect, ConfirmButton, CompletionBar, Field, ImageOrLink, MoneyInput, MultiImageOrLink, ResourceSelect, RiskAlertBanner, Section, ShotGallery, StarRating, LinkScope, focusFirstField } from "./ui.jsx";
 import { clearDraft, draftKey, mergeDraft, pruneDrafts, readDraft, releaseActiveDraft, sameTradeContent, setActiveDraft, writeDraft } from "../lib/tradeDraft.js";
 import { RiskTierChips } from "./CapitalPlan.jsx";
+import { SlMoveLog } from "./SlMoveLog.jsx";
 import { MarketCondPicker, RegimeRiskNote } from "./MarketRegime.jsx";
 import { FxCondPicker } from "./FxStrength.jsx";
 import { fxPairOf, fxScore } from "../lib/fxStrength.js";
@@ -167,7 +168,7 @@ function jumpToNextMissing(lastRef) {
 const quickShots = (trade) => tradeImageShots(trade).map((s) => ({ ...s, key: `${s.key}|${s.link || ""}|${s.image || ""}` }));
 const rrText = (rr) => (rr === null ? "—" : `${rr > 0 ? "+" : ""}${rr.toFixed(2)}R`);
 
-function FormToc({ trade, sections }) {
+function FormToc({ trade, sections, resources, onSlLog }) {
   const progress = tradeSectionProgress(trade);
   const [active, setActive] = useState(sections[0].id);
   const clicked = useRef(0);
@@ -250,6 +251,9 @@ function FormToc({ trade, sections }) {
           <ShotGallery shots={shots} compact />
         </div>
       ) : null}
+      <div className="form-toc-shots form-toc-sllog">
+        <SlMoveLog trade={trade} resources={resources} onChange={onSlLog} />
+      </div>
     </nav>
   );
 }
@@ -257,8 +261,8 @@ function FormToc({ trade, sections }) {
 // Màn hẹp (laptop nhỏ, điện thoại) không đủ chỗ cho cột mục lục bên phải — thay bằng thanh dính
 // đáy: mã + hướng, RR thực, số mục còn thiếu (bấm mở mục lục), ảnh chụp và nút Lưu. Màn rộng thì
 // CSS ẩn thanh này đi vì cột mục lục đã có đủ.
-function FormBottomBar({ trade, sections, onSave }) {
-  const [panel, setPanel] = useState(null); // "toc" | "shots" | null
+function FormBottomBar({ trade, sections, onSave, resources, onSlLog }) {
+  const [panel, setPanel] = useState(null); // "toc" | "shots" | "sl" | null
   const ref = useRef(null);
   useEffect(() => {
     if (!panel) return undefined;
@@ -312,6 +316,12 @@ function FormBottomBar({ trade, sections, onSave }) {
           <ShotGallery shots={shots} compact />
         </div>
       ) : null}
+      {panel === "sl" ? (
+        <div className="form-bbar-panel">
+          <div className="form-bbar-panel-head"><b>Lịch sử dời SL</b><button type="button" className="row-btn" onClick={() => setPanel(null)}><X size={15} /></button></div>
+          <SlMoveLog trade={trade} resources={resources} onChange={onSlLog} alwaysOpen />
+        </div>
+      ) : null}
       <div className="form-bbar-row">
         <span className="form-bbar-trade">
           <b className={symbol ? "" : "is-empty"}>{symbol || "Chưa có mã"}</b>
@@ -330,6 +340,9 @@ function FormBottomBar({ trade, sections, onSave }) {
             <ImageIcon size={14} /> {shots.length}
           </button>
         ) : null}
+        <button type="button" className={`form-bbar-btn ${panel === "sl" ? "is-on" : ""}`} onClick={() => toggle("sl")} title="Lịch sử dời SL (EA + dời tay)">
+          <History size={14} /> SL
+        </button>
         <button type="button" className="btn btn-primary form-bbar-save" onClick={onSave} title={`Lưu giao dịch (${SAVE_KEY})`}>
           <Save size={14} className="form-bbar-xs-hide" /> Lưu <kbd className="kbd-hint">{SAVE_KEY}</kbd>
         </button>
@@ -1454,10 +1467,10 @@ export function TradeForm({ initial, resources, capitalPlan, setupErrors, skills
           <Save size={15} /> Lưu giao dịch <kbd className="kbd-hint">{SAVE_KEY}</kbd>
         </button>
       </div>
-      <FormBottomBar trade={t} sections={sections} onSave={submit} />
+      <FormBottomBar trade={t} sections={sections} onSave={submit} resources={resources} onSlLog={set("slLog")} />
       </div>
       </LinkScope>
-      <FormToc trade={t} sections={sections} />
+      <FormToc trade={t} sections={sections} resources={resources} onSlLog={set("slLog")} />
     </div>
   );
 }

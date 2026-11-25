@@ -3000,3 +3000,25 @@ button.nt-check:hover { filter: brightness(1.25); }
 .cap-road-alert.is-on { border-style: solid; border-color: rgba(var(--accent-rgb), .4); color: var(--text); }
 .cap-road-alert span { flex: 1 1 220px; min-width: 0; }
 .cap-road-alert .btn { padding: 4px 10px; font-size: 12px; }
+/* Lịch sử dời SL cạnh form lệnh */
+.form-toc-sllog { margin-top: 12px; }
+.sl-log-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; text-align: left; }
+.sl-log-head .form-toc-title { padding-left: 0; margin: 0; }
+.sl-log-count { margin-left: auto; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.sl-log-body { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 12px; }
+.sl-log-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "time del" "text text"; column-gap: 6px; row-gap: 1px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.sl-log-row .sl-log-time { grid-area: time; }
+.sl-log-row .sl-log-text { grid-area: text; }
+.sl-log-row .sl-log-del { grid-area: del; }
+.sl-log-time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.sl-log-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.sl-log-row.is-hand .sl-log-text, .sl-log-row.is-own .sl-log-text { color: var(--pending); }
+.sl-log-row.is-info .sl-log-text { color: var(--text-dim); }
+.sl-log-del { padding: 0 2px; }
+.sl-log-empty { margin: 2px 0; font-size: 11.5px; color: var(--text-dim); line-height: 1.45; }
+.sl-log-addbtn { align-self: flex-start; margin-top: 6px; padding: 3px 9px; font-size: 12px; }
+.sl-log-add { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.sl-log-add .input { padding: 4px 7px; font-size: 12.5px; }
+.sl-log-add-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.sl-log-add-btns .btn { padding: 3px 10px; font-size: 12px; }
+.form-bbar-panel .sl-log-body { margin-top: 0; }

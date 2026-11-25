@@ -371,11 +371,12 @@ function histText(e, px) {
   return "";
 }
 
-export function SlHistoryGroup({ trade, resources }) {
+// Lịch sử SL (slHist) của một lệnh theo ticket — undefined = đang tải, null = không có. Dùng ở chi tiết lệnh
+// và khung "Lịch sử dời SL" cạnh form lệnh.
+export function useSlHist(trade, resources) {
   const ticket = String((trade && trade.ticket) || "");
   const account = (trade && trade.account) || "";
-  const [h, setH] = useState(undefined); // undefined = đang tải, null = không có
-  const [all, setAll] = useState(false);
+  const [h, setH] = useState(undefined);
   useEffect(() => {
     let alive = true;
     if (!ticket) { setH(null); return undefined; }
@@ -391,6 +392,14 @@ export function SlHistoryGroup({ trade, resources }) {
     })();
     return () => { alive = false; };
   }, [ticket, account, resources]);
+  return h;
+}
+
+export { dt as slTime, histText as slHistText };
+
+export function SlHistoryGroup({ trade, resources }) {
+  const h = useSlHist(trade, resources);
+  const [all, setAll] = useState(false);
   if (!h) return null;
   const f = histFacts(h);
   const px = (v) => (v > 0 ? Number(v).toFixed(h.digits || 5) : "—");
